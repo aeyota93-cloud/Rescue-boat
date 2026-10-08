@@ -49,11 +49,8 @@ CORE_PRODUCT_NAME=hiddify-core
 CORE_NAME=hiddify-lib
 LIB_NAME=hiddify-core
 
-ifeq ($(CHANNEL),prod)
-	CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
-else
-	CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/draft
-endif
+# Шлюпка: ядро из нашего форка (правила сервера и программ), версия в dependencies.properties.
+CORE_URL=https://github.com/aeyota93-cloud/Rescue-boat-core/releases/download/v$(core.version)
 
 ifeq ($(CHANNEL),prod)
 	TARGET=lib/main_prod.dart
