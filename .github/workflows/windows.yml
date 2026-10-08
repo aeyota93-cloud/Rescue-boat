@@ -1,7 +1,8 @@
 # Сборка «Шлюпки спасения» для Windows.
 # Лицензия Hiddify требует, чтобы релизы собирались только через GitHub Actions.
 #  - push в main: сборка, файлы лежат в артефакте запуска 7 дней;
-#  - тег vX.Y.Z: то же плюс релиз на GitHub с установщиком и портативной версией.
+#  - тег vX.Y.Z: то же плюс релиз на GitHub с установщиком и портативной версией
+#    (файлы релиза скачиваются без входа в GitHub, артефакты запуска — только со входом).
 name: Windows
 
 on:
@@ -65,4 +66,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName --title "${{ github.ref_name }}" --generate-notes
+        run: |
+          # Тег с дефисом (v0.1.0-test) публикуется как пре-релиз: его не предложит автообновление.
+          $extra = @()
+          if ("${{ github.ref_name }}".Contains('-')) { $extra += '--prerelease' }
+          gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName --title "${{ github.ref_name }}" --generate-notes @extra
