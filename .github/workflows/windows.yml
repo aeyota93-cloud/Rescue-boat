@@ -1,0 +1,68 @@
+# Сборка «Шлюпки спасения» для Windows.
+# Лицензия Hiddify требует, чтобы релизы собирались только через GitHub Actions.
+#  - push в main: сборка, файлы лежат в артефакте запуска 7 дней;
+#  - тег vX.Y.Z: то же плюс релиз на GitHub с установщиком и портативной версией.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.38.5'
+  # prod: ядро hiddify-core берётся из релиза core.version (dependencies.properties), а не из draft.
+  CHANNEL: prod
+  IS_GITHUB_ACTIONS: 1
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Инструменты упаковки
+        run: |
+          make windows-install-deps
+          $cache = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { "$env:LOCALAPPDATA\Pub\Cache" }
+          "$cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Подготовка (зависимости, генерация кода, ядро)
+        run: make windows-prepare
+
+      - name: Сборка установщика и портативной версии
+        run: make windows-exe-release windows-zip-release
+
+      - name: Сбор файлов
+        run: |
+          New-Item -ItemType Directory -Path out -Force | Out-Null
+          Get-ChildItem dist -Recurse -File -Include *.exe, *.zip | Copy-Item -Destination out
+          Get-ChildItem out
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows
+          path: out
+          retention-days: 7
+
+      - name: Релиз
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName --title "${{ github.ref_name }}" --generate-notes
