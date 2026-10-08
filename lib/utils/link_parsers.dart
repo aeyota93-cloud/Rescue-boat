@@ -21,7 +21,11 @@ abstract class LinkParser {
   }
 
   // protocols schemas
-  static const protocols = ['hiddify', 'v2ray', 'v2rayn', 'v2rayng', 'clash', 'clashmeta', 'sing-box'];
+  static const protocols = ['rescueboat', 'hiddify', 'v2ray', 'v2rayn', 'v2rayng', 'clash', 'clashmeta', 'sing-box'];
+
+  // Схема, которую приложение регистрирует в Windows: rescueboat://import/<ссылка подписки>.
+  // Чужие схемы (hiddify://, v2ray://…) только разбираются из буфера, но не перехватываются у других клиентов.
+  static const ownProtocol = 'rescueboat';
 
   static ProfileLink? parse(String link) {
     return simple(link) ?? deep(link);
@@ -38,7 +42,7 @@ abstract class LinkParser {
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) return null;
     final queryParams = uri.queryParameters;
     switch (uri.scheme) {
-      case 'hiddify':
+      case 'rescueboat' || 'hiddify':
         if (queryParams.containsKey('url')) {
           return (url: queryParams['url']!, name: queryParams['name'] ?? '');
         } else {

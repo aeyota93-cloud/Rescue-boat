@@ -298,11 +298,11 @@ windows-zip-release:
 	$(YELLOW)Post-processing Windows portable$(DONE); \
 	cd "$$ZIP_DIR"; \
 	$(BLUE)Extracting and Repacking...$(DONE); \
-	mkdir -p Hiddify; \
-	unzip -q "$$ZIP_FILE" -d Hiddify/; \
+	mkdir -p RescueBoat; \
+	unzip -q "$$ZIP_FILE" -d RescueBoat/; \
 	rm "$$ZIP_FILE"; \
-	7z a -tzip -bso0 -bsp0 "$$FILE_NAME.zip" Hiddify; \
-	rm -rf Hiddify; \
+	7z a -tzip -bso0 -bsp0 "$$FILE_NAME.zip" RescueBoat; \
+	rm -rf RescueBoat; \
 	$(GREEN)Successful$(DONE)
 
 windows-exe-release:

@@ -45,19 +45,22 @@ bool SendAppLinkToInstance(const std::wstring &title)
   return false;
 }
 
+// Шлюпка: заголовок окна (по нему второй запуск находит первый).
+static const wchar_t kAppTitle[] = L"\u0428\u043b\u044e\u043f\u043a\u0430 \u0441\u043f\u0430\u0441\u0435\u043d\u0438\u044f";
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command)
 {
 
   // Replace "example" with the generated title found as parameter of `window.Create` in this file.
   // You may ignore the result if you need to create another window.
-  if (SendAppLinkToInstance(L"Hiddify"))
+  if (SendAppLinkToInstance(kAppTitle))
   {
     return EXIT_SUCCESS;
   }
 
-  HANDLE hMutexInstance = CreateMutex(NULL, TRUE, L"HiddifyMutex");
-  HWND handle = FindWindowA(NULL, "Hiddify");
+  HANDLE hMutexInstance = CreateMutex(NULL, TRUE, L"RescueBoatMutex");
+  HWND handle = FindWindowW(NULL, kAppTitle);
 
   if (GetLastError() == ERROR_ALREADY_EXISTS)
   {
@@ -65,7 +68,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     std::vector<std::string> command_line_arguments = GetCommandLineArguments();
     project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
     FlutterWindow window(project);
-    if (window.SendAppLinkToInstance(L"Hiddify"))
+    if (window.SendAppLinkToInstance(kAppTitle))
     {
       return false;
     }
@@ -97,7 +100,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"Hiddify", origin, size))
+  if (!window.Create(kAppTitle, origin, size))
   {
     return EXIT_FAILURE;
   }

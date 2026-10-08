@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 abstract class Constants {
-  static const appName = "Hiddify";
-  static const githubUrl = "https://github.com/hiddify/hiddify-next";
-  static const licenseUrl = "https://github.com/hiddify/hiddify-next?tab=License-1-ov-file#readme";
-  static const githubReleasesApiUrl = "https://api.github.com/repos/hiddify/hiddify-next/releases";
-  static const githubLatestReleaseUrl = "https://github.com/hiddify/hiddify-app/releases/latest";
-  static const appCastUrl = "https://raw.githubusercontent.com/hiddify/hiddify-next/main/appcast.xml";
+  // Шлюпка спасения: форк Hiddify, обновления и исходники в нашем репозитории.
+  static const appName = "Шлюпка спасения";
+  static const githubUrl = "https://github.com/aeyota93-cloud/Rescue-boat";
+  static const licenseUrl = "https://github.com/aeyota93-cloud/Rescue-boat/blob/main/LICENSE.md";
+  static const githubReleasesApiUrl = "https://api.github.com/repos/aeyota93-cloud/Rescue-boat/releases";
+  static const githubLatestReleaseUrl = "https://github.com/aeyota93-cloud/Rescue-boat/releases/latest";
+  static const appCastUrl = "https://raw.githubusercontent.com/aeyota93-cloud/Rescue-boat/main/appcast.xml";
+  static const upstreamUrl = "https://github.com/hiddify/hiddify-app";
   static const telegramChannelUrl = "https://t.me/hiddify";
   static const privacyPolicyUrl = "https://hiddify.com/privacy-policy/";
   static const termsAndConditionsUrl = "https://hiddify.com/terms/";

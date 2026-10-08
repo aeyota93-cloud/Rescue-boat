@@ -53,7 +53,9 @@ jobs:
       - name: Сбор файлов
         run: |
           New-Item -ItemType Directory -Path out -Force | Out-Null
-          Get-ChildItem dist -Recurse -File -Include *.exe, *.zip | Copy-Item -Destination out
+          Get-ChildItem dist -Recurse -File -Filter *.exe | Select-Object -First 1 | Copy-Item -Destination out\RescueBoat-Setup-x64.exe
+          Get-ChildItem dist -Recurse -File -Filter *.zip | Select-Object -First 1 | Copy-Item -Destination out\RescueBoat-Portable-x64.zip
+          if ((Get-ChildItem out).Count -ne 2) { throw "нет установщика или портативной версии" }
           Get-ChildItem out
 
       - uses: actions/upload-artifact@v6
