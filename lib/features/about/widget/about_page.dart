@@ -114,11 +114,12 @@ class AboutPage extends HookConsumerWidget {
                   await UriUtils.tryLaunch(Uri.parse(Constants.githubUrl));
                 },
               ),
+              // Шлюпка: вместо Telegram-канала Hiddify — ссылка на оригинал (условие лицензии).
               ListTile(
-                title: Text(t.pages.about.telegramChannel),
+                title: const Text("Основано на Hiddify"),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
-                  await UriUtils.tryLaunch(Uri.parse(Constants.telegramChannelUrl));
+                  await UriUtils.tryLaunch(Uri.parse(Constants.upstreamUrl));
                 },
               ),
               ListTile(

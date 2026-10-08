@@ -10,9 +10,11 @@ abstract class Constants {
   static const githubLatestReleaseUrl = "https://github.com/aeyota93-cloud/Rescue-boat/releases/latest";
   static const appCastUrl = "https://raw.githubusercontent.com/aeyota93-cloud/Rescue-boat/main/appcast.xml";
   static const upstreamUrl = "https://github.com/hiddify/hiddify-app";
-  static const telegramChannelUrl = "https://t.me/hiddify";
-  static const privacyPolicyUrl = "https://hiddify.com/privacy-policy/";
-  static const termsAndConditionsUrl = "https://hiddify.com/terms/";
+  // Шлюпка: своих канала и сайта нет; условия — лицензия, приватность — README
+  // (приложение ничего не отправляет).
+  static const telegramChannelUrl = upstreamUrl;
+  static const privacyPolicyUrl = "https://github.com/aeyota93-cloud/Rescue-boat#readme";
+  static const termsAndConditionsUrl = licenseUrl;
   static const cfWarpPrivacyPolicy = "https://www.cloudflare.com/application/privacypolicy/";
   static const cfWarpTermsOfService = "https://www.cloudflare.com/application/terms/";
 }
