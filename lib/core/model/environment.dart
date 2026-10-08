@@ -4,7 +4,8 @@ enum Environment {
   prod,
   dev;
 
-  static const sentryDSN = String.fromEnvironment("sentry_dsn");
+  // Шлюпка: Sentry выключен, адрес не берётся даже из --dart-define.
+  static const sentryDSN = "";
   // This environment variable is set in the 'windows-release-zip' command
   static const isPortable = bool.fromEnvironment("portable");
 }

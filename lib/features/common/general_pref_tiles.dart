@@ -46,6 +46,12 @@ class EnableAnalyticsPrefTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Шлюпка: аналитики нет, переключать нечего.
+    return const SizedBox.shrink();
+  }
+
+  // ignore: unused_element
+  Widget _hiddifyBuild(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
 
     final enabled = ref.watch(analyticsControllerProvider).requireValue;

@@ -10,7 +10,11 @@ class LocalePreferences extends _$LocalePreferences with AppLogger {
   @override
   AppLocale build() {
     final persisted = ref.watch(sharedPreferencesProvider).requireValue.getString("locale");
-    if (persisted == null) return AppLocaleUtils.findDeviceLocale();
+    // Шлюпка: русский по умолчанию, если язык системы не из поддерживаемых.
+    if (persisted == null) {
+      final device = AppLocaleUtils.findDeviceLocale();
+      return device == AppLocale.en ? AppLocale.ru : device;
+    }
     // keep backward compatibility with chinese after changing zh to zh_CN
     if (persisted == "zh") {
       return AppLocale.zhCn;

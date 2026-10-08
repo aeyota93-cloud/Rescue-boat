@@ -32,7 +32,8 @@ abstract class ConfigOptions {
 
   static final region = PreferencesNotifier.create<Region, String>(
     "region",
-    Region.other,
+    // Шлюпка: по умолчанию российские сайты напрямую (и для чужих подписок без правил).
+    Region.ru,
     mapFrom: Region.values.byName,
     mapTo: (value) => value.name,
   );
@@ -83,6 +84,7 @@ abstract class ConfigOptions {
     "udp://1.1.1.1",
     possibleValues: List.of([
       "local",
+      "udp://77.88.8.8",
       "udp://223.5.5.5",
       "udp://1.1.1.1",
       "udp://1.1.1.2",
@@ -92,7 +94,12 @@ abstract class ConfigOptions {
       "4.4.2.2",
       "8.8.8.8",
     ]),
-    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "1.1.1.1",
+    // Шлюпка: для России — Яндекс DNS: российские CDN отдают ближние адреса, 1.1.1.1 напрямую бывает медленным.
+    defaultValueFunction: (ref) => switch (ref.read(region)) {
+      Region.cn => "223.5.5.5",
+      Region.ru => "udp://77.88.8.8",
+      _ => "1.1.1.1",
+    },
     validator: (value) => value.isNotBlank,
   );
 
@@ -168,7 +175,8 @@ abstract class ConfigOptions {
     validator: (value) => isPort(value.toString()),
   );
 
-  static final bypassLan = PreferencesNotifier.create<bool, bool>("bypass-lan", false);
+  // Шлюпка: локальная сеть (роутер, принтер, NAS) мимо VPN.
+  static final bypassLan = PreferencesNotifier.create<bool, bool>("bypass-lan", true);
 
   static final allowConnectionFromLan = PreferencesNotifier.create<bool, bool>("allow-connection-from-lan", false);
 

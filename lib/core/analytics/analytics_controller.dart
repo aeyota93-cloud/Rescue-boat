@@ -19,13 +19,18 @@ bool _testCrashReport = false;
 @Riverpod(keepAlive: true)
 class AnalyticsController extends _$AnalyticsController with AppLogger {
   @override
-  Future<bool> build() async {
-    return _preferences.getBool(enableAnalyticsPrefKey) ?? true;
-  }
+  // Шлюпка: отчёты об ошибках и аналитика третьим сторонам не отправляются (ТЗ, п. 7).
+  Future<bool> build() async => false;
 
   SharedPreferences get _preferences => ref.read(sharedPreferencesProvider).requireValue;
 
   Future<void> enableAnalytics() async {
+    loggy.debug("analytics are disabled in this build");
+  }
+
+  // Код Hiddify, не вызывается: оставлен, чтобы проще сливать обновления.
+  // ignore: unused_element
+  Future<void> _hiddifyEnableAnalytics() async {
     if (state case AsyncData(value: final enabled)) {
       loggy.debug("enabling analytics");
       state = const AsyncLoading();
