@@ -6,6 +6,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/per_app_proxy/model/per_app_proxy_mode.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_notifier.dart';
+import 'package:hiddify/features/route_rules/overview/rules_page.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/preference_tile.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
@@ -67,6 +68,13 @@ class RouteOptionsPage extends HookConsumerWidget {
                 await ref.read(PerAppProxyProvider(mode).notifier).clearAutoSelected();
               }
             },
+          ),
+          // Шлюпка: свои правила — сайты, IP, программы мимо VPN или только через VPN.
+          ListTile(
+            title: Text(t.pages.settings.routing.routeRule.title),
+            leading: const Icon(Icons.alt_route_rounded),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RulesPage())),
           ),
           ChoicePreferenceWidget(
             title: t.pages.settings.routing.balancerStrategy.title,

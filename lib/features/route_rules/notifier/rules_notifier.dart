@@ -13,7 +13,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'rules_notifier.g.dart';
 
-@riverpod
+// Шлюпка: keepAlive — правила читает настройка ядра (singboxConfigOptions), она живёт всё время.
+@Riverpod(keepAlive: true)
 class RulesNotifier extends _$RulesNotifier with AppLogger {
   late File file;
 

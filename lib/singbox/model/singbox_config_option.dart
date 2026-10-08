@@ -47,7 +47,8 @@ class SingboxConfigOption with _$SingboxConfigOption {
     required bool enableFakeDns,
     // required bool enableDnsRouting,
     required bool independentDnsCache,
-    required List<SingboxRule> rules,
+    // Шлюпка: правила экрана «Правила маршрутов» в формате ядра (route_rules/data/core_rules.dart).
+    required List<Map<String, dynamic>> rules,
     // required SingboxMuxOption mux,
     required SingboxTlsTricks tlsTricks,
     required SingboxWarpOption warp,
