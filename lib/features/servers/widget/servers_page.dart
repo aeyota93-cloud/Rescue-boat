@@ -483,13 +483,16 @@ class _BackupCard extends ConsumerWidget {
           const Text('Запасной', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           const Text(
-            'Если основной сервер не отвечает, программа сама переключится на запасной.',
+            'Автоматическое переключение на запасной сервер появится в следующей версии.',
             style: TextStyle(fontSize: 14, height: 1.5, color: RescueColors.textTertiary),
           ),
           const SizedBox(height: 10),
-          const Text('Пока не добавлен.', style: RescueText.smallSecondary),
+          const Text(
+            'Пока запасной можно добавить второй подпиской и выбрать вручную.',
+            style: RescueText.smallSecondary,
+          ),
           const SizedBox(height: 10),
-          OutlinedButton(onPressed: () => showAddSubscription(context, ref), child: const Text('Добавить запасной')),
+          OutlinedButton(onPressed: () => showAddSubscription(context, ref), child: const Text('Добавить подписку')),
         ],
       ),
     );

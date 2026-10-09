@@ -183,7 +183,7 @@ void main() {
       expect(find.text('ещё 31 день'), findsOneWidget);
       expect(find.text('сама, раз в 6 часов'), findsOneWidget);
       expect(find.text('Запасной'), findsOneWidget);
-      expect(find.text('Добавить запасной'), findsOneWidget);
+      expect(find.text('Добавить подписку'), findsWidgets);
       expect(find.text('Другие подписки'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 

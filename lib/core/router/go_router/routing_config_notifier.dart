@@ -8,23 +8,25 @@ import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.
 import 'package:hiddify/core/router/go_router/helper/custom_transition.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/about/widget/about_page.dart';
-import 'package:hiddify/features/home/widget/home_page.dart';
+import 'package:hiddify/features/insights/widget/errors_page.dart';
 import 'package:hiddify/features/intro/widget/intro_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
+import 'package:hiddify/features/overview/widget/overview_page.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_page.dart';
 import 'package:hiddify/features/profile/details/profile_details_page.dart';
-import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_page.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_page.dart';
 import 'package:hiddify/features/rescue_ui/gallery_page.dart';
+import 'package:hiddify/features/servers/widget/servers_page.dart';
 import 'package:hiddify/features/settings/overview/sections/dns_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/general_page.dart';
 import 'package:hiddify/features/settings/overview/sections/inbound_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/route_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
-import 'package:hiddify/features/settings/overview/settings_page.dart';
-import 'package:hiddify/features/split_tunnel/widget/split_tunnel_page.dart';
+import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
+import 'package:hiddify/features/settings/widget/rescue_settings_page.dart';
+import 'package:hiddify/features/split_tunnel/widget/split_tunnel_table_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -33,11 +35,10 @@ part 'routing_config_notifier.g.dart';
 // each branch in go router has its own focus scope
 final branchesScope = <String, FocusScopeNode>{
   'home': FocusScopeNode(),
-  'profiles': FocusScopeNode(),
   'split': FocusScopeNode(),
+  'errors': FocusScopeNode(),
+  'servers': FocusScopeNode(),
   'settings': FocusScopeNode(),
-  'logs': FocusScopeNode(),
-  'about': FocusScopeNode(),
 };
 
 // when the routing config is not yet initialized, this config is used
@@ -45,26 +46,18 @@ final loadingConfig = RoutingConfig(
   routes: <RouteBase>[GoRoute(path: '/home', builder: (context, state) => const Material())],
 );
 
-// Шлюпка: 'split' — «Раздельный туннель» сразу после главной (и профилей).
-String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index) => isMobileBreakpoint
-    ? ['home', 'split', 'settings'][index]
-    : ['home', if (showProfilesAction) 'profiles', 'split', 'settings', 'logs', 'about'][index];
+// Шлюпка: ветки нового меню, одинаковые для узкого и широкого окна.
+const _branchNames = ['home', 'split', 'errors', 'servers', 'settings'];
 
-int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name) => isMobileBreakpoint
-    ? ['home', 'split', 'settings'].indexOf(name)
-    : ['home', if (showProfilesAction) 'profiles', 'split', 'settings', 'logs', 'about'].indexOf(name);
+String getNameOfBranch(int index) => _branchNames[index];
+
+int getIndexOfBranch(String name) => _branchNames.indexOf(name);
 
 @Riverpod(keepAlive: true)
 class RoutingConfigNotifier extends _$RoutingConfigNotifier {
   @override
   RoutingConfig build() {
     final isMobileBreakpoint = ref.watch(isMobileBreakpointProvider);
-    final bool showProfilesAction;
-    if (isMobileBreakpoint == true) {
-      showProfilesAction = false;
-    } else {
-      showProfilesAction = ref.watch(hasAnyProfileProvider).value ?? false;
-    }
     if (isMobileBreakpoint == null) return loadingConfig;
     return RoutingConfig(
       redirect: (context, state) {
@@ -98,19 +91,17 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         return null;
       },
       routes: <RouteBase>[
+        // Шлюпка: пять веток нового меню. Старые экраны Hiddify остались подмаршрутами
+        // (Журнал, Маршрутизация, DNS, Подключение — в «Настройки → Для опытных»).
         StatefulShellRoute.indexedStack(
-          builder: (_, _, navigationShell) => MyAdaptiveLayout(
-            navigationShell: navigationShell,
-            isMobileBreakpoint: isMobileBreakpoint,
-            showProfilesAction: showProfilesAction,
-          ),
+          builder: (_, _, navigationShell) => MyAdaptiveLayout(navigationShell: navigationShell),
           branches: <StatefulShellBranch>[
             StatefulShellBranch(
               routes: <GoRoute>[
                 GoRoute(
                   name: 'home',
                   path: '/home',
-                  builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
+                  builder: (_, _) => FocusScope(node: branchesScope['home'], child: const OverviewPage()),
                   routes: <GoRoute>[
                     GoRoute(
                       name: 'proxies',
@@ -118,47 +109,51 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
                     ),
-                    if (isMobileBreakpoint)
-                      GoRoute(
-                        name: 'profileDetails',
-                        path: '/profile-details/:id',
-                        pageBuilder: (_, state) => customTransition(
-                          TransitionType.fade,
-                          state.pageKey,
-                          ProfileDetailsPage(id: state.pathParameters['id']!),
-                        ),
-                      ),
                   ],
                 ),
               ],
             ),
-            if (showProfilesAction)
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'profiles',
-                    path: '/profiles',
-                    builder: (_, _) => FocusScope(node: branchesScope['profiles'], child: const ProfilesPage()),
-                    routes: <GoRoute>[
-                      GoRoute(
-                        name: 'profileDetails',
-                        path: '/profiles/:id',
-                        pageBuilder: (_, state) => customTransition(
-                          TransitionType.fade,
-                          state.pageKey,
-                          ProfileDetailsPage(id: state.pathParameters['id']!),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             StatefulShellBranch(
               routes: <GoRoute>[
                 GoRoute(
                   name: 'split',
                   path: '/split',
-                  builder: (_, _) => FocusScope(node: branchesScope['split'], child: const SplitTunnelPage()),
+                  builder: (_, _) => FocusScope(node: branchesScope['split'], child: const SplitTunnelTablePage()),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'errors',
+                  path: '/errors',
+                  builder: (_, _) => FocusScope(node: branchesScope['errors'], child: const ErrorsPage()),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'servers',
+                  path: '/servers',
+                  builder: (_, _) => FocusScope(node: branchesScope['servers'], child: const ServersPage()),
+                  routes: <GoRoute>[
+                    GoRoute(
+                      name: 'profileDetails',
+                      path: '/servers/:id',
+                      pageBuilder: (_, state) => customTransition(
+                        TransitionType.fade,
+                        state.pageKey,
+                        ProfileDetailsPage(id: state.pathParameters['id']!),
+                      ),
+                    ),
+                    GoRoute(
+                      name: 'profiles',
+                      path: '/profiles',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.fade, state.pageKey, const ProfilesPage()),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -172,10 +167,16 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                     child: PopScope(
                       canPop: false,
                       onPopInvokedWithResult: (_, _) => context.goNamed('home'),
-                      child: SettingsPage(),
+                      child: const RescueSettingsPage(),
                     ),
                   ),
                   routes: <GoRoute>[
+                    GoRoute(
+                      name: advancedSettingsRouteName,
+                      path: '/advanced',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.slide, state.pageKey, const AdvancedSettingsPage()),
+                    ),
                     GoRoute(
                       name: 'general',
                       path: '/general',
@@ -220,44 +221,22 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.slide, state.pageKey, const WarpOptionsPage()),
                     ),
-                    if (isMobileBreakpoint) ...[
-                      GoRoute(
-                        name: 'logs',
-                        path: '/logs',
-                        pageBuilder: (_, state) =>
-                            customTransition(TransitionType.slide, state.pageKey, const LogsPage()),
-                      ),
-                      GoRoute(
-                        name: 'about',
-                        path: '/about',
-                        pageBuilder: (_, state) =>
-                            customTransition(TransitionType.slide, state.pageKey, const AboutPage()),
-                      ),
-                    ],
+                    GoRoute(
+                      name: 'logs',
+                      path: '/logs',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.slide, state.pageKey, const LogsPage()),
+                    ),
+                    GoRoute(
+                      name: 'about',
+                      path: '/about',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.slide, state.pageKey, const AboutPage()),
+                    ),
                   ],
                 ),
               ],
             ),
-            if (!isMobileBreakpoint) ...[
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'logs',
-                    path: '/logs',
-                    builder: (_, _) => FocusScope(node: branchesScope['logs'], child: const LogsPage()),
-                  ),
-                ],
-              ),
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'about',
-                    path: '/about',
-                    builder: (_, _) => FocusScope(node: branchesScope['about'], child: const AboutPage()),
-                  ),
-                ],
-              ),
-            ],
           ],
         ),
         GoRoute(name: 'intro', path: '/intro', builder: (_, _) => const IntroPage()),
