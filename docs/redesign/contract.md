@@ -37,6 +37,9 @@ sing-box (подмодуль hiddify-sing-box) НЕ меняем: всё нов�
 - HiddifyOptions: `"rescue-stats-dir": "<путь>"` (Go: `RescueStatsDir string json:"rescue-stats-dir"`).
   Пусто — ядро ничего не пишет и не замеряет. Приложение передаёт `<baseDir>/stats` на
   Windows, если в настройках включён сбор (по умолчанию включён).
+- HiddifyOptions: `"rescue-stats-probe": false` (Go: `RescueStatsProbe *bool json:"rescue-stats-probe"`)
+  — не делать замеры `probe` (пинг). Нет поля или true — замеры идут. Ошибки и `counters`
+  пишутся независимо от этого флага. Приложение ставит false, когда выключено «Замерять пинг».
 - Формат: JSON Lines, UTF-8, одна запись — одна строка, только дописывание. Файлы по
   местной дате: `errors-YYYYMMDD.jsonl`, `quality-YYYYMMDD.jsonl`.
 - Ядро удаляет `errors-*` старше 7 дней и `quality-*` старше 30 дней (при старте и раз в сутки).

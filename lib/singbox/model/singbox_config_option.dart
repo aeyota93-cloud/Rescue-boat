@@ -45,6 +45,7 @@ class SingboxConfigOption with _$SingboxConfigOption {
     String? splitTunnelDir,
     // Шлюпка: папка статистики (ошибки соединений, замеры качества). null — ядро ничего не собирает.
     @JsonKey(includeIfNull: false) String? rescueStatsDir,
+    @JsonKey(includeIfNull: false) bool? rescueStatsProbe,
     required bool enableTun,
     // required bool enableTunService,
     required bool setSystemProxy,

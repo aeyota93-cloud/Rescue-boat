@@ -465,6 +465,8 @@ abstract class ConfigOptions {
       webSecret: clashApiSecret,
       splitTunnelDir: _splitTunnelDir(ref),
       rescueStatsDir: _rescueStatsDir(ref),
+      // false — ядро не делает замеры пинга (ошибки пишутся по-прежнему).
+      rescueStatsProbe: ref.watch(insightsSettingsProvider).measurePing ? null : false,
       enableTun: mode == ServiceMode.tun,
       // enableTunService: mode == false, //ServiceMode.tunService,
       setSystemProxy: mode == ServiceMode.systemProxy,
