@@ -1,5 +1,6 @@
 import 'package:dartx/dartx.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
@@ -10,9 +11,10 @@ import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/route_rules/data/core_rules.dart';
 import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
 import 'package:hiddify/features/settings/model/config_option_failure.dart';
+import 'package:hiddify/features/split_tunnel/data/connections.dart';
+import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/singbox/model/singbox_config_option.dart';
-import 'package:hiddify/singbox/model/singbox_rule.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -373,6 +375,14 @@ abstract class ConfigOptions {
     "warp2.wireguard-config": warp2WireguardConfig,
   };
 
+  // Шлюпка: списки раздельного туннеля. Чтение провайдера создаёт файлы наборов правил
+  // (в том числе «игры мимо VPN» при первом запуске) до старта ядра.
+  static String? _splitTunnelDir(Ref ref) {
+    if (!PlatformUtils.isDesktop) return null;
+    ref.read(splitTunnelProvider);
+    return splitTunnelDir(ref.watch(appDirectoriesProvider).requireValue.baseDir);
+  }
+
   static final singboxConfigOptions = Provider<SingboxConfigOption>((ref) {
     // Шлюпка: правила пользователя (сайты, программы мимо VPN) уходят в ядро.
     final rules = ref.watch(rulesNotifierProvider).map(ruleToCoreJson).toList();
@@ -442,6 +452,8 @@ abstract class ConfigOptions {
       urlTestInterval: ref.watch(urlTestInterval),
       enableClashApi: ref.watch(enableClashApi),
       clashApiPort: ref.watch(clashApiPort),
+      webSecret: clashApiSecret,
+      splitTunnelDir: _splitTunnelDir(ref),
       enableTun: mode == ServiceMode.tun,
       // enableTunService: mode == false, //ServiceMode.tunService,
       setSystemProxy: mode == ServiceMode.systemProxy,

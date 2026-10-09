@@ -22,6 +22,7 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
+import 'package:hiddify/features/split_tunnel/widget/split_tunnel_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -31,6 +32,7 @@ part 'routing_config_notifier.g.dart';
 final branchesScope = <String, FocusScopeNode>{
   'home': FocusScopeNode(),
   'profiles': FocusScopeNode(),
+  'split': FocusScopeNode(),
   'settings': FocusScopeNode(),
   'logs': FocusScopeNode(),
   'about': FocusScopeNode(),
@@ -41,13 +43,14 @@ final loadingConfig = RoutingConfig(
   routes: <RouteBase>[GoRoute(path: '/home', builder: (context, state) => const Material())],
 );
 
+// Шлюпка: 'split' — «Раздельный туннель» сразу после главной (и профилей).
 String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index) => isMobileBreakpoint
-    ? ['home', 'settings'][index]
-    : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'][index];
+    ? ['home', 'split', 'settings'][index]
+    : ['home', if (showProfilesAction) 'profiles', 'split', 'settings', 'logs', 'about'][index];
 
 int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name) => isMobileBreakpoint
-    ? ['home', 'settings'].indexOf(name)
-    : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'].indexOf(name);
+    ? ['home', 'split', 'settings'].indexOf(name)
+    : ['home', if (showProfilesAction) 'profiles', 'split', 'settings', 'logs', 'about'].indexOf(name);
 
 @Riverpod(keepAlive: true)
 class RoutingConfigNotifier extends _$RoutingConfigNotifier {
@@ -148,6 +151,15 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                   ),
                 ],
               ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'split',
+                  path: '/split',
+                  builder: (_, _) => FocusScope(node: branchesScope['split'], child: const SplitTunnelPage()),
+                ),
+              ],
+            ),
             StatefulShellBranch(
               routes: <GoRoute>[
                 GoRoute(

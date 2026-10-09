@@ -39,6 +39,10 @@ class SingboxConfigOption with _$SingboxConfigOption {
     @IntervalInSecondsConverter() required Duration urlTestInterval,
     required bool enableClashApi,
     required int clashApiPort,
+    // Шлюпка: пароль Clash API (вкладка «Сейчас в сети» читает соединения) и папка списков
+    // раздельного туннеля (ядро перечитывает их на лету).
+    required String webSecret,
+    String? splitTunnelDir,
     required bool enableTun,
     // required bool enableTunService,
     required bool setSystemProxy,
