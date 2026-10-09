@@ -6,6 +6,7 @@ import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/core/utils/json_converters.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
+import 'package:hiddify/features/insights/notifier/insights_settings.dart';
 import 'package:hiddify/features/log/model/log_level.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/route_rules/data/core_rules.dart';
@@ -383,6 +384,15 @@ abstract class ConfigOptions {
     return splitTunnelDir(ref.watch(appDirectoriesProvider).requireValue.baseDir);
   }
 
+  // Шлюпка: папка статистики для ошибок и «Здоровья подключения»; сбор выключен — null.
+  static String? _rescueStatsDir(Ref ref) {
+    if (!PlatformUtils.isDesktop) return null;
+    return rescueStatsDirOption(
+      ref.watch(appDirectoriesProvider).requireValue.baseDir,
+      ref.watch(insightsSettingsProvider),
+    );
+  }
+
   static final singboxConfigOptions = Provider<SingboxConfigOption>((ref) {
     // Шлюпка: правила пользователя (сайты, программы мимо VPN) уходят в ядро.
     final rules = ref.watch(rulesNotifierProvider).map(ruleToCoreJson).toList();
@@ -454,6 +464,9 @@ abstract class ConfigOptions {
       clashApiPort: ref.watch(clashApiPort),
       webSecret: clashApiSecret,
       splitTunnelDir: _splitTunnelDir(ref),
+      rescueStatsDir: _rescueStatsDir(ref),
+      // false — ядро не делает замеры пинга (ошибки пишутся по-прежнему).
+      rescueStatsProbe: ref.watch(insightsSettingsProvider).measurePing ? null : false,
       enableTun: mode == ServiceMode.tun,
       // enableTunService: mode == false, //ServiceMode.tunService,
       setSystemProxy: mode == ServiceMode.systemProxy,

@@ -222,3 +222,85 @@ class DailyHealth {
   /// Минуты, когда все vpn-замеры терялись (сервер недоступен).
   final int outageMinutes;
 }
+
+/// Запись из quality-*.jsonl: замер (probe) или счётчики за минуту (counters).
+sealed class QualityRecord {
+  const QualityRecord(this.time);
+
+  final DateTime time;
+
+  /// null — строка не похожа на запись о качестве (или вид записи неизвестен).
+  static QualityRecord? tryParse(Map<String, dynamic> json) {
+    final t = json['t'];
+    if (t is! num) return null;
+    final time = DateTime.fromMillisecondsSinceEpoch(t.toInt());
+    switch (json['type']) {
+      case 'probe':
+        final raw = json['samples'];
+        if (raw is! List) return null;
+        return QualityProbe(
+          time: time,
+          path: json['path'] as String? ?? '',
+          samples: [for (final s in raw) s is num ? s.toInt() : null],
+        );
+      case 'counters':
+        return QualityCounters(
+          time: time,
+          conns: (json['conns'] as num?)?.toInt() ?? 0,
+          errs: (json['errs'] as num?)?.toInt() ?? 0,
+          dnsOk: (json['dns_ok'] as num?)?.toInt() ?? 0,
+          dnsFail: (json['dns_fail'] as num?)?.toInt() ?? 0,
+        );
+    }
+    return null;
+  }
+}
+
+/// Пять запросов подряд через VPN (path = vpn) или напрямую (direct). null в samples — потеря.
+class QualityProbe extends QualityRecord {
+  const QualityProbe({required DateTime time, required this.path, required this.samples}) : super(time);
+
+  final String path;
+  final List<int?> samples;
+
+  bool get isVpn => path == 'vpn';
+}
+
+/// Счётчики ядра за прошедшую минуту.
+class QualityCounters extends QualityRecord {
+  const QualityCounters({
+    required DateTime time,
+    required this.conns,
+    required this.errs,
+    required this.dnsOk,
+    required this.dnsFail,
+  }) : super(time);
+
+  final int conns;
+  final int errs;
+  final int dnsOk;
+  final int dnsFail;
+}
+
+/// Настройки сбора: «Собирать ошибки соединений» и «Замерять пинг».
+class InsightsSettings {
+  const InsightsSettings({this.collectErrors = true, this.measurePing = true});
+
+  final bool collectErrors;
+  final bool measurePing;
+
+  /// Ядру нужна папка статистики, если включено хоть что-то.
+  bool get anyEnabled => collectErrors || measurePing;
+
+  InsightsSettings copyWith({bool? collectErrors, bool? measurePing}) => InsightsSettings(
+    collectErrors: collectErrors ?? this.collectErrors,
+    measurePing: measurePing ?? this.measurePing,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is InsightsSettings && other.collectErrors == collectErrors && other.measurePing == measurePing;
+
+  @override
+  int get hashCode => Object.hash(collectErrors, measurePing);
+}
