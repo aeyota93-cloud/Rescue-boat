@@ -311,8 +311,7 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
         isUnlimitedTraffic(info)
             ? '${formatGb(info.consumption)} ГБ, без ограничения'
             : '${formatGb(info.consumption)} из ${formatGb(info.total)} ГБ',
-      if (info != null && !isUnlimitedTime(info))
-        info.isExpired ? 'истекла' : 'до ${ruDate(info.expire.toLocal())}',
+      if (info != null && !isUnlimitedTime(info)) info.isExpired ? 'истекла' : 'до ${ruDate(info.expire.toLocal())}',
       'обновлена ${updatedLabel(profile.lastUpdate, now)}',
     ].join(' · ');
     return Container(
@@ -396,7 +395,8 @@ class _ProfileMenu extends ConsumerWidget {
           PopupMenuItem(
             onTap: () async {
               final link = LinkParser.generateSubShareLink(remote.url, remote.name);
-              if (link.isNotEmpty) await ref.read(dialogNotifierProvider.notifier).showQrCode(link, message: remote.name);
+              if (link.isEmpty) return;
+              await ref.read(dialogNotifierProvider.notifier).showQrCode(link, message: remote.name);
             },
             child: const Text('Показать QR-код'),
           ),
@@ -540,9 +540,7 @@ class _ServersCard extends ConsumerWidget {
           switch (proxies) {
             AsyncData(value: final group?) when group.items.isNotEmpty => _ServersTable(group: group),
             AsyncData() => const _Note('В подписке нет серверов.'),
-            AsyncError(error: ServiceNotRunning()) => const _Note(
-              'Список серверов и пинг видны, когда VPN подключён.',
-            ),
+            AsyncError(error: ServiceNotRunning()) => const _Note('Список серверов и пинг видны, когда VPN подключён.'),
             AsyncError() => const _Note('Не удалось получить список серверов от ядра.'),
             _ => const Padding(
               padding: EdgeInsets.all(16),
@@ -568,8 +566,10 @@ class _Note extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) =>
-      Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(text, style: RescueText.smallSecondary));
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    child: Text(text, style: RescueText.smallSecondary),
+  );
 }
 
 class _ServersTable extends ConsumerWidget {
@@ -595,7 +595,7 @@ class _ServersTable extends ConsumerWidget {
           () {
             final selected = group.selected == item.tag;
             final name = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
-            final proto = protocolName(item.type);
+            final proto = item.isGroup ? '—' : protocolName(item.type);
             final delay = item.urlTestDelay;
             final overall = selected && health != null && !health.isEmpty ? health.overall : null;
             final sub = _subtitle(item);
@@ -631,10 +631,7 @@ class _ServersTable extends ConsumerWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: RescueProgressBar(
-                        value: pingFraction(delay),
-                        color: _pingColor(delay),
-                      ),
+                      child: RescueProgressBar(value: pingFraction(delay), color: _pingColor(delay)),
                     ),
                     const SizedBox(width: 10),
                     SizedBox(
@@ -651,7 +648,9 @@ class _ServersTable extends ConsumerWidget {
                 if (overall != null)
                   Row(
                     children: [
-                      Expanded(child: ScoreBar(good: overall.good, fair: overall.fair, poor: overall.poor, gap: 2)),
+                      Expanded(
+                        child: ScoreBar(good: overall.good, fair: overall.fair, poor: overall.poor, gap: 2),
+                      ),
                       const SizedBox(width: 8),
                       SizedBox(width: 28, child: Text('${overall.score}', style: RescueText.bodyStrong)),
                     ],

@@ -39,10 +39,7 @@ class AdvancedSettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 const Expanded(
-                  child: RescuePageHeader(
-                    title: 'Для опытных',
-                    subtitle: 'Обычно менять не нужно',
-                  ),
+                  child: RescuePageHeader(title: 'Для опытных', subtitle: 'Обычно менять не нужно'),
                 ),
               ],
             ),

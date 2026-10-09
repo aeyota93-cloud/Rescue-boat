@@ -136,8 +136,7 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
   List<NetConnection>? connections,
   List<ErrorGroup> errors,
 ) {
-  int? count(SplitKind kind, String value) =>
-      connections?.where((c) => _connMatches(kind, value, c)).length;
+  int? count(SplitKind kind, String value) => connections?.where((c) => _connMatches(kind, value, c)).length;
 
   final entries = <TunnelEntry>[];
   void addEntry(SplitKind kind, String value, SplitTarget? target) => entries.add(

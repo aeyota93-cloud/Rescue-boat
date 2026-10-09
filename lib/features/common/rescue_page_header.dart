@@ -21,12 +21,7 @@ class RescuePageHeader extends StatelessWidget {
         if (subtitle != null) ...[const SizedBox(height: 2), Text(subtitle, style: RescueText.pageSubtitle)],
       ],
     );
-    final buttons = Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: actions,
-    );
+    final buttons = Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: actions);
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 56),
       child: LayoutBuilder(

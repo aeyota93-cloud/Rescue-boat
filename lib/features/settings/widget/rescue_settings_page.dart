@@ -14,6 +14,7 @@ import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
+import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -100,7 +101,11 @@ class _Section extends StatelessWidget {
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Semantics(header: true, child: Text(title, style: RescueText.cardTitle)),
           ),
-          if (note != null) Text(note, style: RescueText.caption),
+          if (note != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(note, style: RescueText.caption),
+            ),
           ...children,
         ],
       ),
@@ -127,9 +132,9 @@ class _StartupSection extends HookConsumerWidget {
         await (value ? notifier.enable() : notifier.disable());
       } catch (_) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Не удалось изменить автозапуск. Нужны права администратора.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Не удалось изменить автозапуск. Нужны права администратора.')));
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -202,8 +207,8 @@ class _TrafficSection extends ConsumerWidget {
         SettingsSwitchTile(
           title: 'Игры и лаунчеры мимо VPN',
           subtitle: games == total || games == 0
-              ? '$total программы, их видно в раздельном туннеле'
-              : '$games из $total программ, их видно в раздельном туннеле',
+              ? '$total ${pluralRu(total, 'программа', 'программы', 'программ')}, их видно в раздельном туннеле'
+              : '$games из $total ${pluralRu(total, 'программы', 'программ', 'программ')}, их видно в раздельном туннеле',
           value: games > 0,
           onChanged: (v) => setDefaultGamesBypass(ref.read(splitTunnelProvider.notifier), v),
           divider: false,
@@ -333,19 +338,26 @@ class _BypassBlocksSection extends ConsumerWidget {
                 _ParamRow(
                   title: 'Что делить',
                   subtitle: 'Если не помогает — попробуйте первые несколько пакетов',
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _fragmentPackets.containsKey(packets) ? packets : 'tlshello',
-                      isDense: true,
-                      dropdownColor: RescueColors.card,
-                      style: RescueText.small,
-                      items: [
-                        for (final e in _fragmentPackets.entries)
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) ref.read(ConfigOptions.fragmentPackets.notifier).update(v);
-                      },
+                  child: SizedBox(
+                    width: 240,
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _fragmentPackets.containsKey(packets) ? packets : 'tlshello',
+                        isDense: true,
+                        isExpanded: true,
+                        dropdownColor: RescueColors.card,
+                        style: RescueText.small,
+                        items: [
+                          for (final e in _fragmentPackets.entries)
+                            DropdownMenuItem(
+                              value: e.key,
+                              child: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) ref.read(ConfigOptions.fragmentPackets.notifier).update(v);
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -422,7 +434,10 @@ class _ParamRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: RescueColors.text)),
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: RescueColors.text),
+                ),
                 Text(subtitle, style: RescueText.caption),
               ],
             ),
@@ -522,8 +537,7 @@ class _AdvancedSection extends StatelessWidget {
           SettingsLinkTile(
             title: 'Все настройки для опытных',
             subtitle: 'Ещё: прочие настройки ядра, о программе',
-            onTap: () =>
-                openRescueRoute(context, advancedSettingsRouteName, fallback: const AdvancedSettingsPage()),
+            onTap: () => openRescueRoute(context, advancedSettingsRouteName, fallback: const AdvancedSettingsPage()),
           ),
         ],
       ),

@@ -115,10 +115,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
                   ),
                   if (connections == null) ...[
                     const SizedBox(height: 4),
-                    const Text(
-                      '«Сейчас» появится, когда VPN подключён.',
-                      style: RescueText.caption,
-                    ),
+                    const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
                   ],
                 ],
               ),
@@ -241,7 +238,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     return RescueTableRow(
       // Программа в сети: по нажатию — куда она ходит, с переносом сайта или IP в списки.
       onTap: e.kind == SplitKind.app && e.online
-          ? () => showDialog<void>(context: context, builder: (_) => _AppConnectionsDialog(exe: e.value))
+          ? () => showDialog<void>(
+              context: context,
+              builder: (_) => _AppConnectionsDialog(exe: e.value),
+            )
           : null,
       cells: [
         Padding(
@@ -396,7 +396,14 @@ class SplitTunnelTablePage extends HookConsumerWidget {
 // ---------- ячейки ----------
 
 class _NameCell extends StatelessWidget {
-  const _NameCell({required this.title, required this.detail, required this.tint, this.letter, this.leading, this.trailing});
+  const _NameCell({
+    required this.title,
+    required this.detail,
+    required this.tint,
+    this.letter,
+    this.leading,
+    this.trailing,
+  });
 
   final String title;
   final String detail;
@@ -499,7 +506,10 @@ class _ErrorsCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (errors == 0) {
-      return const Text('нет', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.textSecondary));
+      return const Text(
+        'нет',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.textSecondary),
+      );
     }
     return RescueBadge.tag(
       label: '$errors',
@@ -646,9 +656,8 @@ class _RunningAppsDialog extends HookConsumerWidget {
                       value: selected.value.contains(key),
                       title: Text(app.title),
                       subtitle: Text(inList == null ? app.exe : '${app.exe} · сейчас «${inList.title}»'),
-                      onChanged: (v) => selected.value = v ?? false
-                          ? {...selected.value, key}
-                          : ({...selected.value}..remove(key)),
+                      onChanged: (v) =>
+                          selected.value = v ?? false ? {...selected.value, key} : ({...selected.value}..remove(key)),
                     );
                   },
                 ),
