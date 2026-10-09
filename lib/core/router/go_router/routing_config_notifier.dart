@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
@@ -15,6 +16,7 @@ import 'package:hiddify/features/profile/details/profile_details_page.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_page.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_page.dart';
+import 'package:hiddify/features/rescue_ui/gallery_page.dart';
 import 'package:hiddify/features/settings/overview/sections/dns_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/general_page.dart';
 import 'package:hiddify/features/settings/overview/sections/inbound_options_page.dart';
@@ -259,6 +261,8 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           ],
         ),
         GoRoute(name: 'intro', path: '/intro', builder: (_, _) => const IntroPage()),
+        // Шлюпка: витрина кирпичиков нового дизайна, только в отладочной сборке.
+        if (kDebugMode) GoRoute(name: 'uiGallery', path: '/ui-gallery', builder: (_, _) => const RescueGalleryPage()),
       ],
     );
   }
