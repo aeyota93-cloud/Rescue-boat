@@ -43,6 +43,8 @@ class SingboxConfigOption with _$SingboxConfigOption {
     // раздельного туннеля (ядро перечитывает их на лету).
     required String webSecret,
     String? splitTunnelDir,
+    // Шлюпка: папка статистики (ошибки соединений, замеры качества). null — ядро ничего не собирает.
+    @JsonKey(includeIfNull: false) String? rescueStatsDir,
     required bool enableTun,
     // required bool enableTunService,
     required bool setSystemProxy,
