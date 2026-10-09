@@ -1,0 +1,258 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart' show Unit, unit;
+import 'package:hiddify/features/insights/model/insights_models.dart';
+import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
+import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
+import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
+import 'package:hiddify/features/proxy/model/proxy_failure.dart';
+import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/servers/widget/servers_page.dart';
+import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import '../screens_test_helpers.dart';
+
+const _gb = 1024 * 1024 * 1024;
+
+class _FakeProfiles extends ProfilesNotifier {
+  _FakeProfiles(this.list);
+
+  final List<ProfileEntity> list;
+  final selected = <String>[];
+  final deleted = <String>[];
+
+  @override
+  Stream<List<ProfileEntity>> build() => Stream.value(list);
+
+  @override
+  Future<Unit> selectActiveProfile(String id) async {
+    selected.add(id);
+    return unit;
+  }
+
+  @override
+  Future<void> deleteProfile(ProfileEntity profile) async => deleted.add(profile.id);
+}
+
+class _FakeProxies extends ProxiesOverviewNotifier {
+  _FakeProxies(this.group, {this.error});
+
+  final OutboundGroup? group;
+  final Object? error;
+  final changed = <String>[];
+  final tested = <String>[];
+
+  @override
+  Stream<OutboundGroup?> build() => error != null ? Stream.error(error!) : Stream.value(group);
+
+  @override
+  Future<void> changeProxy(String groupTag, String outboundTag) async => changed.add('$groupTag/$outboundTag');
+
+  @override
+  Future<void> urlTest(String groupTag) async => tested.add(groupTag);
+}
+
+class _FakeAdd extends AddProfileNotifier {
+  final added = <String>[];
+
+  @override
+  AsyncValue<Unit?> build() => const AsyncData(null);
+
+  @override
+  Future<void> addClipboard(String rawInput) async => added.add(rawInput);
+}
+
+class _FakeUpdate extends UpdateProfileNotifier {
+  @override
+  AsyncValue<Unit?> build(String id) => const AsyncData(null);
+}
+
+void main() {
+  late Directory dir;
+
+  setUp(() => dir = Directory.systemTemp.createTempSync('servers_page_'));
+  tearDown(() => dir.deleteSync(recursive: true));
+
+  final now = DateTime.now();
+  final main = RemoteProfileEntity(
+    id: 'p1',
+    active: true,
+    name: 'Основной',
+    url: 'https://example.com/sub',
+    lastUpdate: now,
+    options: const ProfileOptions(updateInterval: Duration(hours: 6)),
+    subInfo: SubscriptionInfo(
+      upload: 0,
+      download: 48 * _gb,
+      total: 200 * _gb,
+      expire: now.add(const Duration(days: 31, hours: 1)),
+    ),
+  );
+  final local = LocalProfileEntity(id: 'p2', active: false, name: 'Домашний', lastUpdate: now);
+
+  OutboundGroup servers() => OutboundGroup(
+    tag: 'select',
+    type: 'selector',
+    selected: 'nl',
+    items: [
+      OutboundInfo(tag: 'auto', type: 'urltest', urlTestDelay: 48, isGroup: true, tagDisplay: 'Автовыбор'),
+      OutboundInfo(tag: 'nl', type: 'vless', urlTestDelay: 120, tagDisplay: 'Нидерланды', host: 'first.example'),
+      OutboundInfo(tag: 'de', type: 'trojan', urlTestDelay: 70000, tagDisplay: 'Германия'),
+    ],
+  );
+
+  final health = HealthSnapshot(
+    overall: const HealthMetric(title: 'Общая оценка', score: 92, good: 0.8, fair: 0.14, poor: 0.06, caption: ''),
+    ping: HealthSnapshot.empty.ping,
+    stability: HealthSnapshot.empty.stability,
+    errorsFree: HealthSnapshot.empty.errorsFree,
+    dns: HealthSnapshot.empty.dns,
+    pingMs: 48,
+    jitterMs: 3,
+    lossPercent: 0,
+  );
+
+  Future<ProviderContainer> start(
+    WidgetTester tester, {
+    required _FakeProfiles profiles,
+    required _FakeProxies proxies,
+    _FakeAdd? add,
+    Size size = const Size(1440, 1000),
+  }) async {
+    final container = await tester.runAsync(
+      () => screensContainer(
+        dir,
+        overrides: [
+          profilesNotifierProvider.overrideWith(() => profiles),
+          proxiesOverviewNotifierProvider.overrideWith(() => proxies),
+          addProfileNotifierProvider.overrideWith(() => add ?? _FakeAdd()),
+          for (final p in profiles.list) updateProfileNotifierProvider(p.id).overrideWith(_FakeUpdate.new),
+          healthProvider.overrideWith((ref) => AsyncData(health)),
+        ],
+      ),
+    );
+    await pumpPage(tester, container!, const ServersPage(), size: size);
+    return container;
+  }
+
+  Future<void> tapText(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  group('подписи', () {
+    test('гигабайты, даты, протоколы, пинг', () {
+      expect(formatGb(48 * _gb), '48');
+      expect(formatGb(_gb * 3 ~/ 2), '1,5');
+      expect(formatGb(2 * _gb), '2');
+      expect(ruDate(DateTime(2026, 11, 9, 12)), '9 ноября');
+      expect(daysLeftLabel(DateTime(2026, 11, 9, 12), DateTime(2026, 10, 9, 10)), 'ещё 31 день');
+      expect(daysLeftLabel(DateTime(2026, 10, 2), DateTime(2026, 10, 9)), 'истекла');
+      expect(updatedLabel(DateTime(2026, 10, 9, 12, 40), DateTime(2026, 10, 9, 18)), '12:40');
+      expect(updatedLabel(DateTime(2026, 10, 8, 12, 40), DateTime(2026, 10, 9, 18)), '8 октября');
+      expect(protocolName('vless'), 'VLESS');
+      expect(protocolName('urltest'), 'Автовыбор');
+      expect(pingLabel(0), '—');
+      expect(pingLabel(48), '48 мс');
+      expect(pingLabel(70000), 'нет ответа');
+      expect(autoUpdateLabel(main), 'сама, раз в 6 часов');
+      expect(autoUpdateLabel(local), 'конфиг без ссылки');
+    });
+  });
+
+  for (final size in const [Size(400, 900), Size(1440, 1000)]) {
+    testWidgets('с данными, ${size.width.toInt()} px: подписка, запасной, серверы, без переполнений', (tester) async {
+      final container = await start(
+        tester,
+        profiles: _FakeProfiles([main, local]),
+        proxies: _FakeProxies(servers()),
+        size: size,
+      );
+      expectNoLayoutErrors(tester);
+
+      expect(find.text('Основной'), findsOneWidget);
+      expect(find.text('активна'), findsOneWidget);
+      expect(find.text('48 из 200 ГБ'), findsOneWidget);
+      expect(find.text('ещё 31 день'), findsOneWidget);
+      expect(find.text('сама, раз в 6 часов'), findsOneWidget);
+      expect(find.text('Запасной'), findsOneWidget);
+      expect(find.text('Добавить запасной'), findsOneWidget);
+      expect(find.text('Другие подписки'), findsOneWidget);
+      expect(find.text('Домашний'), findsOneWidget);
+
+      expect(find.text('Нидерланды'), findsOneWidget);
+      expect(find.text('VLESS'), findsOneWidget);
+      expect(find.text('120 мс'), findsOneWidget);
+      expect(find.text('нет ответа'), findsOneWidget);
+      // Здоровье — только у выбранного сервера.
+      expect(find.text('92'), findsOneWidget);
+      await closePage(tester, container);
+    });
+  }
+
+  testWidgets('выбор сервера, проверка пинга, активная подписка, удаление с подтверждением', (tester) async {
+    final profiles = _FakeProfiles([main, local]);
+    final proxies = _FakeProxies(servers());
+    final container = await start(tester, profiles: profiles, proxies: proxies);
+
+    await tapText(tester, find.text('Автовыбор'));
+    expect(proxies.changed, ['select/auto']);
+
+    await tapText(tester, find.text('Проверить все'));
+    expect(proxies.tested, ['select']);
+
+    await tapText(tester, find.text('Сделать активной'));
+    expect(profiles.selected, ['p2']);
+
+    // Первая «Удалить» — у активной подписки; без подтверждения ничего не удаляется.
+    await tapText(tester, find.text('Удалить').first);
+    expect(find.text('Удалить подписку «Основной»?'), findsOneWidget);
+    await tapText(tester, find.text('Отмена'));
+    expect(profiles.deleted, isEmpty);
+
+    await tapText(tester, find.text('Удалить').first);
+    await tapText(tester, find.descendant(of: find.byType(AlertDialog), matching: find.text('Удалить')));
+    expect(profiles.deleted, ['p1']);
+
+    await closePage(tester, container);
+  });
+
+  testWidgets('добавление подписки по ссылке', (tester) async {
+    final add = _FakeAdd();
+    final container = await start(tester, profiles: _FakeProfiles([main]), proxies: _FakeProxies(servers()), add: add);
+
+    await tapText(tester, find.text('+ Добавить подписку'));
+    expect(find.text('Вставить из буфера'), findsOneWidget);
+    await tester.enterText(
+      find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)),
+      ' https://example.org/s ',
+    );
+    await tester.pump();
+    await tapText(tester, find.descendant(of: find.byType(AlertDialog), matching: find.text('Добавить')));
+    expect(add.added, ['https://example.org/s']);
+
+    await closePage(tester, container);
+  });
+
+  testWidgets('пусто и VPN выключен', (tester) async {
+    final container = await start(
+      tester,
+      profiles: _FakeProfiles(const []),
+      proxies: _FakeProxies(null, error: const ServiceNotRunning()),
+      size: const Size(400, 900),
+    );
+    expectNoLayoutErrors(tester);
+    expect(find.text('Подписок пока нет'), findsOneWidget);
+    expect(find.text('Список серверов и пинг видны, когда VPN подключён.'), findsOneWidget);
+    final check = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Проверить все'));
+    expect(check.onPressed, isNull);
+    await closePage(tester, container);
+  });
+}

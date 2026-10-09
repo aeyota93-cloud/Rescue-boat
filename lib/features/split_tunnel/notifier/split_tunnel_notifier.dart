@@ -49,6 +49,28 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
   void remove(SplitTarget target, SplitKind kind, String value) =>
       _set(state.withList(target, state.list(target).without(kind, value)));
 
+  /// Много записей одного вида в список одним сохранением (из другого списка они убираются).
+  void addAll(SplitTarget target, SplitKind kind, Iterable<String> values) {
+    var into = state.list(target);
+    var other = state.list(target.other);
+    for (final v in values) {
+      other = other.without(kind, v);
+      into = into.withItem(kind, v);
+    }
+    _set(state.withList(target.other, other).withList(target, into));
+  }
+
+  /// «Авто»: убрать записи из обоих списков, решают общие правила.
+  void removeEverywhere(SplitKind kind, Iterable<String> values) {
+    var bypass = state.bypass;
+    var via = state.via;
+    for (final v in values) {
+      bypass = bypass.without(kind, v);
+      via = via.without(kind, v);
+    }
+    _set(SplitTunnel(bypass: bypass, via: via));
+  }
+
   /// Вставка блоком: каждая строка (или элемент через запятую) распознаётся сама.
   /// Возвращает число добавленных и список нераспознанных строк.
   ({int added, List<String> skipped}) addMany(SplitTarget target, String text) {
