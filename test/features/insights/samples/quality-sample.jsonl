@@ -1,0 +1,9 @@
+{"v":1,"t":1760030400000,"type":"probe","path":"vpn","samples":[48,51,null,47,49]}
+{"v":1,"t":1760030400000,"type":"probe","path":"direct","samples":[12,11,13,12,12]}
+{"v":1,"t":1760030400000,"type":"counters","conns":143,"errs":3,"dns_ok":88,"dns_fail":0}
+{"v":1,"t":1760030460000,"type":"probe","path":"vpn","samples":[50,50,50,50,50],"extra":true}
+{"v":1,"t":1760030460000,"type":"speedtest","mbps":84}
+{"v":1,"type":"counters","conns":1}
+garbage
+{"v":1,"t":1760030460000,"type":"counters","conns":0,"errs":0,"dns_ok":0,"dns_fail":0}
+{"v":1,"t":1760030520000,"type":"probe","path":"vpn","samp

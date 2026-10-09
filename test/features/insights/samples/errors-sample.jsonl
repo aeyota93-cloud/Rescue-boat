@@ -1,0 +1,11 @@
+{"v":1,"t":1760030463000,"kind":"reset","app":"chrome.exe","host":"kinopoisk.ru","ip":"213.180.204.211","port":443,"net":"tcp","route":"vpn","dur_ms":850,"n":1,"msg":"read: connection reset by peer"}
+{"v":1,"t":1760030343000,"kind":"reset","app":"chrome.exe","host":"KinoPoisk.ru","ip":"213.180.193.230","port":443,"net":"tcp","route":"vpn","dur_ms":0,"n":3,"msg":"read: connection reset by peer"}
+not json at all
+[1,2,3]
+{"v":1,"kind":"reset","host":"no-time.example"}
+{"v":1,"t":1760029863000,"kind":"timeout","app":"steam.exe","host":"","ip":"23.62.214.9","port":443,"net":"tcp","route":"direct","dur_ms":0,"msg":"dial tcp: i/o timeout"}
+{"v":2,"t":1760030403000,"kind":"brand-new-kind","app":"Discord.exe","host":"gateway.discord.gg","route":"tunnel","future_field":{"a":1},"n":2}
+{"v":1,"t":1760030301000,"kind":"stall","app":"Discord.exe","host":"gateway.discord.gg","ip":"162.159.135.234","port":50000,"net":"udp","route":"vpn","dur_ms":120000,"gap_ms":2300,"n":1}
+{"v":1,"t":1760030453000,"kind":"suppressed","n":42}
+{"v":1,"t":1760026800000,"kind":"dns","app":"browser.exe","host":"api.example-shop.ru","route":"direct","n":1,"msg":"lookup api.example-shop.ru: NXDOMAIN"}
+{"v":1,"t":1760030464000,"kind":"res
