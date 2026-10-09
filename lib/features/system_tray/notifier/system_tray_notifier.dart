@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
+import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/window/notifier/window_notifier.dart';
@@ -32,6 +35,10 @@ class SystemTrayNotifier extends _$SystemTrayNotifier with TrayListener, AppLogg
   }
 
   Future<void> _initializeTray() async {
+    // Шлюпка: оценка и ошибки за час для меню. Следим только за числами, чтобы меню
+    // не пересобиралось при каждом перечитывании файлов (раз в 10 с).
+    final health = _safe(() => ref.watch(healthProvider.select((h) => h.valueOrNull?.overall.score)));
+    final errorsHour = _safe(() => ref.watch(errorCountProvider(const Duration(hours: 1))));
     final t = await ref.watch(translationsProvider.future);
     final urlTestDelay = await ref
         .watch(activeProxyNotifierProvider.future)
@@ -51,19 +58,47 @@ class SystemTrayNotifier extends _$SystemTrayNotifier with TrayListener, AppLogg
 
     await trayManager.setIcon(_trayIconPath(connection), isTemplate: PlatformUtils.isMacOS);
     if (!PlatformUtils.isLinux) await trayManager.setToolTip(_trayTooltip(connection, urlTestDelay, t));
-    await trayManager.setContextMenu(_trayMenu(connection, serviceMode, t));
+    await trayManager.setContextMenu(
+      _trayMenu(connection, serviceMode, t, urlTestDelay: urlTestDelay, health: health, errorsHour: errorsHour),
+    );
   }
 
-  Menu _trayMenu(ConnectionStatus connection, ServiceMode serviceMode, Translations t) => Menu(
+  /// Значение провайдера статистики; если папка или файлы недоступны — null, меню всё равно строится.
+  T? _safe<T>(T Function() read) {
+    try {
+      return read();
+    } catch (e) {
+      loggy.warning("tray: insights unavailable", e);
+      return null;
+    }
+  }
+
+  // Шлюпка: сверху статус, оценка и ошибки за час, затем «Открыть», «Подключить/Отключить», «Выйти».
+  Menu _trayMenu(
+    ConnectionStatus connection,
+    ServiceMode serviceMode,
+    Translations t, {
+    required int urlTestDelay,
+    int? health,
+    int? errorsHour,
+  }) => Menu(
     items: [
-      if (PlatformUtils.isLinux) ...[MenuItem(key: 'dashboard', label: t.common.dashboard), MenuItem.separator()],
+      MenuItem(
+        key: 'status',
+        label: vpnStatusOf(AsyncData(connection), OutboundInfo(urlTestDelay: urlTestDelay), withServer: false).label,
+        disabled: true,
+      ),
+      if (health != null) MenuItem(key: 'health', label: 'Здоровье: $health'),
+      if (errorsHour != null) MenuItem(key: 'errors', label: 'Ошибок за час: $errorsHour'),
+      MenuItem.separator(),
+      MenuItem(key: 'dashboard', label: 'Открыть'),
       MenuItem(
         key: 'connection',
         label: switch (connection) {
-          Disconnected() => t.connection.connect,
-          Connecting() => t.connection.connecting,
-          Connected() => t.connection.disconnect,
-          Disconnecting() => t.connection.disconnecting,
+          Disconnected() => 'Подключить',
+          Connecting() => 'Подключение…',
+          Connected() => 'Отключить',
+          Disconnecting() => 'Отключение…',
         },
         disabled: connection.isSwitching,
       ),
@@ -79,7 +114,7 @@ class SystemTrayNotifier extends _$SystemTrayNotifier with TrayListener, AppLogg
         ),
       ),
       MenuItem.separator(),
-      MenuItem(key: 'quit', label: t.common.quit),
+      MenuItem(key: 'quit', label: 'Выйти'),
     ],
   );
 
@@ -130,6 +165,12 @@ class SystemTrayNotifier extends _$SystemTrayNotifier with TrayListener, AppLogg
     // }
     if (menuItem.key == 'dashboard') {
       await ref.read(windowNotifierProvider.notifier).show();
+    } else if (menuItem.key == 'health') {
+      await _openAt('/home');
+    } else if (menuItem.key == 'errors') {
+      await _openAt('/errors');
+    } else if (menuItem.key == 'status') {
+      // строка-статус только для чтения
     } else if (menuItem.key == 'connection') {
       await ref.read(connectionNotifierProvider.notifier).toggleConnection();
     } else if (menuItem.key == 'quit') {
@@ -139,6 +180,12 @@ class SystemTrayNotifier extends _$SystemTrayNotifier with TrayListener, AppLogg
       loggy.debug("switching service mode: [$newMode]");
       await ref.read(ConfigOptions.serviceMode.notifier).update(newMode);
     }
+  }
+
+  /// Показать окно сразу на нужной странице.
+  Future<void> _openAt(String location) async {
+    await ref.read(windowNotifierProvider.notifier).show();
+    ref.read(goRouterNotiferProvider).go(location);
   }
 
   @override
