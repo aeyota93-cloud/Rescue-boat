@@ -58,9 +58,15 @@ Source: "{{SOURCE_DIR}}\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 [Icons]
 Name: "{autoprograms}\\{{DISPLAY_NAME}}"; Filename: "{app}\\{{EXECUTABLE_NAME}}"
 Name: "{autodesktop}\\{{DISPLAY_NAME}}"; Filename: "{app}\\{{EXECUTABLE_NAME}}"; Tasks: desktopicon
-Name: "{userstartup}\\{{DISPLAY_NAME}}"; Filename: "{app}\\{{EXECUTABLE_NAME}}"; WorkingDir: "{app}"; Tasks: launchAtStartup
+; Шлюпка: автозапуск — задача планировщика с правами администратора, а не ярлык в «Автозагрузке».
 [Run]
+; Шлюпка: задачи \RescueBoat\Start и \RescueBoat\Autostart (rescueboat-tasks.ps1).
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\rescueboat-tasks.ps1"" -Action install"; Flags: runhidden waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\rescueboat-tasks.ps1"" -Action enable-autostart"; Flags: runhidden waituntilterminated; Tasks: launchAtStartup
 Filename: "{app}\\{{EXECUTABLE_NAME}}"; Description: "{cm:LaunchProgram,{{DISPLAY_NAME}}}"; Flags: {% if PRIVILEGES_REQUIRED == 'admin' %}runascurrentuser{% endif %} nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\rescueboat-tasks.ps1"" -Action uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RescueBoatTasks"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{userappdata}\RescueBoat"

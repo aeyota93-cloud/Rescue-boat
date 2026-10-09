@@ -93,6 +93,10 @@ COMPONENT Runtime RENAME libcronet.dll)
 install(FILES "../hiddify-core/bin/HiddifyCli.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
 COMPONENT Runtime RENAME HiddifyCli.exe)
 
+# Шлюпка: задачи планировщика для запуска с правами администратора (вызывает установщик и программа).
+install(FILES "packaging/rescueboat-tasks.ps1" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+COMPONENT Runtime)
+
 
 if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"

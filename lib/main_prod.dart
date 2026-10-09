@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/bootstrap.dart';
+import 'package:hiddify/core/launch_args.dart';
 import 'package:hiddify/core/model/environment.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
+  launchArgs = args;
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

@@ -45,6 +45,42 @@ bool SendAppLinkToInstance(const std::wstring &title)
   return false;
 }
 
+// Шлюпка: режим VPN требует прав администратора. Обычный запуск (ярлык, двойной щелчок)
+// передаётся задаче планировщика \RescueBoat\Start (создаёт установщик,
+// windows/packaging/rescueboat-tasks.ps1): она запускает программу с правами без окна UAC.
+// Задачи нет (портативная версия) — программа стартует как обычно.
+static bool IsElevated()
+{
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    return false;
+  TOKEN_ELEVATION elevation = {};
+  DWORD size = 0;
+  BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+  CloseHandle(token);
+  return ok && elevation.TokenIsElevated;
+}
+
+static bool HasArgument(const wchar_t *command_line, const wchar_t *arg)
+{
+  return command_line != nullptr && wcsstr(command_line, arg) != nullptr;
+}
+
+static bool RunStartTask()
+{
+  wchar_t cmd[] = L"schtasks.exe /Run /TN \"\\RescueBoat\\Start\"";
+  STARTUPINFOW si = {sizeof(si)};
+  PROCESS_INFORMATION pi = {};
+  if (!CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+    return false;
+  WaitForSingleObject(pi.hProcess, 10000);
+  DWORD code = 1;
+  GetExitCodeProcess(pi.hProcess, &code);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return code == 0;
+}
+
 // Шлюпка: заголовок окна (по нему второй запуск находит первый).
 static const wchar_t kAppTitle[] = L"\u0428\u043b\u044e\u043f\u043a\u0430 \u0441\u043f\u0430\u0441\u0435\u043d\u0438\u044f";
 
@@ -55,6 +91,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Replace "example" with the generated title found as parameter of `window.Create` in this file.
   // You may ignore the result if you need to create another window.
   if (SendAppLinkToInstance(kAppTitle))
+  {
+    return EXIT_SUCCESS;
+  }
+
+  // --from-task: запущены задачей, второй раз не передаём (и не зацикливаемся, если у
+  // пользователя нет прав администратора). Ссылки rescueboat:// задача не передаст.
+  if (!HasArgument(command_line, L"--from-task") && !HasArgument(command_line, L"://") &&
+      !IsElevated() && RunStartTask())
   {
     return EXIT_SUCCESS;
   }

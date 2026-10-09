@@ -7,6 +7,10 @@ display_name: Шлюпка спасения
 # Явно: иначе fastforge берёт первый .exe в папке, а это HiddifyCli.exe.
 executable_name: RescueBoat.exe
 create_desktop_icon: true
+# Галочка «Запускать при входе в Windows» включена по умолчанию.
+launch_at_startup: true
+# Задачи планировщика с правами администратора создаются только из-под администратора.
+privileges_required: admin
 install_dir_name: "{autopf64}\\RescueBoat"
 setup_icon_file: windows\runner\resources\app_icon.ico
 locales:
