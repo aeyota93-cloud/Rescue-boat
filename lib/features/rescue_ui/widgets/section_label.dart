@@ -92,14 +92,22 @@ class SectionLabel extends StatelessWidget {
         if (count != null) ...[const SizedBox(width: 8), FrameTag(count, color: c)],
       ],
     );
-    final row = Row(
-      children: [
-        Expanded(
-          child: Align(alignment: AlignmentDirectional.centerStart, child: label),
+    final Widget row;
+    if (trailing == null) {
+      row = Align(alignment: AlignmentDirectional.centerStart, child: label);
+    } else {
+      // Как flex-wrap в макете: справа, если влезает, иначе — строкой ниже.
+      row = SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [label, trailing],
         ),
-        if (trailing != null) ...[const SizedBox(width: 12), Flexible(child: trailing)],
-      ],
-    );
+      );
+    }
     return screen ? ConstrainedBox(constraints: const BoxConstraints(minHeight: 44), child: row) : row;
   }
 }
