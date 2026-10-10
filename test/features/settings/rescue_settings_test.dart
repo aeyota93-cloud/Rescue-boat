@@ -117,7 +117,7 @@ void main() {
       }
       expect(find.text('Все настройки для опытных'), findsOneWidget);
       // Переключатели — RescueToggle 46×28.
-      expect(find.byType(RescueToggle), findsNWidgets(11));
+      expect(find.byType(RescueToggle), findsNWidgets(12));
       expect(tester.getSize(find.byType(RescueToggle).first), const Size(46, 28));
 
       // Фрагментация с параметрами тоже помещается.
@@ -140,6 +140,11 @@ void main() {
     expect(container.read(ConfigOptions.bypassLan), isTrue);
     await tapText(tester, 'Домашняя сеть мимо VPN');
     expect(container.read(ConfigOptions.bypassLan), isFalse);
+
+    expect(container.read(ConfigOptions.blockAds), isFalse);
+    expect(find.text('Блокировать рекламу и трекеры'), findsOneWidget);
+    await tapText(tester, 'Блокировать рекламу и трекеры');
+    expect(container.read(ConfigOptions.blockAds), isTrue);
 
     await tapText(tester, 'Собирать ошибки соединений');
     expect(container.read(insightsSettingsProvider).collectErrors, isFalse);

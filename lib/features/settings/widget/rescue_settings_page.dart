@@ -187,6 +187,7 @@ class _TrafficSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final region = ref.watch(ConfigOptions.region);
     final bypassLan = ref.watch(ConfigOptions.bypassLan);
+    final blockAds = ref.watch(ConfigOptions.blockAds);
     final bypassApps = ref.watch(splitTunnelProvider.select((s) => s.bypass.apps));
     final games = defaultGamesInBypass(bypassApps);
     final total = defaultBypassApps.length;
@@ -212,6 +213,12 @@ class _TrafficSection extends ConsumerWidget {
               : '$games из $total ${pluralRu(total, 'программы', 'программ', 'программ')}, их видно в раздельном туннеле',
           value: games > 0,
           onChanged: (v) => setDefaultGamesBypass(ref.read(splitTunnelProvider.notifier), v),
+        ),
+        SettingsSwitchTile(
+          title: 'Блокировать рекламу и трекеры',
+          subtitle: 'Режет известные рекламные и вредоносные адреса. Сайты из ваших списков туннеля не режутся.',
+          value: blockAds,
+          onChanged: ref.read(ConfigOptions.blockAds.notifier).update,
           divider: false,
         ),
       ],
