@@ -10,21 +10,31 @@ import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import '../overview/fakes.dart';
 
 void main() {
+  String stat(WidgetTester tester, String label) =>
+      tester.widget<StatColumns>(find.byType(StatColumns)).columns.firstWhere((c) => c.label == label).value;
+
   Text detailsTitle(WidgetTester tester) =>
       tester.widget<Text>(find.descendant(of: find.bySemanticsLabel('Подробности'), matching: find.byType(Text)).first);
 
   testWidgets('с данными: счётчики, группы, подробности первой группы', (tester) async {
     await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(split: FakeSplitTunnel()));
 
-    expect(find.text('Ошибки соединений'), findsOneWidget);
+    expect(find.text('ОШИБКИ СОЕДИНЕНИЙ'), findsOneWidget);
     expect(find.textContaining('Хранится только на этом компьютере, 7 дней'), findsOneWidget);
-    String tile(String label) => tester.widget<StatTile>(find.widgetWithText(StatTile, label)).value;
-    expect(tile('Всего ошибок'), '7');
-    expect(tile('Через VPN'), '5');
-    expect(tile('Мимо VPN'), '2');
-    expect(tile('Замирания связи'), '1');
+    expect(stat(tester, 'ВСЕГО ОШИБОК'), '7');
+    expect(stat(tester, 'ЧЕРЕЗ VPN'), '5');
+    expect(stat(tester, 'МИМО VPN'), '2');
+    expect(stat(tester, 'ЗАМИРАНИЯ СВЯЗИ'), '1');
 
-    // Частые сверху: kinopoisk.ru (4) выбран сразу.
+    // Тёмный список: частые сверху, kinopoisk.ru (4) выбран сразу и подсвечен жёлтым.
+    final list = tester.widget<DeepList>(find.byType(DeepList));
+    expect(list.title, 'По сайтам и программам');
+    expect(list.count, '4');
+    final tiles = tester.widgetList<DeepListTile>(find.byType(DeepListTile)).toList();
+    expect(tiles.map((t) => t.title), ['kinopoisk.ru', 'gateway.discord.gg', 'steam.exe', 'api.example-shop.ru']);
+    expect(tiles.map((t) => t.highlighted), [true, false, false, false]);
+    expect(tiles.first.subtitle, 'chrome.exe · сброс · через VPN');
+    expect(tiles[2].subtitle, 'сайт неизвестен · таймаут · мимо VPN');
     expect(detailsTitle(tester).data, 'kinopoisk.ru');
     expect(find.text('chrome.exe · идёт через VPN · 4 ошибки за сутки'), findsOneWidget);
     final bars = tester.widget<HourBars>(find.byType(HourBars));
@@ -39,6 +49,8 @@ void main() {
     await tester.tap(find.bySemanticsLabel(RegExp('^steam.exe, сайт неизвестен')));
     await tester.pump();
     expect(detailsTitle(tester).data, 'steam.exe');
+    final selected = tester.widgetList<DeepListTile>(find.byType(DeepListTile)).where((t) => t.highlighted);
+    expect(selected.single.title, 'steam.exe');
     expect(find.text('steam.exe · идёт мимо VPN · 1 ошибка за сутки'), findsOneWidget);
     expect(find.text('23.62.214.9:443'), findsOneWidget);
   });
@@ -93,7 +105,7 @@ void main() {
     await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(split: FakeSplitTunnel()));
     await tester.tap(find.text('Час'));
     await tester.pump();
-    expect(tester.widget<StatTile>(find.widgetWithText(StatTile, 'Всего ошибок')).value, '5');
+    expect(stat(tester, 'ВСЕГО ОШИБОК'), '5');
     expect(find.bySemanticsLabel(RegExp('^steam.exe')), findsNothing);
     expect(tester.widget<HourBars>(find.byType(HourBars)).counts, hasLength(12));
   });
@@ -101,12 +113,13 @@ void main() {
   testWidgets('пусто: понятное сообщение', (tester) async {
     await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(empty: true));
     expect(find.text('Ошибок нет за сутки'), findsOneWidget);
-    expect(tester.widget<StatTile>(find.widgetWithText(StatTile, 'Всего ошибок')).value, '0');
+    expect(stat(tester, 'ВСЕГО ОШИБОК'), '0');
     expect(find.byType(HourBars), findsNothing);
+    expect(find.byType(DeepList), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  for (final width in [400.0, 1440.0]) {
+  for (final width in [400.0, 900.0, 1440.0]) {
     for (final empty in [false, true]) {
       testWidgets('нет переполнения: ${width.toInt()} px, ${empty ? 'пусто' : 'с данными'}', (tester) async {
         await pumpPage(
@@ -130,10 +143,11 @@ void main() {
       overrides: pageOverrides(split: FakeSplitTunnel()),
       size: const Size(600, 900),
     );
-    final list = tester.getTopLeft(find.text('По сайтам и программам'));
-    await tester.scrollUntilVisible(find.byType(HourBars), 200);
+    final list = tester.getTopLeft(find.text('ПО САЙТАМ И ПРОГРАММАМ'));
+    final page = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.byType(HourBars), 200, scrollable: page);
     expect(tester.getTopLeft(find.byType(HourBars)).dx, closeTo(list.dx, 30));
-    await tester.scrollUntilVisible(find.text('Пустить мимо VPN'), 200);
+    await tester.scrollUntilVisible(find.text('Пустить мимо VPN'), 200, scrollable: page);
     expect(find.text('Пустить мимо VPN'), findsOneWidget);
   });
 

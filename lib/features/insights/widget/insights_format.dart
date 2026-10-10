@@ -85,3 +85,44 @@ const monoStyle = TextStyle(
   fontSize: 12,
   color: RescueColors.textSecondary,
 );
+
+/// Вид ошибки коротко — для подписей строк: «сброс», «таймаут».
+String kindShort(ErrorKind kind) => switch (kind) {
+  ErrorKind.timeout => 'таймаут',
+  ErrorKind.reset => 'сброс',
+  ErrorKind.refused => 'отказ',
+  ErrorKind.dns => 'DNS',
+  ErrorKind.tls => 'TLS',
+  ErrorKind.eof => 'закрылось сразу',
+  ErrorKind.stall => 'замирание',
+  ErrorKind.other => 'другое',
+  ErrorKind.suppressed => 'пропущено',
+};
+
+/// Самый частый вид ошибки в группе (с учётом схлопнутых n).
+ErrorKind mainKind(ErrorGroup group) {
+  final counts = <ErrorKind, int>{};
+  for (final e in group.events) {
+    if (e.kind == ErrorKind.suppressed) continue;
+    counts[e.kind] = (counts[e.kind] ?? 0) + e.count;
+  }
+  if (counts.isEmpty) return ErrorKind.other;
+  return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+}
+
+/// Буква для плитки строки: первая буква сайта (без «www.») или программы; IP — «#».
+String tileLetter(String target) {
+  final t = target.trim().toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+  if (t.isEmpty) return '?';
+  if (RegExp(r'^[\d.:\[\]a-f]+$').hasMatch(t) && RegExp(r'\d').hasMatch(t) && !RegExp('[g-z]').hasMatch(t)) {
+    return '#';
+  }
+  return t.characters.first.toUpperCase();
+}
+
+/// Подпись группы: «chrome.exe · сброс · VPN»; без сайта — «сайт неизвестен · …».
+String groupSubtitle(ErrorGroup group) {
+  final byApp = group.key.startsWith('app:');
+  final who = byApp ? 'сайт неизвестен' : (group.app.isEmpty ? 'программа неизвестна' : group.app);
+  return '$who · ${kindShort(mainKind(group))} · ${group.route.long}';
+}
