@@ -60,7 +60,16 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     _set(state.withList(target.other, other).withList(target, into));
   }
 
-  /// «Авто»: убрать записи из обоих списков, решают общие правила.
+  /// «Авто» в таблице туннеля: как по умолчанию. Обычные записи убираются из обоих списков
+  /// (решают общие правила), а игры из стандартного списка снова идут мимо VPN — иначе их
+  /// зарубежные серверы уходили бы в VPN.
+  void resetToDefault(SplitKind kind, Iterable<String> values) {
+    final games = values.where((v) => kind == SplitKind.app && defaultBypassApps.any((d) => sameItem(kind, d, v)));
+    removeEverywhere(kind, values.where((v) => !games.contains(v)).toList());
+    if (games.isNotEmpty) addAll(SplitTarget.bypass, kind, games.toList());
+  }
+
+  /// Убрать записи из обоих списков.
   void removeEverywhere(SplitKind kind, Iterable<String> values) {
     var bypass = state.bypass;
     var via = state.via;

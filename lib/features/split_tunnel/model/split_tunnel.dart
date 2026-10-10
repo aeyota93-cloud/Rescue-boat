@@ -260,4 +260,6 @@ const defaultBypassApps = [
   'WorldOfWarships.exe',
   'EscapeFromTarkov.exe',
   'Minecraft.Windows.exe',
+  'Marvel-Win64-Shipping.exe',
+  'Marvel.exe',
 ];

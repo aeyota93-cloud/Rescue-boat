@@ -269,6 +269,19 @@ void main() {
     await closePage(tester, container);
   });
 
+  testWidgets('игра из стандартного списка: «Авто» возвращает её мимо VPN', (tester) async {
+    writeState(const SplitTunnel(via: SplitList(apps: ['Marvel-Win64-Shipping.exe'])));
+    final container = await start(tester, connections: [conn('Marvel-Win64-Shipping.exe')]);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
+
+    await tapRoute(tester, 'Marvel-Win64-Shipping', 'Авто');
+    final s = container.read(splitTunnelProvider);
+    expect(s.targetOf(SplitKind.app, 'Marvel-Win64-Shipping.exe'), SplitTarget.bypass);
+    expect(s.via.apps, isEmpty);
+
+    await closePage(tester, container);
+  });
+
   testWidgets('группа игр: «VPN» переносит все игры по умолчанию', (tester) async {
     writeState(const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)));
     final container = await start(tester);

@@ -197,7 +197,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           final notifier = ref.read(splitTunnelProvider.notifier);
           switch (choice) {
             case RouteChoice.auto:
-              notifier.removeEverywhere(SplitKind.app, values);
+              notifier.resetToDefault(SplitKind.app, values);
             case RouteChoice.vpn:
               notifier.addAll(SplitTarget.via, SplitKind.app, values);
             case RouteChoice.bypass:
@@ -257,7 +257,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final notifier = ref.read(splitTunnelProvider.notifier);
     switch (choice) {
       case RouteChoice.auto:
-        notifier.removeEverywhere(kind, [value]);
+        notifier.resetToDefault(kind, [value]);
       case RouteChoice.bypass:
         notifier.add(SplitTarget.bypass, kind, value);
       case RouteChoice.vpn:
