@@ -110,6 +110,8 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     try {
       dir.createSync(recursive: true);
       _writeAtomic(dir, 'via-vpn.json', s.via.toRuleSet());
+      // Ядро rb.12+: DNS сайтов «через VPN» идёт через VPN и не режется блокировкой рекламы.
+      _writeAtomic(dir, 'via-domains.json', s.via.toDomainsRuleSet());
       _writeAtomic(dir, 'bypass-vpn.json', s.bypass.toRuleSet());
       _writeAtomic(dir, 'bypass-domains.json', s.bypass.toDomainsRuleSet());
     } catch (e, st) {
