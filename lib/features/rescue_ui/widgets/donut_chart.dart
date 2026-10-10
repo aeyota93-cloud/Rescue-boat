@@ -14,7 +14,7 @@ class DonutSegment {
   final String? label;
 }
 
-/// Шлюпка: кольцевая диаграмма (как «71 правило» на Обзоре): сегменты с зазором 3 px, число в центре.
+/// Шлюпка: кольцевая диаграмма: сегменты с зазором 3 px, тонкое число в центре, пустая — дорожка line.
 class DonutChart extends StatelessWidget {
   const DonutChart({
     super.key,
@@ -69,10 +69,9 @@ class DonutChart extends StatelessWidget {
                   if (value != null)
                     Text(
                       value,
-                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: RescueColors.text),
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w300, color: RescueColors.text),
                     ),
-                  if (label != null)
-                    Text(label, style: const TextStyle(fontSize: 12, color: RescueColors.textSecondary)),
+                  if (label != null) Text(label, style: const TextStyle(fontSize: 12, color: RescueColors.muted)),
                 ],
               ),
             ),
@@ -105,7 +104,7 @@ class DonutPainter extends CustomPainter {
     final visible = segments.where((s) => s.value.isFinite && s.value > 0).toList();
     final total = visible.fold<double>(0, (s, e) => s + e.value);
     if (total <= 0) {
-      canvas.drawCircle(rect.center, radius, paint..color = RescueColors.track);
+      canvas.drawCircle(rect.center, radius, paint..color = RescueColors.line);
       return;
     }
 

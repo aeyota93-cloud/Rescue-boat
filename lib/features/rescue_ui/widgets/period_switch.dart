@@ -1,7 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:hiddify/features/rescue_ui/widgets/segmented_control.dart';
+import 'package:hiddify/features/rescue_ui/widgets/pill_segmented.dart';
 
-/// Шлюпка: «Час / Сутки / Неделя» — сегментированный выбор периода.
+/// Шлюпка: «Час / Сутки / Неделя» — выбор периода: таблетки на дорожке card,
+/// выбранный период — жёлтый с тёмным текстом ([PillSegmentedStyle.accent]).
 ///
 /// Тип значения любой (например, InsightsPeriod из insights):
 /// ```dart
@@ -28,11 +29,15 @@ class PeriodSwitch<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RescueSegmented<T>(
-      segments: [for (final (v, label) in options) RescueSegment<T>(value: v, label: label)],
+    return PillSegmented<T>(
+      segments: [for (final (v, label) in options) PillSegment<T>(value: v, label: label)],
       value: value,
       onChanged: onChanged,
       semanticLabel: semanticLabel,
+      style: PillSegmentedStyle.accent,
+      fontSize: 13,
+      letterSpacing: 0,
+      segmentPadding: 16,
     );
   }
 }

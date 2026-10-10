@@ -6,8 +6,8 @@ import 'package:hiddify/features/rescue_ui/rescue_text.dart';
 
 /// Шлюпка: столбики по часам («Ошибки по часам»).
 ///
-/// Ноль — серая чёрточка 2 px; иначе высота растёт от 10 px до [height]
-/// пропорционально максимуму. Цвет: от [highFrom] и выше — красный, ниже — оранжевый.
+/// Ноль — чёрточка line 2 px; иначе высота растёт от 10 px до [height]
+/// пропорционально максимуму. Цвет: от [highFrom] и выше — [highColor] (warn), ниже — [color] (accent).
 class HourBars extends StatelessWidget {
   const HourBars({
     super.key,
@@ -18,6 +18,8 @@ class HourBars extends StatelessWidget {
     this.height = 64,
     this.highFrom = 3,
     this.semanticLabel,
+    this.color = RescueColors.accent,
+    this.highColor = RescueColors.warn,
   });
 
   /// Значения по порядку, обычно 24 часа, старые слева.
@@ -34,6 +36,10 @@ class HourBars extends StatelessWidget {
 
   /// Если null — «<title>: всего N, больше всего M за час».
   final String? semanticLabel;
+
+  /// Цвет обычного столбика и столбика от [highFrom].
+  final Color color;
+  final Color highColor;
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +58,10 @@ class HourBars extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (title != null) ...[Text(title, style: RescueText.caption), const SizedBox(height: 6)],
+            if (title != null) ...[
+              Text(title, style: RescueText.tableHeader.copyWith(color: RescueColors.text)),
+              const SizedBox(height: 6),
+            ],
             Container(
               height: height,
               decoration: const BoxDecoration(
@@ -76,9 +85,9 @@ class HourBars extends StatelessWidget {
                               color: v <= 0
                                   ? RescueColors.line
                                   : v >= highFrom
-                                  ? RescueColors.poor
-                                  : RescueColors.fair,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                  ? highColor
+                                  : color,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                             ),
                           ),
                         ),

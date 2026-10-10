@@ -6,8 +6,8 @@ import 'package:hiddify/features/rescue_ui/widgets/rescue_progress_bar.dart';
 
 /// Шлюпка: плитка-счётчик — подпись сверху и крупное число.
 ///
-/// Обычная: карточка с рамкой, радиус 16, число 28 px («Через VPN 12»).
-/// [inset] = true: тёмная плитка внутри карточки, число 20 px («Израсходовано 48 из 200 ГБ»).
+/// Обычная: карточка card, радиус 28, тонкое число 28 px («Через VPN 12»).
+/// [inset] = true: плитка panel внутри карточки, число 20 / 700 («Израсходовано 48 из 200 ГБ»).
 class StatTile extends StatelessWidget {
   const StatTile({
     super.key,
@@ -17,7 +17,7 @@ class StatTile extends StatelessWidget {
     this.valueColor = RescueColors.text,
     this.caption,
     this.progress,
-    this.progressColor = RescueColors.good,
+    this.progressColor = RescueColors.accent,
     this.inset = false,
   });
 
@@ -61,7 +61,11 @@ class StatTile extends StatelessWidget {
         SizedBox(height: inset ? 4 : 6),
         Text(
           value,
-          style: TextStyle(fontSize: inset ? 20 : 28, fontWeight: FontWeight.w700, color: valueColor),
+          style: TextStyle(
+            fontSize: inset ? 20 : 28,
+            fontWeight: inset ? FontWeight.w700 : FontWeight.w300,
+            color: valueColor,
+          ),
         ),
         if (caption != null) ...[const SizedBox(height: 2), Text(caption, style: RescueText.caption)],
         if (progress != null) ...[const SizedBox(height: 8), RescueProgressBar(value: progress, color: progressColor)],
@@ -70,7 +74,7 @@ class StatTile extends StatelessWidget {
 
     final tile = inset
         ? RescueCard.inset(child: content)
-        : RescueCard(radius: 16, padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18), child: content);
+        : RescueCard(radius: 28, padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20), child: content);
     return Semantics(
       container: true,
       label: [label, value, ?caption].join(', '),

@@ -1,61 +1,124 @@
 import 'package:flutter/painting.dart';
 
-/// Шлюпка: цвета тёмной темы (вариант Г), строго с макета. См. docs/redesign/contract.md, раздел 3.
+/// Шлюпка: цвета стиля «Д» (тёмный). Источник — docs/redesign/style-d.md и макет
+/// docs/redesign/mockup/style-d-dark.html.
+///
+/// Новые экраны берут токены из первого блока (page, panel, card, deep, text, muted …).
+/// Второй блок — старые имена варианта «Г», оставлены алиасами на новые значения, чтобы
+/// старые экраны собирались и выглядели прилично; в новом коде их не использовать.
 abstract final class RescueColors {
-  // Поверхности
-  static const background = Color(0xFF121220);
-  static const card = Color(0xFF1C1C2E);
-  static const line = Color(0xFF2C2C44);
+  // ── Стиль «Д»: поверхности ─────────────────────────────────────────────────────────────
 
-  /// Разделитель строк в таблицах и списках (чуть темнее [line]).
-  static const rowLine = Color(0xFF24243A);
+  /// Фон окна вокруг меню.
+  static const page = Color(0xFF141311);
+
+  /// Область выбранного раздела и сам выбранный пункт меню.
+  static const panel = Color(0xFF1F1E1B);
+
+  /// Карточки внутри области, неактивные закладки-«папки».
+  static const card = Color(0xFF2A2825);
+
+  /// Тёмные блоки-списки (ошибки, таблица туннеля), кнопка сервера.
+  static const deep = Color(0xFF121110);
+
+  // ── Стиль «Д»: текст и линии ───────────────────────────────────────────────────────────
+
+  /// Основной текст.
+  static const text = Color(0xFFF3EFE9);
+
+  /// Вторичный текст (контраст 5.4:1 на card, 6.1:1 на panel, 6.9:1 на deep).
+  static const muted = Color(0xFFA39B91);
+
+  /// Основной текст на deep (чуть светлее [text], как в макете).
+  static const textOnDeep = Color(0xFFFAF8F5);
+
+  /// Вторичный текст в тёмных списках (deep).
+  static const subOnDeep = Color(0xFFBDB5AB);
+
+  /// Линии, дорожки колец и полосок, плитки-значки в тёмных списках.
+  static const line = Color(0xFF3A3835);
+
+  /// Пунктир, рамки меток.
+  static const line2 = Color(0xFF4A4642);
+
+  /// Точка «выключено / не в сети» (только графика, не текст).
+  static const off = Color(0xFF6E675F);
+
+  // ── Стиль «Д»: акцент (жёлтый) ─────────────────────────────────────────────────────────
+
+  /// Жёлтый: блок подключения, выделенная строка, кнопки действия.
+  static const accent = Color(0xFFF4CC56);
+
+  /// Текст на жёлтом (10.9:1). На жёлтом — только тёмный текст.
+  static const onAccent = Color(0xFF1F1D1A);
+
+  /// Вторичный текст на жёлтом (6.4:1).
+  static const onAccentMuted = Color(0xFF4A4232);
+
+  /// Дорожки колец и сегменты на жёлтом.
+  static const accentDeep = Color(0xFFE8BD3F);
+
+  /// Плитка-значок в жёлтой строке.
+  static const accentTile = Color(0xFFF8DE8C);
+
+  /// Тёмная заливка и рамки на жёлтом (включённая таблетка режима, кнопка питания).
+  static const ink = Color(0xFF232220);
+
+  // ── Стиль «Д»: сигналы ─────────────────────────────────────────────────────────────────
+
+  /// Счётчик ошибок, точки-уведомления; «опасно» на тёмном фоне. Текст на нём — [onAccent].
+  static const warn = Color(0xFFE9853A);
+
+  /// «Удалить» на жёлтом (5.5:1). На тёмном не использовать — там [warn].
+  static const danger = Color(0xFF8A2E1E);
+
+  // ── Логотип-спасательный круг ──────────────────────────────────────────────────────────
+  static const logoWhite = Color(0xFFFFFFFF);
+  static const logoRed = Color(0xFFD93A2B);
+
+  // ── Старые имена (вариант «Г») → значения стиля «Д». Только для совместимости. ───────────
+
+  /// Было: фон окна. Теперь экраны лежат на области [panel], поэтому алиас на неё.
+  static const background = panel;
+
+  /// Разделитель строк.
+  static const rowLine = line;
 
   /// Выбранная строка или карточка-выбор.
-  static const selected = Color(0xFF24243F);
+  static const selected = deep;
 
-  /// Пунктир «пустой» карточки, неактивная точка «не в сети».
-  static const muted = Color(0xFF3A3A55);
+  /// Вторичный текст.
+  static const textSecondary = muted;
 
-  // Текст
-  static const text = Color(0xFFF1F1F8);
-  static const textSecondary = Color(0xFFA9A8C2);
+  /// Третичный текст.
+  static const textTertiary = subOnDeep;
 
-  /// Третичный текст: описания в таблицах, нейтральный бейдж.
-  static const textTertiary = Color(0xFFC9C8DA);
+  /// Мягкий акцент: тёмная плашка с жёлтым текстом.
+  static const softAccent = deep;
+  static const softAccentText = accent;
 
-  /// Текст на заливке акцентом (кнопка «+ Добавить»).
-  static const onAccent = Color(0xFF121220);
+  /// Дорожка полосок и колец.
+  static const track = line;
+  static const accentHover = accentTile;
 
-  // Акценты
-  static const softAccent = Color(0xFF2E2C5C);
-  static const softAccentText = Color(0xFFD3D1FF);
-  static const track = Color(0xFF2A2A40);
-  static const accent = Color(0xFF8B88F0);
-  static const accentHover = Color(0xFFB5B3FF);
-  static const teal = Color(0xFF3BBFA8);
+  /// Было: бирюзовый «мимо VPN». В стиле «Д» — светлый, чтобы отличался от жёлтого.
+  static const teal = text;
 
-  // Оценки
-  static const good = Color(0xFF3CC47C);
-  static const fair = Color(0xFFF08C1A);
-  static const poor = Color(0xFFFF7A6B);
+  /// Оценки: хорошо — жёлтый, средне — приглушённый, плохо — оранжевый.
+  static const good = accent;
+  static const fair = muted;
+  static const poor = warn;
 
-  /// Точка «отключено».
-  static const off = Color(0xFF8A8AA0);
+  // Бейджи (фон / текст): тёмная плашка с цветным текстом.
+  static const importantBg = deep;
+  static const importantText = warn;
+  static const warningBg = deep;
+  static const warningText = accent;
+  static const bypassBg = deep;
+  static const bypassText = text;
+  static const successBg = deep;
+  static const successText = accent;
 
-  // Бейджи: фон / текст
-  static const importantBg = Color(0xFF4A1D1A);
-  static const importantText = Color(0xFFFFB4A9);
-  static const warningBg = Color(0xFF45300F);
-  static const warningText = Color(0xFFFFCB85);
-  static const bypassBg = Color(0xFF123B35);
-  static const bypassText = Color(0xFF7FE0CF);
-  static const successBg = Color(0xFF123B2A);
-  static const successText = Color(0xFF8FE6B5);
-
-  /// Рамка опасной кнопки («Удалить»).
-  static const dangerBorder = Color(0xFF5A2A26);
-
-  // Логотип-спасательный круг
-  static const logoWhite = Color(0xFFDCE3EB);
-  static const logoRed = Color(0xFFD93A2B);
+  /// Рамка опасной кнопки на тёмном фоне.
+  static const dangerBorder = warn;
 }

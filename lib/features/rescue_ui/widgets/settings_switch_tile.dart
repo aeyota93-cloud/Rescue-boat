@@ -42,7 +42,7 @@ class SettingsSwitchTile extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 64),
             padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              border: divider ? const Border(bottom: BorderSide(color: RescueColors.rowLine)) : null,
+              border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
             ),
             child: Row(
               children: [
@@ -54,16 +54,16 @@ class SettingsSwitchTile extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: enabled ? RescueColors.text : RescueColors.textSecondary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: enabled ? RescueColors.text : RescueColors.muted,
                         ),
                       ),
                       if (subtitle != null) Text(subtitle, style: RescueText.caption),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 RescueToggle(value: value),
               ],
             ),

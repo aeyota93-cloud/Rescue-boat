@@ -33,6 +33,20 @@ void main() {
         PeriodSwitch,
         SettingsSwitchTile,
         ChoiceCard,
+        // Новые кирпичики стиля «Д».
+        FolderTabs,
+        RingStat,
+        PowerButton,
+        ServerSelect,
+        ModeChip,
+        PillSegmented,
+        DeepList,
+        DeepListTile,
+        StatColumns,
+        SectionLabel,
+        FrameTag,
+        ShellStatusCard,
+        RescueToggle,
       ]) {
         expect(
           find.byWidgetPredicate((w) => w.runtimeType.toString().split('<').first == type.toString().split('<').first),

@@ -8,8 +8,8 @@ class RescueSegment<T> {
     required this.value,
     required this.label,
     this.semanticLabel,
-    this.selectedBackground = RescueColors.softAccent,
-    this.selectedForeground = RescueColors.softAccentText,
+    this.selectedBackground,
+    this.selectedForeground,
   });
 
   final T value;
@@ -17,11 +17,15 @@ class RescueSegment<T> {
 
   /// Полная подпись для экранного чтеца («Мимо» → «Мимо VPN»).
   final String? semanticLabel;
-  final Color selectedBackground;
-  final Color selectedForeground;
+
+  /// Цвета выбранного сегмента; null — как у группы ([RescueSegmented.selectedBackground]).
+  final Color? selectedBackground;
+  final Color? selectedForeground;
 }
 
-/// Шлюпка: сегментированный переключатель «одно из нескольких» — основа RouteSwitch и PeriodSwitch.
+/// Шлюпка: сегментированный переключатель «одно из нескольких» — основа PillSegmented,
+/// RouteSwitch и PeriodSwitch. По умолчанию — таблетка стиля «Д»: дорожка card, выбранный
+/// сегмент светлый ([RescueColors.text]) с тёмным текстом.
 ///
 /// Клавиатура: одна остановка Tab, стрелки ←/→ (и ↑/↓) выбирают соседний сегмент, Home/End — крайние.
 /// Зона нажатия сегмента — вся высота вместе с внутренним отступом (не меньше 44 px).
@@ -34,11 +38,19 @@ class RescueSegmented<T> extends StatefulWidget {
     this.semanticLabel,
     this.expand = false,
     this.background = RescueColors.card,
-    this.outerRadius = 12,
-    this.innerRadius = 9,
+    this.outerRadius = 999,
+    this.innerRadius = 999,
     this.segmentHeight = 38,
     this.fontSize = 13,
-    this.segmentPadding = 14,
+    this.segmentPadding = 16,
+    this.selectedBackground = RescueColors.text,
+    this.selectedForeground = RescueColors.onAccent,
+    this.foreground = RescueColors.text,
+    this.borderColor,
+    this.focusColor = RescueColors.accent,
+    this.inset = 3,
+    this.gap = 2,
+    this.letterSpacing,
   });
 
   final List<RescueSegment<T>> segments;
@@ -52,6 +64,8 @@ class RescueSegmented<T> extends StatefulWidget {
 
   /// Сегменты одинаковой ширины на всю доступную ширину.
   final bool expand;
+
+  /// Цвет дорожки.
   final Color background;
   final double outerRadius;
   final double innerRadius;
@@ -59,12 +73,27 @@ class RescueSegmented<T> extends StatefulWidget {
   final double fontSize;
   final double segmentPadding;
 
+  /// Цвета выбранного сегмента по умолчанию (сегмент может задать свои).
+  final Color selectedBackground;
+  final Color selectedForeground;
+
+  /// Текст невыбранных сегментов.
+  final Color foreground;
+
+  /// Рамка дорожки; null — без рамки (рамка появляется только при фокусе с клавиатуры).
+  final Color? borderColor;
+  final Color focusColor;
+
+  /// Отступ сегментов от края дорожки и промежуток между сегментами.
+  final double inset;
+  final double gap;
+  final double? letterSpacing;
+
   @override
   State<RescueSegmented<T>> createState() => _RescueSegmentedState<T>();
 }
 
 class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
-  static const _inset = 3.0;
   bool _focused = false;
 
   int get _index => widget.segments.indexWhere((s) => s.value == widget.value);
@@ -91,6 +120,7 @@ class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
     final children = <Widget>[
       for (final (i, s) in segments.indexed) _buildSegment(i, s, first: i == 0, last: i == segments.length - 1),
     ];
+    final border = _focused ? widget.focusColor : widget.borderColor;
 
     return Semantics(
       container: true,
@@ -114,7 +144,8 @@ class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
         child: Container(
           decoration: BoxDecoration(
             color: widget.background,
-            border: Border.all(color: _focused ? RescueColors.accent : RescueColors.line),
+            // Рамка всегда занимает место (прозрачная), чтобы при фокусе ничего не прыгало.
+            border: Border.all(color: border ?? Colors.transparent, width: 1.5),
             borderRadius: BorderRadius.circular(widget.outerRadius),
           ),
           child: Row(
@@ -129,6 +160,8 @@ class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
   Widget _buildSegment(int index, RescueSegment<T> s, {required bool first, required bool last}) {
     final selected = s.value == widget.value;
     final enabled = widget.onChanged != null;
+    final inset = widget.inset;
+    final halfGap = widget.gap / 2;
     return Semantics(
       inMutuallyExclusiveGroup: true,
       checked: selected,
@@ -144,14 +177,14 @@ class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
             behavior: HitTestBehavior.opaque,
             onTap: enabled ? () => _select(index) : null,
             child: Padding(
-              padding: EdgeInsets.fromLTRB(first ? _inset : 0, _inset, last ? _inset : 0, _inset),
+              padding: EdgeInsets.fromLTRB(first ? inset : halfGap, inset, last ? inset : halfGap, inset),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 height: widget.segmentHeight,
                 padding: EdgeInsets.symmetric(horizontal: widget.expand ? 4 : widget.segmentPadding),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: selected ? s.selectedBackground : Colors.transparent,
+                  color: selected ? (s.selectedBackground ?? widget.selectedBackground) : Colors.transparent,
                   borderRadius: BorderRadius.circular(widget.innerRadius),
                 ),
                 child: Text(
@@ -160,8 +193,9 @@ class _RescueSegmentedState<T> extends State<RescueSegmented<T>> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: widget.fontSize,
-                    fontWeight: FontWeight.w600,
-                    color: selected ? s.selectedForeground : RescueColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: widget.letterSpacing,
+                    color: selected ? (s.selectedForeground ?? widget.selectedForeground) : widget.foreground,
                   ),
                 ),
               ),

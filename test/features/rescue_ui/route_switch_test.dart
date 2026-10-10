@@ -35,20 +35,22 @@ void main() {
     return (container.decoration! as BoxDecoration).color!;
   }
 
-  testWidgets('клик меняет значение и вызывает колбэк; цвета как в макете', (tester) async {
+  testWidgets('клик меняет значение и вызывает колбэк; цвета стиля «Д»', (tester) async {
     final calls = await pumpSwitch(tester);
-    expect(segmentColor(tester, 'Авто'), RescueColors.warningBg);
+    // Выбранный сегмент — светлый с тёмным текстом, независимо от значения.
+    expect(segmentColor(tester, 'Авто'), RescueColors.text);
 
     await tester.tap(find.text('Мимо'));
     await tester.pumpAndSettle();
     expect(calls, [RouteChoice.bypass]);
-    expect(segmentColor(tester, 'Мимо'), RescueColors.bypassBg);
+    expect(segmentColor(tester, 'Мимо'), RescueColors.text);
     expect(segmentColor(tester, 'Авто'), Colors.transparent);
 
     await tester.tap(find.text('VPN'));
     await tester.pumpAndSettle();
     expect(calls, [RouteChoice.bypass, RouteChoice.vpn]);
-    expect(segmentColor(tester, 'VPN'), RescueColors.softAccent);
+    expect(segmentColor(tester, 'VPN'), RescueColors.text);
+    expect(tester.widget<Text>(find.text('VPN')).style!.color, RescueColors.onAccent);
 
     // Повторное нажатие на выбранный — без колбэка.
     await tester.tap(find.text('VPN'));
@@ -109,6 +111,13 @@ void main() {
     expect(size.height, greaterThanOrEqualTo(44));
     expect(size.width, greaterThanOrEqualTo(44));
     expect(tester.getSize(find.byType(RouteSwitch)).width, 230);
+  });
+
+  testWidgets('на жёлтом (onAccent): выбранный тёмный с жёлтым текстом', (tester) async {
+    await pumpRescue(tester, const RouteSwitch(value: RouteChoice.bypass, onChanged: null, onAccent: true));
+    expect(segmentColor(tester, 'Мимо'), RescueColors.onAccent);
+    expect(tester.widget<Text>(find.text('Мимо')).style!.color, RescueColors.accent);
+    expect(tester.widget<Text>(find.text('VPN')).style!.color, RescueColors.onAccent);
   });
 
   testWidgets('без onChanged — неактивен', (tester) async {
