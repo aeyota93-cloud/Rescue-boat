@@ -11,6 +11,7 @@ import 'package:hiddify/core/preferences/actions_at_closing.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/insights/notifier/insights_settings.dart';
+import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/settings/widget/rescue_settings_page.dart';
@@ -20,6 +21,7 @@ import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../screens_test_helpers.dart';
+import '../shell_frame_helper.dart';
 
 class _FakeAutoStart extends AutoStartNotifier {
   final calls = <bool>[];
@@ -63,7 +65,7 @@ void main() {
   });
   tearDown(() => dir.deleteSync(recursive: true));
 
-  Future<ProviderContainer> start(WidgetTester tester, {Size size = const Size(1440, 1000)}) async {
+  Future<ProviderContainer> start(WidgetTester tester, {Size size = const Size(1440, 1000), bool inShell = false}) async {
     final container = await tester.runAsync(
       () => screensContainer(
         dir,
@@ -73,7 +75,11 @@ void main() {
         ],
       ),
     );
-    await pumpPage(tester, container!, const RescueSettingsPage(), size: size);
+    if (inShell) {
+      await pumpInShell(tester, container!, const RescueSettingsPage(), size: size, selected: 4);
+    } else {
+      await pumpPage(tester, container!, const RescueSettingsPage(), size: size);
+    }
     return container;
   }
 
@@ -84,22 +90,31 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  for (final size in const [Size(400, 900), Size(1440, 1000)]) {
-    testWidgets('отрисовка ${size.width.toInt()} px: все блоки, без переполнений', (tester) async {
-      final container = await start(tester, size: size);
+  for (final size in shellSizes) {
+    testWidgets('отрисовка, окно ${size.width.toInt()} px: все блоки, без переполнений', (tester) async {
+      final container = await start(tester, size: size, inShell: true);
       expectNoLayoutErrors(tester);
+      expect(find.text('НАСТРОЙКИ'), findsOneWidget);
       for (final title in [
-        'Запуск',
-        'Куда идёт трафик',
-        'Ошибки и здоровье',
-        'Способ работы',
-        'Обход блокировок',
-        'Для опытных',
+        'ЗАПУСК',
+        'КУДА ИДЁТ ТРАФИК',
+        'ОШИБКИ И ЗДОРОВЬЕ',
+        'СПОСОБ РАБОТЫ',
+        'ОБХОД БЛОКИРОВОК',
+        'ДЛЯ ОПЫТНЫХ',
       ]) {
         expect(find.text(title), findsWidgets, reason: title);
       }
       expect(find.textContaining('Шлюпка спасения 0.2.0 · основано на Hiddify'), findsOneWidget);
       expect(find.text('Уведомление Windows при обрыве связи'), findsNothing);
+      // «Для опытных» прямо в настройках: четыре ссылки как в макете и переход ко всем.
+      for (final link in advancedLinks.take(4)) {
+        expect(find.text(link.title), findsOneWidget, reason: link.title);
+      }
+      expect(find.text('Все настройки для опытных'), findsOneWidget);
+      // Переключатели — RescueToggle 46×28.
+      expect(find.byType(RescueToggle), findsNWidgets(11));
+      expect(tester.getSize(find.byType(RescueToggle).first), const Size(46, 28));
 
       // Фрагментация с параметрами тоже помещается.
       await tapText(tester, 'Делить начало соединения (фрагментация)');
@@ -127,9 +142,9 @@ void main() {
     await tapText(tester, 'Замерять пинг');
     expect(container.read(insightsSettingsProvider).measurePing, isFalse);
 
-    await tapText(tester, 'Только браузеры (прокси)');
+    await tapText(tester, 'Только браузеры');
     expect(container.read(ConfigOptions.serviceMode), ServiceMode.systemProxy);
-    await tapText(tester, 'Весь компьютер (VPN)');
+    await tapText(tester, 'Весь компьютер');
     expect(container.read(ConfigOptions.serviceMode), ServiceMode.tun);
 
     await tapText(tester, 'Запускать при входе в Windows');
@@ -189,8 +204,10 @@ void main() {
 
   testWidgets('«Для опытных»: ссылки на прежние страницы', (tester) async {
     final container = await tester.runAsync(() => screensContainer(dir));
-    await pumpPage(tester, container!, const AdvancedSettingsPage(), size: const Size(400, 900));
+    await pumpInShell(tester, container!, const AdvancedSettingsPage(), size: const Size(900, 900), selected: 4);
     expectNoLayoutErrors(tester);
+    expect(find.text('ДЛЯ ОПЫТНЫХ'), findsOneWidget);
+    expect(find.byTooltip('Назад'), findsOneWidget);
     for (final link in advancedLinks) {
       expect(find.text(link.title), findsOneWidget);
     }
