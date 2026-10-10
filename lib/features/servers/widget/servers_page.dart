@@ -215,77 +215,102 @@ class _SubscriptionCard extends HookConsumerWidget {
       if (remote != null) _updateRing(remote, now),
     ];
 
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (profile.active) ...[const _ActiveTag(), const SizedBox(height: 6)],
+        Row(
+          children: [
+            Flexible(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  profile.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w300,
+                    fontFamilyFallback: [FontFamily.emoji],
+                  ),
+                ),
+              ),
+            ),
+            _ProfileMenu(profile: profile, color: RescueColors.onAccent),
+          ],
+        ),
+        Text(facts, style: const TextStyle(fontSize: 13, color: RescueColors.onAccentMuted)),
+      ],
+    );
+    final buttons = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (!profile.active)
+          FilledButton(
+            style: RescueTheme.deepFilledButton(),
+            onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
+            child: const Text('Сделать активной'),
+          ),
+        if (remote != null)
+          FilledButton(
+            style: RescueTheme.deepFilledButton(),
+            onPressed: updating
+                ? null
+                : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
+            child: Text(updating ? 'Обновляется…' : 'Обновить'),
+          ),
+        OutlinedButton(
+          style: RescueTheme.outlinedOnAccentButton(),
+          onPressed: () => _rename(context, ref, profile),
+          child: const Text('Переименовать'),
+        ),
+        OutlinedButton(
+          style: RescueTheme.dangerOnAccentButton(),
+          onPressed: () => _delete(context, ref, profile),
+          child: const Text('Удалить'),
+        ),
+      ],
+    );
+    final ringRow = Wrap(spacing: 22, runSpacing: 12, children: rings);
+
     return RescueCard.accent(
       semanticLabel: 'Подписка «${profile.name}»',
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
-      child: Wrap(
-        spacing: 24,
-        runSpacing: 20,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Как в макете — одной строкой: название, кольца, кнопки; на узком — переносом.
+          if (constraints.maxWidth >= 1000) {
+            // Справа кольца и кнопки; если не влезают (крупный шрифт) — переносятся, а не вылезают.
+            return Row(
               children: [
-                if (profile.active) ...[const _ActiveTag(), const SizedBox(height: 6)],
-                Row(
-                  children: [
-                    Flexible(
-                      child: Semantics(
-                        header: true,
-                        child: Text(
-                          profile.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w300,
-                            fontFamilyFallback: [FontFamily.emoji],
-                          ),
-                        ),
-                      ),
-                    ),
-                    _ProfileMenu(profile: profile, color: RescueColors.onAccent),
-                  ],
+                Expanded(child: title),
+                const SizedBox(width: 24),
+                Flexible(
+                  flex: 4,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 24,
+                    runSpacing: 16,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [if (rings.isNotEmpty) ringRow, buttons],
+                  ),
                 ),
-                Text(facts, style: const TextStyle(fontSize: 13, color: RescueColors.onAccentMuted)),
               ],
-            ),
-          ),
-          if (rings.isNotEmpty) Wrap(spacing: 22, runSpacing: 12, children: rings),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            );
+          }
+          return Wrap(
+            spacing: 24,
+            runSpacing: 20,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (!profile.active)
-                FilledButton(
-                  style: RescueTheme.deepFilledButton(),
-                  onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
-                  child: const Text('Сделать активной'),
-                ),
-              if (remote != null)
-                FilledButton(
-                  style: RescueTheme.deepFilledButton(),
-                  onPressed: updating
-                      ? null
-                      : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
-                  child: Text(updating ? 'Обновляется…' : 'Обновить'),
-                ),
-              OutlinedButton(
-                style: RescueTheme.outlinedOnAccentButton(),
-                onPressed: () => _rename(context, ref, profile),
-                child: const Text('Переименовать'),
-              ),
-              OutlinedButton(
-                style: RescueTheme.dangerOnAccentButton(),
-                onPressed: () => _delete(context, ref, profile),
-                child: const Text('Удалить'),
-              ),
+              ConstrainedBox(constraints: const BoxConstraints(minWidth: 220, maxWidth: 360), child: title),
+              if (rings.isNotEmpty) ringRow,
+              buttons,
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -316,12 +341,7 @@ class _SubscriptionCard extends HookConsumerWidget {
     }
     final until = ruDate(info.expire.toLocal());
     if (!info.expire.isAfter(now)) {
-      return RingStat.onAccent(
-        value: 0,
-        label: '0',
-        title: 'СРОК\nИСТЁК',
-        semanticLabel: 'Подписка истекла $until',
-      );
+      return RingStat.onAccent(value: 0, label: '0', title: 'СРОК\nИСТЁК', semanticLabel: 'Подписка истекла $until');
     }
     final days = info.expire.difference(now).inDays;
     return RingStat.onAccent(
@@ -618,12 +638,7 @@ class _ServersSection extends ConsumerWidget {
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             ),
-          _FillGrid(
-            children: [
-              if (group != null) ..._cards(ref, group),
-              const _BackupCard(),
-            ],
-          ),
+          _FillGrid(children: [if (group != null) ..._cards(ref, group), const _BackupCard()]),
         ],
       ),
     );
@@ -691,7 +706,8 @@ class _ServerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
+    final fullName = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
+    final name = serverTitle(fullName);
     final proto = switch (item.type.toLowerCase()) {
       'urltest' => 'Автовыбор',
       _ when item.isGroup => 'Группа',
@@ -740,7 +756,7 @@ class _ServerCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        serverCode(name),
+                        serverCode(fullName),
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg),
                       ),
                     ),
@@ -798,7 +814,12 @@ class _ServerCard extends StatelessWidget {
                         if (health != null) ...[
                           Text(
                             'ЗДОРОВЬЕ',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: subColor),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                              color: subColor,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Text(

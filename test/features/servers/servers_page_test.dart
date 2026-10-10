@@ -173,6 +173,8 @@ void main() {
       expect(serverCode('🇳🇱 Нидерланды'), 'NL');
       expect(serverCode('Автовыбор'), 'А');
       expect(serverCode('  ★ fast-1'), 'F');
+      expect(serverTitle('🇳🇱 Нидерланды'), 'Нидерланды');
+      expect(serverTitle('🇳🇱'), '🇳🇱');
       expect(subscriptionHost('https://first.example.com/sub/SECRET?x=1'), 'first.example.com');
       expect(subscriptionHost('не ссылка'), isNull);
       expect(pingSpeedFraction(0), 0);
@@ -209,10 +211,7 @@ void main() {
       expect(find.textContaining('example.com · до '), findsOneWidget);
       expect(find.text('Запасной'), findsOneWidget);
       expect(find.text('Добавить подписку'), findsWidgets);
-      expect(
-        find.text('Автоматическое переключение на запасной сервер появится в следующей версии.'),
-        findsOneWidget,
-      );
+      expect(find.text('Автоматическое переключение на запасной сервер появится в следующей версии.'), findsOneWidget);
       expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 
@@ -222,7 +221,10 @@ void main() {
       expect(find.text('НЕТ ОТВЕТА'), findsOneWidget);
       // Здоровье — только у выбранного сервера.
       expect(find.text('92'), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp(r'^Нидерланды, VLESS, пинг 120 мс, здоровье за сутки 92, выбран$')), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp(r'^Нидерланды, VLESS, пинг 120 мс, здоровье за сутки 92, выбран$')),
+        findsOneWidget,
+      );
       semantics.dispose();
       await closePage(tester, container);
     });

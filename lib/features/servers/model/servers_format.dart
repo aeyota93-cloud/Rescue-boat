@@ -125,3 +125,14 @@ String? subscriptionHost(String url) {
   final host = Uri.tryParse(url.trim())?.host ?? '';
   return host.isEmpty ? null : host;
 }
+
+/// Имя сервера без флага-эмодзи в начале: флаг уже показан кодом страны в плитке.
+String serverTitle(String name) {
+  final runes = name.trim().runes.toList();
+  bool flagPart(int r) => r >= 0x1F1E6 && r <= 0x1F1FF;
+  if (runes.length > 2 && flagPart(runes[0]) && flagPart(runes[1])) {
+    final rest = String.fromCharCodes(runes.skip(2)).trim();
+    if (rest.isNotEmpty) return rest;
+  }
+  return name.trim();
+}
