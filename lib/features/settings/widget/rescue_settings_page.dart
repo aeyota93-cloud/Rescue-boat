@@ -323,7 +323,6 @@ class _BypassBlocksSection extends ConsumerWidget {
     final fragment = ref.watch(ConfigOptions.enableTlsFragment);
     final packets = ref.watch(ConfigOptions.fragmentPackets);
     final mixedCase = ref.watch(ConfigOptions.enableTlsMixedSniCase);
-    final padding = ref.watch(ConfigOptions.enableTlsPadding);
     return _Section(
       title: 'Обход блокировок',
       note:
@@ -390,26 +389,9 @@ class _BypassBlocksSection extends ConsumerWidget {
               'Только для серверов с TLS через WebSocket или gRPC.',
           value: mixedCase,
           onChanged: ref.read(ConfigOptions.enableTlsMixedSniCase.notifier).update,
+          divider: false,
         ),
-        SettingsSwitchTile(
-          title: 'Дополнение пакетов (паддинг)',
-          subtitle:
-              'Добавляет случайные байты, чтобы размер пакета не выдавал VPN. '
-              'Ядро этой версии настройку пока не применяет.',
-          value: padding,
-          onChanged: ref.read(ConfigOptions.enableTlsPadding.notifier).update,
-          divider: padding,
-        ),
-        if (padding)
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: _RangeRow(
-              title: 'Размер дополнения, байт',
-              subtitle: 'Например, 1-1500',
-              option: ConfigOptions.tlsPaddingSize,
-              divider: false,
-            ),
-          ),
+        // Паддинг TLS спрятан: ядро этой версии его не применяет.
       ],
     );
   }
@@ -461,12 +443,11 @@ class _ParamRow extends StatelessWidget {
 /// Диапазон «от-до» (OptionalRange) в поле ввода: сохраняется по Enter или при уходе из поля;
 /// неверное значение не сохраняется, поле подсвечивается.
 class _RangeRow extends HookConsumerWidget {
-  const _RangeRow({required this.title, required this.subtitle, required this.option, this.divider = true});
+  const _RangeRow({required this.title, required this.subtitle, required this.option});
 
   final String title;
   final String subtitle;
   final StateNotifierProvider<PreferencesNotifier<OptionalRange, String>, OptionalRange> option;
-  final bool divider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -500,7 +481,6 @@ class _RangeRow extends HookConsumerWidget {
     return _ParamRow(
       title: title,
       subtitle: subtitle,
-      divider: divider,
       child: SizedBox(
         width: 120,
         child: TextField(

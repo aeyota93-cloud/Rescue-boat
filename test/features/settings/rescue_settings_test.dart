@@ -117,7 +117,7 @@ void main() {
       }
       expect(find.text('Все настройки для опытных'), findsOneWidget);
       // Переключатели — RescueToggle 46×28.
-      expect(find.byType(RescueToggle), findsNWidgets(12));
+      expect(find.byType(RescueToggle), findsNWidgets(11));
       expect(tester.getSize(find.byType(RescueToggle).first), const Size(46, 28));
 
       // Фрагментация с параметрами тоже помещается.
