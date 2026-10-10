@@ -31,8 +31,11 @@ void openRescueRoute(BuildContext context, String name, {Widget? fallback}) {
   }
 }
 
-/// Шлюпка: «Настройки» (Settings.dc.html). Всё сохраняется сразу; изменения, которым нужно
+/// Шлюпка: «Настройки» в стиле «Д». Всё сохраняется сразу; изменения, которым нужно
 /// переподключение, применяет ConnectionWrapper сам.
+///
+/// Сетка карточек (от 380 px): Запуск, Куда идёт трафик, Ошибки и здоровье, Обход блокировок,
+/// Способ работы и тёмный блок «Для опытных» со ссылками на прежние экраны Hiddify.
 class RescueSettingsPage extends HookConsumerWidget {
   const RescueSettingsPage({super.key});
 
@@ -47,20 +50,20 @@ class RescueSettingsPage extends HookConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const RescuePageHeader(title: 'Настройки'),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             const RescueGrid(
-              minItemWidth: 420,
-              spacing: 16,
+              minItemWidth: 380,
+              spacing: 20,
               children: [
                 _StartupSection(),
                 _TrafficSection(),
                 _InsightsSection(),
-                _ModeSection(),
                 _BypassBlocksSection(),
+                _ModeSection(),
                 _AdvancedSection(),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 8,
@@ -68,7 +71,7 @@ class RescueSettingsPage extends HookConsumerWidget {
                 Text(
                   'Шлюпка спасения${version == null ? '' : ' $version'} · основано на Hiddify · '
                   'ничего не отправляет разработчикам',
-                  style: RescueText.smallSecondary,
+                  style: RescueText.caption,
                 ),
                 RescueLink(label: 'О программе', onTap: () => openRescueRoute(context, 'about')),
               ],
@@ -80,7 +83,8 @@ class RescueSettingsPage extends HookConsumerWidget {
   }
 }
 
-/// Карточка-секция со списком переключателей (как в макете: отступ 8/20, заголовок 16/600).
+/// Карточка-секция со списком переключателей (как в макете: card, радиус 32, отступ 10/22,
+/// подпись блока заглавными 12 / 700 / 0.14em).
 class _Section extends StatelessWidget {
   const _Section({required this.title, required this.children, this.note});
 
@@ -93,17 +97,14 @@ class _Section extends StatelessWidget {
     final note = this.note;
     return RescueCard(
       semanticLabel: title,
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      padding: const EdgeInsets.fromLTRB(22, 10, 22, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 4),
-            child: Semantics(header: true, child: Text(title, style: RescueText.cardTitle)),
-          ),
+          Padding(padding: const EdgeInsets.only(top: 12, bottom: 2), child: SectionLabel(title)),
           if (note != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(top: 2, bottom: 4),
               child: Text(note, style: RescueText.caption),
             ),
           ...children,
@@ -271,21 +272,22 @@ class _ModeSection extends ConsumerWidget {
     final notifier = ref.read(ConfigOptions.serviceMode.notifier);
     return RescueCard(
       semanticLabel: 'Способ работы',
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Semantics(header: true, child: const Text('Способ работы', style: RescueText.cardTitle)),
+          const SectionLabel('Способ работы'),
           const SizedBox(height: 12),
           ChoiceCard(
-            title: 'Весь компьютер (VPN)',
-            description: 'Все программы и игры. Работают раздельный туннель и список ошибок.',
+            title: 'Весь компьютер',
+            description: 'Все программы и игры, работают раздельный туннель и список ошибок',
             selected: mode == ServiceMode.tun,
             onTap: () => notifier.update(ServiceMode.tun),
           ),
           const SizedBox(height: 12),
           ChoiceCard(
-            title: 'Только браузеры (прокси)',
-            description: 'Без прав администратора. Остальные программы идут напрямую.',
+            title: 'Только браузеры',
+            description: 'Режим прокси: без прав администратора, остальные программы идут напрямую',
             selected: mode != ServiceMode.tun,
             onTap: () => notifier.update(ServiceMode.systemProxy),
           ),
@@ -420,7 +422,7 @@ class _ParamRow extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        border: divider ? const Border(bottom: BorderSide(color: RescueColors.rowLine)) : null,
+        border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
       ),
       child: Wrap(
         spacing: 12,
@@ -503,7 +505,7 @@ class _RangeRow extends HookConsumerWidget {
           decoration: InputDecoration(
             isDense: true,
             errorText: invalid.value ? 'например, 10-30' : null,
-            errorStyle: const TextStyle(fontSize: 11, color: RescueColors.poor),
+            errorStyle: const TextStyle(fontSize: 11, color: RescueColors.warn),
           ),
         ),
       ),
@@ -518,25 +520,28 @@ class _AdvancedSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RescueCard(
+    return RescueCard.deep(
       semanticLabel: 'Для опытных',
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Semantics(header: true, child: const Text('Для опытных', style: RescueText.cardTitle)),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: SectionLabel('Для опытных', color: RescueColors.accent),
           ),
           for (final link in advancedLinks.take(4))
             SettingsLinkTile(
               title: link.title,
               subtitle: link.subtitle,
+              onDeep: true,
               onTap: () => openRescueRoute(context, link.routeName),
             ),
           SettingsLinkTile(
             title: 'Все настройки для опытных',
             subtitle: 'Ещё: прочие настройки ядра, о программе',
+            onDeep: true,
+            divider: false,
             onTap: () => openRescueRoute(context, advancedSettingsRouteName, fallback: const AdvancedSettingsPage()),
           ),
         ],

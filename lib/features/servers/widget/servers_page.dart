@@ -16,13 +16,17 @@ import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/data/rename_profile.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/link_parsers.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Шлюпка: «Подписки и серверы» (Servers.dc.html) — всё, что умели страницы «Профили» и «Прокси»:
+/// Шлюпка: «Подписки и серверы» в стиле «Д» — всё, что умели страницы «Профили» и «Прокси»:
 /// добавить по ссылке, обновить, переименовать, удалить, выбрать активную подписку и сервер, проверить пинг.
+///
+/// Активная подписка — жёлтый блок с кольцами (расход, срок, автообновление — только то, что
+/// прислал сервер подписки), ниже — карточки серверов с пингом и пунктирная карточка «Запасной».
 class ServersPage extends HookConsumerWidget {
   const ServersPage({super.key});
 
@@ -47,7 +51,7 @@ class ServersPage extends HookConsumerWidget {
                   onPressed: group == null
                       ? null
                       : () => ref.read(proxiesOverviewNotifierProvider.notifier).urlTest(group.tag),
-                  child: const Text('Проверить все'),
+                  child: const Text('Проверить пинг'),
                 ),
                 FilledButton(
                   onPressed: adding ? null : () => showAddSubscription(context, ref),
@@ -65,7 +69,7 @@ class ServersPage extends HookConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             switch (profiles) {
               AsyncData(:final value) => _Subscriptions(profiles: value),
               AsyncError() => const RescueCard(
@@ -76,8 +80,8 @@ class ServersPage extends HookConsumerWidget {
                 child: Center(child: CircularProgressIndicator()),
               ),
             },
-            const SizedBox(height: 16),
-            const _ServersCard(),
+            const SizedBox(height: 24),
+            const _ServersSection(),
           ],
         ),
       ),
@@ -114,41 +118,22 @@ class _Subscriptions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final main = _SubscriptionCard(profile: active);
-            const backup = _BackupCard();
-            if (constraints.maxWidth < 836) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [main, const SizedBox(height: 16), backup],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 2, child: main),
-                const SizedBox(width: 16),
-                const Expanded(child: backup),
-              ],
-            );
-          },
-        ),
+        _SubscriptionCard(profile: active),
         if (others.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           RescueCard(
             semanticLabel: 'Другие подписки',
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Другие подписки', style: RescueText.cardTitle),
+                SectionLabel('Другие подписки', count: '${others.length}'),
                 const SizedBox(height: 4),
                 const Text(
                   'Работает только активная. Сделайте другую активной, чтобы перейти на её серверы.',
                   style: RescueText.caption,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 for (final (i, p) in others.indexed) _OtherSubscriptionRow(profile: p, divider: i < others.length - 1),
               ],
             ),
@@ -164,25 +149,48 @@ class _EmptySubscriptions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return RescueCard(
+    return RescueCard.accent(
       semanticLabel: 'Подписки',
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Подписок пока нет', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
+          const Text('Подписок пока нет', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w300)),
+          const SizedBox(height: 6),
           const Text(
             'Вставьте ссылку на подписку, которую дал владелец сервера, — серверы появятся здесь.',
-            style: TextStyle(fontSize: 14, height: 1.5, color: RescueColors.textTertiary),
+            style: TextStyle(fontSize: 13, color: RescueColors.onAccentMuted),
           ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: () => showAddSubscription(context, ref), child: const Text('+ Добавить подписку')),
+          const SizedBox(height: 14),
+          FilledButton(
+            style: RescueTheme.deepFilledButton(),
+            onPressed: () => showAddSubscription(context, ref),
+            child: const Text('+ Добавить подписку'),
+          ),
         ],
       ),
     );
   }
 }
 
+/// Метка «АКТИВНА» на жёлтом: тёмная плашка с жёлтым текстом (10 / 700 / 0.12em).
+class _ActiveTag extends StatelessWidget {
+  const _ActiveTag();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(color: RescueColors.deep, borderRadius: BorderRadius.circular(6)),
+    child: const Text(
+      'АКТИВНА',
+      semanticsLabel: 'активна',
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: RescueColors.accent),
+    ),
+  );
+}
+
+/// Активная подписка — жёлтый блок: метка, название, адрес и даты; кольца расхода, срока и
+/// автообновления (только то, что прислал сервер подписки); кнопки.
 class _SubscriptionCard extends HookConsumerWidget {
   const _SubscriptionCard({required this.profile});
 
@@ -195,101 +203,174 @@ class _SubscriptionCard extends HookConsumerWidget {
     final info = remote?.subInfo;
     final updating = remote != null && ref.watch(updateProfileNotifierProvider(profile.id)).isLoading;
 
-    final tiles = <Widget>[
-      if (info != null)
-        if (isUnlimitedTraffic(info))
-          StatTile(
-            label: 'Израсходовано',
-            value: '${formatGb(info.consumption)} ГБ',
-            caption: 'без ограничения',
-            inset: true,
-          )
-        else
-          StatTile(
-            label: 'Израсходовано',
-            value: '${formatGb(info.consumption)} из ${formatGb(info.total)} ГБ',
-            progress: info.ratio,
-            progressColor: info.ratio > 0.9
-                ? RescueColors.poor
-                : info.ratio > 0.75
-                ? RescueColors.fair
-                : RescueColors.good,
-            inset: true,
-          ),
-      if (info != null)
-        isUnlimitedTime(info)
-            ? const StatTile(label: 'Действует до', value: 'бессрочно', inset: true)
-            : StatTile(
-                label: 'Действует до',
-                value: ruDate(info.expire.toLocal()),
-                caption: daysLeftLabel(info.expire, now),
-                valueColor: info.isExpired ? RescueColors.poor : RescueColors.text,
-                inset: true,
-              ),
-      StatTile(
-        label: 'Обновлена',
-        value: updatedLabel(profile.lastUpdate, now),
-        caption: autoUpdateLabel(profile),
-        inset: true,
-      ),
+    final facts = [
+      if (remote != null) subscriptionHost(remote.url) ?? 'по ссылке' else 'конфиг без ссылки',
+      if (info != null && !isUnlimitedTime(info)) info.isExpired ? 'истекла' : 'до ${ruDate(info.expire.toLocal())}',
+      'обновлена ${updatedLabel(profile.lastUpdate, now)}',
+    ].join(' · ');
+
+    final rings = <Widget>[
+      if (info != null) _trafficRing(info),
+      if (info != null) _timeRing(info, now),
+      if (remote != null) _updateRing(remote, now),
     ];
 
-    return RescueCard(
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (profile.active) ...[const _ActiveTag(), const SizedBox(height: 6)],
+        Row(
+          children: [
+            Flexible(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  profile.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w300,
+                    fontFamilyFallback: [FontFamily.emoji],
+                  ),
+                ),
+              ),
+            ),
+            _ProfileMenu(profile: profile, color: RescueColors.onAccent),
+          ],
+        ),
+        Text(facts, style: const TextStyle(fontSize: 13, color: RescueColors.onAccentMuted)),
+      ],
+    );
+    final buttons = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (!profile.active)
+          FilledButton(
+            style: RescueTheme.deepFilledButton(),
+            onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
+            child: const Text('Сделать активной'),
+          ),
+        if (remote != null)
+          FilledButton(
+            style: RescueTheme.deepFilledButton(),
+            onPressed: updating
+                ? null
+                : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
+            child: Text(updating ? 'Обновляется…' : 'Обновить'),
+          ),
+        OutlinedButton(
+          style: RescueTheme.outlinedOnAccentButton(),
+          onPressed: () => _rename(context, ref, profile),
+          child: const Text('Переименовать'),
+        ),
+        OutlinedButton(
+          style: RescueTheme.dangerOnAccentButton(),
+          onPressed: () => _delete(context, ref, profile),
+          child: const Text('Удалить'),
+        ),
+      ],
+    );
+    final ringRow = Wrap(spacing: 22, runSpacing: 12, children: rings);
+
+    return RescueCard.accent(
       semanticLabel: 'Подписка «${profile.name}»',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Как в макете — одной строкой: название, кольца, кнопки; на узком — переносом.
+          if (constraints.maxWidth >= 1000) {
+            // Справа кольца и кнопки; если не влезают (крупный шрифт) — переносятся, а не вылезают.
+            return Row(
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 24),
+                Flexible(
+                  flex: 4,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 24,
+                    runSpacing: 16,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [if (rings.isNotEmpty) ringRow, buttons],
+                  ),
+                ),
+              ],
+            );
+          }
+          return Wrap(
+            spacing: 24,
+            runSpacing: 20,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Semantics(
-                      header: true,
-                      child: Text(
-                        profile.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: RescueColors.text),
-                      ),
-                    ),
-                    if (profile.active) const RescueBadge(label: 'активна', kind: RescueBadgeKind.success),
-                  ],
-                ),
-              ),
-              _ProfileMenu(profile: profile),
+              ConstrainedBox(constraints: const BoxConstraints(minWidth: 220, maxWidth: 360), child: title),
+              if (rings.isNotEmpty) ringRow,
+              buttons,
             ],
-          ),
-          const SizedBox(height: 14),
-          RescueGrid(minItemWidth: 160, children: tiles),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (!profile.active)
-                FilledButton(
-                  onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
-                  child: const Text('Сделать активной'),
-                ),
-              if (remote != null)
-                OutlinedButton(
-                  onPressed: updating
-                      ? null
-                      : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
-                  child: Text(updating ? 'Обновляется…' : 'Обновить сейчас'),
-                ),
-              OutlinedButton(onPressed: () => _rename(context, ref, profile), child: const Text('Переименовать')),
-              OutlinedButton(
-                onPressed: () => _delete(context, ref, profile),
-                style: RescueTheme.dangerOutlinedButton(),
-                child: const Text('Удалить'),
-              ),
-            ],
-          ),
-        ],
+          );
+        },
       ),
+    );
+  }
+
+  static Widget _trafficRing(SubscriptionInfo info) {
+    final used = formatGb(info.consumption);
+    if (isUnlimitedTraffic(info)) {
+      return RingStat.onAccent(
+        value: 0,
+        label: used,
+        title: 'ГБ\nБЕЗ ЛИМИТА',
+        semanticLabel: 'Израсходовано $used ГБ, без ограничения',
+      );
+    }
+    final total = formatGb(info.total);
+    return RingStat.onAccent(
+      value: info.ratio,
+      label: used,
+      title: 'ГБ\nИЗ $total',
+      semanticLabel: 'Израсходовано $used из $total ГБ',
+    );
+  }
+
+  /// Кольцо срока: заполнение — сколько осталось из 30 дней (сервер присылает только дату окончания).
+  static Widget _timeRing(SubscriptionInfo info, DateTime now) {
+    if (isUnlimitedTime(info)) {
+      return const RingStat.onAccent(value: 1, label: '∞', title: 'СРОК\nБЕССРОЧНО', semanticLabel: 'Бессрочно');
+    }
+    final until = ruDate(info.expire.toLocal());
+    if (!info.expire.isAfter(now)) {
+      return RingStat.onAccent(value: 0, label: '0', title: 'СРОК\nИСТЁК', semanticLabel: 'Подписка истекла $until');
+    }
+    final days = info.expire.difference(now).inDays;
+    return RingStat.onAccent(
+      value: (days / 30).clamp(0.02, 1.0),
+      label: days == 0 ? '<1' : '$days',
+      title: '${pluralRu(days == 0 ? 1 : days, 'ДЕНЬ', 'ДНЯ', 'ДНЕЙ')}\nОСТАЛОСЬ',
+      semanticLabel: 'Действует до $until, ${daysLeftLabel(info.expire, now)}',
+    );
+  }
+
+  /// Кольцо автообновления: число — раз во сколько часов, заполнение — сколько прошло с прошлого.
+  static Widget _updateRing(RemoteProfileEntity profile, DateTime now) {
+    final hours = profile.options?.updateInterval.inHours ?? 0;
+    final auto = hours > 0 && !(profile.userOverride?.isAutoUpdateDisable ?? false);
+    final updated = updatedLabel(profile.lastUpdate, now);
+    if (!auto) {
+      return RingStat.onAccent(
+        value: 0,
+        label: '—',
+        title: 'ОБНОВЛЕНИЕ\nВРУЧНУЮ',
+        semanticLabel: 'Обновляется вручную, обновлена $updated',
+      );
+    }
+    final passed = now.difference(profile.lastUpdate).inMinutes / (hours * 60);
+    return RingStat.onAccent(
+      value: passed.clamp(0.02, 1.0),
+      label: '$hoursч',
+      title: 'ОБНОВЛЕНИЕ\nСАМО',
+      semanticLabel: 'Обновляется ${autoUpdateLabel(profile)}, обновлена $updated',
     );
   }
 }
@@ -316,9 +397,9 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
     ].join(' · ');
     return Container(
       constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        border: divider ? const Border(bottom: BorderSide(color: RescueColors.rowLine)) : null,
+        border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
       ),
       child: Wrap(
         spacing: 12,
@@ -332,7 +413,7 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(profile.name, style: RescueText.bodyStrong),
+                Text(profile.name, style: RescueText.rowTitle),
                 Text(facts, style: RescueText.caption),
               ],
             ),
@@ -342,7 +423,7 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              OutlinedButton(
+              FilledButton(
                 onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
                 child: const Text('Сделать активной'),
               ),
@@ -369,17 +450,20 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
 
 /// «⋯» у подписки: поделиться, QR-код, конфиг, подробная правка (то, что было в меню профиля Hiddify).
 class _ProfileMenu extends ConsumerWidget {
-  const _ProfileMenu({required this.profile, this.withRename = false});
+  const _ProfileMenu({required this.profile, this.withRename = false, this.color});
 
   final ProfileEntity profile;
   final bool withRename;
+
+  /// Цвет значка «⋯»; null — из темы (на жёлтом блоке — тёмный).
+  final Color? color;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final remote = profile is RemoteProfileEntity ? profile as RemoteProfileEntity : null;
     return PopupMenuButton<void>(
       tooltip: 'Ещё',
-      icon: const Icon(Icons.more_horiz_rounded),
+      icon: Icon(Icons.more_horiz_rounded, color: color),
       itemBuilder: (_) => [
         if (withRename) PopupMenuItem(onTap: () => _rename(context, ref, profile), child: const Text('Переименовать')),
         if (remote != null) ...[
@@ -470,6 +554,7 @@ Future<void> _delete(BuildContext context, WidgetRef ref, ProfileEntity profile)
   if (ok ?? false) await ref.read(profilesNotifierProvider.notifier).deleteProfile(profile);
 }
 
+/// Честная заглушка «Запасной»: автопереключения пока нет.
 class _BackupCard extends ConsumerWidget {
   const _BackupCard();
 
@@ -477,23 +562,23 @@ class _BackupCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return RescueCard.dashed(
       semanticLabel: 'Запасной вариант',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('Запасной', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-          const Text(
-            'Автоматическое переключение на запасной сервер появится в следующей версии.',
-            style: TextStyle(fontSize: 14, height: 1.5, color: RescueColors.textTertiary),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Пока запасной можно добавить второй подпиской и выбрать вручную.',
-            style: RescueText.smallSecondary,
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton(onPressed: () => showAddSubscription(context, ref), child: const Text('Добавить подписку')),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 154),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Запасной', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            const Text(
+              'Автоматическое переключение на запасной сервер появится в следующей версии.',
+              style: RescueText.smallSecondary,
+            ),
+            const SizedBox(height: 6),
+            const Text('Пока запасной можно добавить второй подпиской и выбрать вручную.', style: RescueText.caption),
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: () => showAddSubscription(context, ref), child: const Text('Добавить подписку')),
+          ],
+        ),
       ),
     );
   }
@@ -501,58 +586,75 @@ class _BackupCard extends ConsumerWidget {
 
 // ---------- серверы ----------
 
-class _ServersCard extends ConsumerWidget {
-  const _ServersCard();
+class _ServersSection extends ConsumerWidget {
+  const _ServersSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final proxies = ref.watch(proxiesOverviewNotifierProvider);
     final sortBy = ref.watch(proxiesSortNotifierProvider);
-    return RescueCard(
-      semanticLabel: 'Серверы',
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+    final group = proxies.valueOrNull;
+    final count = group?.items.length;
+
+    final note = switch (proxies) {
+      AsyncData(value: final g?) when g.items.isNotEmpty => null,
+      AsyncData() => 'В подписке нет серверов.',
+      AsyncError(error: ServiceNotRunning()) => 'Список серверов и пинг видны, когда VPN подключён.',
+      AsyncError() => 'Не удалось получить список серверов от ядра.',
+      _ => null,
+    };
+
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: 'Серверы',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Semantics(header: true, child: const Text('Серверы в подписке', style: RescueText.cardTitle)),
-              Wrap(
-                spacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('Нажмите строку, чтобы выбрать', style: RescueText.smallSecondary),
-                  PopupMenuButton<ProxiesSort>(
-                    tooltip: 'Порядок',
-                    initialValue: sortBy,
-                    onSelected: ref.read(proxiesSortNotifierProvider.notifier).update,
-                    icon: const Icon(Icons.sort_rounded),
-                    itemBuilder: (_) => [
-                      for (final s in ProxiesSort.values) PopupMenuItem(value: s, child: Text(_sortTitle(s))),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+          SectionLabel(
+            'Серверы',
+            count: count == null || count == 0 ? null : '$count',
+            trailing: Wrap(
+              spacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('Нажмите карточку, чтобы выбрать', style: RescueText.caption),
+                PopupMenuButton<ProxiesSort>(
+                  tooltip: 'Порядок',
+                  initialValue: sortBy,
+                  onSelected: ref.read(proxiesSortNotifierProvider.notifier).update,
+                  icon: const Icon(Icons.sort_rounded),
+                  itemBuilder: (_) => [
+                    for (final s in ProxiesSort.values) PopupMenuItem(value: s, child: Text(_sortTitle(s))),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          switch (proxies) {
-            AsyncData(value: final group?) when group.items.isNotEmpty => _ServersTable(group: group),
-            AsyncData() => const _Note('В подписке нет серверов.'),
-            AsyncError(error: ServiceNotRunning()) => const _Note('Список серверов и пинг видны, когда VPN подключён.'),
-            AsyncError() => const _Note('Не удалось получить список серверов от ядра.'),
-            _ => const Padding(
+          const SizedBox(height: 12),
+          if (note != null) ...[Text(note, style: RescueText.smallSecondary), const SizedBox(height: 12)],
+          if (proxies.isLoading && group == null)
+            const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             ),
-          },
+          _FillGrid(children: [if (group != null) ..._cards(ref, group), const _BackupCard()]),
         ],
       ),
     );
+  }
+
+  static List<Widget> _cards(WidgetRef ref, OutboundGroup group) {
+    final health = ref.watch(healthProvider).valueOrNull;
+    return [
+      for (final item in group.items)
+        _ServerCard(
+          item: item,
+          selected: group.selected == item.tag,
+          health: group.selected == item.tag && health != null && !health.isEmpty ? health.overall.score : null,
+          onTap: () => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, item.tag),
+        ),
+    ];
   }
 
   static String _sortTitle(ProxiesSort s) => switch (s) {
@@ -563,149 +665,193 @@ class _ServersCard extends ConsumerWidget {
   };
 }
 
-class _Note extends StatelessWidget {
-  const _Note(this.text);
+/// Сетка карточек как `repeat(auto-fill, minmax(240px, 1fr))`: колонок столько, сколько влезает,
+/// карточки не растягиваются на всю ширину, если их мало.
+class _FillGrid extends StatelessWidget {
+  const _FillGrid({required this.children});
 
-  final String text;
+  static const _min = 240.0;
+  static const _gap = 16.0;
+
+  final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 16),
-    child: Text(text, style: RescueText.smallSecondary),
-  );
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = ((width + _gap) / (_min + _gap)).floor().clamp(1, 99);
+        final itemWidth = ((width - _gap * (columns - 1)) / columns).floorToDouble();
+        return Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          children: [for (final c in children) SizedBox(width: itemWidth, child: c)],
+        );
+      },
+    );
+  }
 }
 
-class _ServersTable extends ConsumerWidget {
-  const _ServersTable({required this.group});
+/// Карточка сервера: плитка с кодом страны, название, протокол, полоска отклика и пинг.
+/// Выбранный — тёмная (deep) с жёлтым названием; остальные — card.
+class _ServerCard extends StatelessWidget {
+  const _ServerCard({required this.item, required this.selected, required this.onTap, this.health});
 
-  final OutboundGroup group;
+  final OutboundInfo item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Общая оценка здоровья за сутки — только у выбранного сервера.
+  final int? health;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final health = ref.watch(healthProvider).valueOrNull;
-    return RescueTable(
-      rowHeight: 64,
-      gap: 14,
-      columns: const [
-        RescueColumn('', width: 28),
-        RescueColumn('Сервер', flex: 2),
-        RescueColumn('Протокол'),
-        RescueColumn('Пинг', flex: 1.6),
-        RescueColumn('Здоровье за сутки', flex: 1.4),
-      ],
-      rows: [
-        for (final item in group.items)
-          () {
-            final selected = group.selected == item.tag;
-            final name = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
-            final proto = item.isGroup ? '—' : protocolName(item.type);
-            final delay = item.urlTestDelay;
-            final overall = selected && health != null && !health.isEmpty ? health.overall : null;
-            final sub = _subtitle(item);
-            return RescueTableRow(
-              selected: selected,
-              onTap: () => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, item.tag),
-              semanticLabel: [
-                name,
-                proto,
-                'пинг ${pingLabel(delay)}',
-                if (overall?.score case final score?) 'здоровье $score',
-                if (selected) 'выбран',
-              ].join(', '),
-              cells: [
-                _Radio(selected: selected),
-                Column(
+  Widget build(BuildContext context) {
+    final fullName = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
+    final name = serverTitle(fullName);
+    final proto = switch (item.type.toLowerCase()) {
+      'urltest' => 'Автовыбор',
+      _ when item.isGroup => 'Группа',
+      _ => protocolName(item.type),
+    };
+    final delay = item.urlTestDelay;
+    final sub = _subtitle(item);
+    final timedOut = pingTimedOut(delay);
+    final health = this.health;
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));
+    final subColor = selected ? RescueColors.subOnDeep : RescueColors.muted;
+    final fg = selected ? RescueColors.textOnDeep : RescueColors.text;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      label: [
+        name,
+        proto,
+        'пинг ${pingLabel(delay)}',
+        if (health != null) 'здоровье за сутки $health',
+        if (selected) 'выбран',
+      ].join(', '),
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: Material(
+          color: selected ? RescueColors.deep : RescueColors.card,
+          shape: shape,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: shape,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 190),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected ? RescueColors.line : RescueColors.panel,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        serverCode(fullName),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     Text(
                       name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: RescueColors.text,
-                        fontFamilyFallback: [FontFamily.emoji],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? RescueColors.accent : RescueColors.text,
+                        fontFamilyFallback: const [FontFamily.emoji],
                       ),
                     ),
-                    if (sub.isNotEmpty) Text(sub, style: RescueText.caption),
-                  ],
-                ),
-                Text(proto, style: const TextStyle(fontSize: 13, color: RescueColors.textTertiary)),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RescueProgressBar(value: pingFraction(delay), color: _pingColor(delay)),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 76,
+                    if (sub.isNotEmpty)
+                      Text(
+                        sub,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: subColor),
+                      ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: selected ? RescueColors.off : RescueColors.line2),
+                      ),
                       child: Text(
-                        pingLabel(delay),
-                        style: RescueText.bodyStrong.copyWith(
-                          color: pingTimedOut(delay) ? RescueColors.poor : RescueColors.text,
-                        ),
+                        proto.toUpperCase(),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: fg),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    RescueProgressBar(
+                      value: timedOut ? 1 : pingSpeedFraction(delay),
+                      color: timedOut ? RescueColors.warn : RescueColors.accent,
+                      height: 3,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            pingLabel(delay).toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                              color: timedOut ? RescueColors.warn : fg,
+                            ),
+                          ),
+                        ),
+                        if (health != null) ...[
+                          Text(
+                            'ЗДОРОВЬЕ',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                              color: subColor,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$health',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                              color: RescueColors.accent,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
-                if (overall != null)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ScoreBar(good: overall.good, fair: overall.fair, poor: overall.poor, gap: 2),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(width: 28, child: Text('${overall.score}', style: RescueText.bodyStrong)),
-                    ],
-                  )
-                else
-                  const Text('—', style: TextStyle(color: RescueColors.textSecondary)),
-              ],
-            );
-          }(),
-      ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   static String _subtitle(OutboundInfo item) {
     final current = item.groupSelectedTagDisplay.trim();
     if (item.type.toLowerCase() == 'urltest') {
-      return current.isEmpty ? 'сам берёт самый быстрый из рабочих' : 'сам берёт самый быстрый · сейчас $current';
+      return current.isEmpty ? 'сам берёт самый быстрый из рабочих' : 'самый быстрый · сейчас $current';
     }
     if (item.isGroup) return current.isEmpty ? 'группа серверов' : 'группа · сейчас $current';
     return item.host;
   }
-
-  static Color _pingColor(int delay) {
-    if (delay <= 0) return RescueColors.track;
-    if (pingTimedOut(delay) || delay >= 300) return RescueColors.poor;
-    if (delay >= 150) return RescueColors.fair;
-    return RescueColors.good;
-  }
-}
-
-class _Radio extends StatelessWidget {
-  const _Radio({required this.selected});
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 18,
-    height: 18,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(color: selected ? RescueColors.accent : RescueColors.muted, width: 2),
-    ),
-    child: selected
-        ? Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(color: RescueColors.accent, shape: BoxShape.circle),
-          )
-        : null,
-  );
 }
 
 // ---------- окно добавления ----------

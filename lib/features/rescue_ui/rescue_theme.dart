@@ -305,7 +305,13 @@ abstract final class RescueTheme {
         textColor: RescueColors.text,
         selectedColor: RescueColors.accent,
         selectedTileColor: RescueColors.deep,
-        subtitleTextStyle: const TextStyle(fontSize: 12, color: RescueColors.muted),
+        // Шрифт явно: стиль из темы заменяет стиль подписи целиком, без него — шрифт по умолчанию.
+        subtitleTextStyle: const TextStyle(
+          fontSize: 12,
+          color: RescueColors.muted,
+          fontFamily: fontFamily,
+          fontFamilyFallback: fontFamilyFallback,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         minTileHeight: 52,
       ),

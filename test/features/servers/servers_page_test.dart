@@ -16,6 +16,7 @@ import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../screens_test_helpers.dart';
+import '../shell_frame_helper.dart';
 
 const _gb = 1024 * 1024 * 1024;
 
@@ -123,6 +124,7 @@ void main() {
     required _FakeProxies proxies,
     _FakeAdd? add,
     Size size = const Size(1440, 1000),
+    bool inShell = false,
   }) async {
     final container = await tester.runAsync(
       () => screensContainer(
@@ -136,7 +138,11 @@ void main() {
         ],
       ),
     );
-    await pumpPage(tester, container!, const ServersPage(), size: size);
+    if (inShell) {
+      await pumpInShell(tester, container!, const ServersPage(), size: size, selected: 3);
+    } else {
+      await pumpPage(tester, container!, const ServersPage(), size: size);
+    }
     return container;
   }
 
@@ -164,35 +170,62 @@ void main() {
       expect(pingLabel(70000), 'нет ответа');
       expect(autoUpdateLabel(main), 'сама, раз в 6 часов');
       expect(autoUpdateLabel(local), 'конфиг без ссылки');
+      expect(serverCode('🇳🇱 Нидерланды'), 'NL');
+      expect(serverCode('Автовыбор'), 'А');
+      expect(serverCode('  ★ fast-1'), 'F');
+      expect(serverTitle('🇳🇱 Нидерланды'), 'Нидерланды');
+      expect(serverTitle('🇳🇱'), '🇳🇱');
+      expect(subscriptionHost('https://first.example.com/sub/SECRET?x=1'), 'first.example.com');
+      expect(subscriptionHost('не ссылка'), isNull);
+      expect(pingSpeedFraction(0), 0);
+      expect(pingSpeedFraction(70000), 0);
+      expect(pingSpeedFraction(30), closeTo(0.9, 0.001));
     });
   });
 
-  for (final size in const [Size(400, 900), Size(1440, 1000)]) {
-    testWidgets('с данными, ${size.width.toInt()} px: подписка, запасной, серверы, без переполнений', (tester) async {
+  for (final size in shellSizes) {
+    testWidgets('с данными, окно ${size.width.toInt()} px: подписка, запасной, серверы, без переполнений', (
+      tester,
+    ) async {
       final container = await start(
         tester,
         profiles: _FakeProfiles([main, local]),
         proxies: _FakeProxies(servers()),
         size: size,
+        inShell: true,
       );
       expectNoLayoutErrors(tester);
+      final semantics = tester.ensureSemantics();
 
+      expect(find.text('ПОДПИСКИ И СЕРВЕРЫ'), findsOneWidget);
       expect(find.text('Основной'), findsOneWidget);
-      expect(find.text('активна'), findsOneWidget);
-      expect(find.text('48 из 200 ГБ'), findsOneWidget);
-      expect(find.text('ещё 31 день'), findsOneWidget);
-      expect(find.text('сама, раз в 6 часов'), findsOneWidget);
+      expect(find.text('АКТИВНА'), findsOneWidget);
+      // Кольца: расход, срок, автообновление — числа внутри и подписи для чтеца.
+      expect(find.text('ГБ\nИЗ 200'), findsOneWidget);
+      expect(find.text('31'), findsOneWidget);
+      expect(find.text('ДЕНЬ\nОСТАЛОСЬ'), findsOneWidget);
+      expect(find.text('6ч'), findsOneWidget);
+      expect(find.bySemanticsLabel('Израсходовано 48 из 200 ГБ'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Действует до .*, ещё 31 день$')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('^Обновляется сама, раз в 6 часов, обновлена ')), findsOneWidget);
+      expect(find.textContaining('example.com · до '), findsOneWidget);
       expect(find.text('Запасной'), findsOneWidget);
       expect(find.text('Добавить подписку'), findsWidgets);
-      expect(find.text('Другие подписки'), findsOneWidget);
+      expect(find.text('Автоматическое переключение на запасной сервер появится в следующей версии.'), findsOneWidget);
+      expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 
       expect(find.text('Нидерланды'), findsOneWidget);
       expect(find.text('VLESS'), findsOneWidget);
-      expect(find.text('120 мс'), findsOneWidget);
-      expect(find.text('нет ответа'), findsOneWidget);
+      expect(find.text('120 МС'), findsOneWidget);
+      expect(find.text('НЕТ ОТВЕТА'), findsOneWidget);
       // Здоровье — только у выбранного сервера.
       expect(find.text('92'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp(r'^Нидерланды, VLESS, пинг 120 мс, здоровье за сутки 92, выбран$')),
+        findsOneWidget,
+      );
+      semantics.dispose();
       await closePage(tester, container);
     });
   }
@@ -205,7 +238,7 @@ void main() {
     await tapText(tester, find.text('Автовыбор'));
     expect(proxies.changed, ['select/auto']);
 
-    await tapText(tester, find.text('Проверить все'));
+    await tapText(tester, find.text('Проверить пинг'));
     expect(proxies.tested, ['select']);
 
     await tapText(tester, find.text('Сделать активной'));
@@ -246,12 +279,14 @@ void main() {
       tester,
       profiles: _FakeProfiles(const []),
       proxies: _FakeProxies(null, error: const ServiceNotRunning()),
-      size: const Size(400, 900),
+      size: const Size(900, 900),
+      inShell: true,
     );
     expectNoLayoutErrors(tester);
     expect(find.text('Подписок пока нет'), findsOneWidget);
+    expect(find.text('Запасной'), findsOneWidget);
     expect(find.text('Список серверов и пинг видны, когда VPN подключён.'), findsOneWidget);
-    final check = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Проверить все'));
+    final check = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Проверить пинг'));
     expect(check.onPressed, isNull);
     await closePage(tester, container);
   });

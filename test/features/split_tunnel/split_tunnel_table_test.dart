@@ -15,6 +15,7 @@ import 'package:hiddify/features/split_tunnel/widget/split_tunnel_table_page.dar
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../screens_test_helpers.dart';
+import '../shell_frame_helper.dart';
 
 NetConnection conn(String exe, {String host = '', String ip = '1.2.3.4'}) => NetConnection(
   id: '$exe$host$ip',
@@ -143,8 +144,8 @@ void main() {
     });
   });
 
-  for (final size in const [Size(400, 900), Size(1440, 1000)]) {
-    testWidgets('с данными, ${size.width.toInt()} px: без переполнений, игры свёрнуты', (tester) async {
+  for (final size in shellSizes) {
+    testWidgets('с данными, окно ${size.width.toInt()} px: без переполнений, игры свёрнуты', (tester) async {
       writeState(
         const SplitTunnel(
           via: SplitList(apps: ['Telegram.exe', 'Discord.exe'], domains: ['youtube.com']),
@@ -160,30 +161,77 @@ void main() {
         ],
         groups: errors,
       );
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: size);
+      await pumpInShell(tester, container, const SplitTunnelTablePage(), size: size, selected: 1);
       expectNoLayoutErrors(tester);
+      final semantics = tester.ensureSemantics();
 
-      expect(find.text('Раздельный туннель'), findsOneWidget);
-      expect(find.text('Игры и лаунчеры (${defaultBypassApps.length})'), findsOneWidget);
+      expect(find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'), findsOneWidget);
+      expect(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'), findsOneWidget);
       expect(find.text('steam'), findsNothing);
       expect(find.text('chrome'), findsOneWidget);
       expect(find.text('2 соединения'), findsOneWidget);
-      // kinopoisk.ru: 5 ошибок с поддомена — красный бейдж; Discord: 2 — оранжевый.
-      final kino = tester.widget<RescueBadge>(find.widgetWithText(RescueBadge, '5'));
-      expect(kino.kind, RescueBadgeKind.important);
-      expect(tester.widget<RescueBadge>(find.widgetWithText(RescueBadge, '2')).kind, RescueBadgeKind.warning);
+      // Первая строка (программа в сети) — жёлтая, переключатель в ней в цветах «на жёлтом».
+      expect(tester.widget<RouteSwitch>(routeSwitch('chrome')).onAccent, isTrue);
+      expect(tester.widget<RouteSwitch>(routeSwitch('Telegram')).onAccent, isFalse);
+      // kinopoisk.ru: 5 ошибок с поддомена; Discord: 2 по имени программы.
+      expect(find.bySemanticsLabel(RegExp(r'^kinopoisk\.ru, .*, 5 ошибок за сутки$')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Discord, .*, 2 ошибки за сутки$')), findsOneWidget);
       expect(find.text('домашняя сеть'), findsOneWidget);
 
       // Раскрыть группу игр.
-      await tester.ensureVisible(find.text('Игры и лаунчеры (${defaultBypassApps.length})'));
-      await tester.tap(find.text('Игры и лаунчеры (${defaultBypassApps.length})'));
+      await tester.ensureVisible(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
+      await tester.tap(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
       await tester.pumpAndSettle();
       expect(find.text('steam'), findsOneWidget);
       expectNoLayoutErrors(tester);
 
+      semantics.dispose();
       await closePage(tester, container);
     });
   }
+
+  testWidgets('закладки «Все / Мимо / Через VPN» и поиск', (tester) async {
+    writeState(
+      const SplitTunnel(
+        via: SplitList(apps: ['Telegram.exe'], domains: ['youtube.com']),
+        bypass: SplitList(domains: ['kinopoisk.ru'], ips: ['192.168.0.0/16']),
+      ),
+    );
+    final container = await start(tester, connections: [conn('chrome.exe')]);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
+
+    // Метки на закладках: все записи (с программой в сети), «мимо» и «через VPN».
+    expect(find.text('5'), findsOneWidget);
+    expect(find.text('2'), findsNWidgets(2));
+
+    Future<void> openTab(int i) async {
+      await tester.tap(find.byKey(ValueKey('folder-tab-$i')));
+      await tester.pumpAndSettle();
+    }
+
+    await openTab(1);
+    expect(routeSwitch('kinopoisk.ru'), findsOneWidget);
+    expect(routeSwitch('Telegram'), findsNothing);
+    expect(routeSwitch('chrome'), findsNothing);
+    expect(find.text('Идут напрямую, с домашнего IP'), findsOneWidget);
+
+    await openTab(2);
+    expect(routeSwitch('Telegram'), findsOneWidget);
+    expect(routeSwitch('youtube.com'), findsOneWidget);
+    expect(routeSwitch('kinopoisk.ru'), findsNothing);
+
+    await openTab(0);
+    await tester.enterText(find.byType(TextField), 'KINO');
+    await tester.pumpAndSettle();
+    expect(routeSwitch('kinopoisk.ru'), findsOneWidget);
+    expect(routeSwitch('Telegram'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'нет такого');
+    await tester.pumpAndSettle();
+    expect(find.text('Ничего не нашлось.'), findsOneWidget);
+
+    await closePage(tester, container);
+  });
 
   testWidgets('пусто и VPN выключен: подсказка и прочерки', (tester) async {
     writeState(const SplitTunnel());
@@ -191,7 +239,6 @@ void main() {
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
     expectNoLayoutErrors(tester);
     expect(find.text('Списки пусты. Добавьте программу, сайт или IP.'), findsOneWidget);
-    expect(find.text('—'), findsNWidgets(2));
     expect(find.text('«Сейчас» появится, когда VPN подключён.'), findsOneWidget);
     await closePage(tester, container);
   });

@@ -13,10 +13,21 @@ import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-enum _Filter { all, apps, sites, ips }
+/// Закладки над списком: все записи, только «мимо VPN», только «через VPN».
+enum _Tab { all, bypass, via }
 
-/// Шлюпка: «Раздельный туннель» — таблица (Tunnel.dc.html). Три положения у каждой записи:
-/// «Авто» (нет ни в одном списке), «Мимо» и «VPN». Изменения действуют сразу, без переподключения.
+/// Ширина, с которой список показывается таблицей с колонками; уже — строки в две строчки.
+const _wideFrom = 780.0;
+
+/// Ширина колонки «Куда идёт» (переключатель «Авто / Мимо / VPN»).
+const _routeWidth = 236.0;
+
+/// Шлюпка: «Раздельный туннель» в стиле «Д». Три положения у каждой записи: «Авто» (нет ни в
+/// одном списке), «Мимо» и «VPN». Изменения действуют сразу, без переподключения.
+///
+/// Сверху закладки-«папки» «Все / Мимо / Через VPN» с поиском, ниже — тёмный список (deep):
+/// первая строка жёлтая, игры и лаунчеры по умолчанию свёрнуты в одну строку с пунктирной рамкой.
+/// Трафика по программам нет — только число соединений сейчас и ошибки за сутки.
 class SplitTunnelTablePage extends HookConsumerWidget {
   const SplitTunnelTablePage({super.key});
 
@@ -28,12 +39,11 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final connections = visible ? ref.watch(liveConnectionsProvider).valueOrNull : null;
     final groups = ref.watch(errorGroupsProvider(InsightsPeriod.day)).valueOrNull ?? const <ErrorGroup>[];
     final query = useState('');
-    final filter = useState(_Filter.all);
+    final tab = useState(_Tab.all);
     final gamesOpen = useState(false);
 
     final data = buildTunnelRows(split, connections, groups);
     final summary = data.summary;
-    String count(int? n) => n == null ? '—' : '$n';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -44,10 +54,12 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           children: [
             RescuePageHeader(
               title: 'Раздельный туннель',
-              subtitle: 'Эти правила важнее общих и действуют сразу',
               actions: [
                 OutlinedButton(onPressed: () => _pickRunning(context, ref), child: const Text('Из запущенных')),
-                FilledButton(onPressed: () => _add(context, ref), child: const Text('+ Добавить')),
+                FilledButton(
+                  onPressed: () => _add(context, ref),
+                  child: const Text('+ Добавить сайт, IP или программу'),
+                ),
                 PopupMenuButton<void>(
                   tooltip: 'Ещё',
                   icon: const Icon(Icons.more_horiz_rounded),
@@ -60,182 +72,159 @@ class SplitTunnelTablePage extends HookConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            RescueGrid(
-              children: [
-                StatTile(label: 'Через VPN', value: '${summary.via}', markerColor: RescueColors.accent),
-                StatTile(label: 'Мимо VPN', value: '${summary.bypass}', markerColor: RescueColors.teal),
-                StatTile(label: 'По общим правилам', value: count(summary.auto), markerColor: RescueColors.fair),
-                StatTile(label: 'Сейчас в сети', value: count(summary.online), markerColor: RescueColors.good),
+            const SizedBox(height: 20),
+            FolderTabs<_Tab>(
+              semanticLabel: 'Списки',
+              tabs: [
+                FolderTab(value: _Tab.all, title: 'Все', badge: '${data.entries.length}'),
+                FolderTab(value: _Tab.bypass, title: 'Мимо', badge: '${summary.bypass}'),
+                FolderTab(value: _Tab.via, title: 'Через VPN', badge: '${summary.via}'),
               ],
-            ),
-            const SizedBox(height: 16),
-            RescueCard(
-              semanticLabel: 'Правила',
+              value: tab.value,
+              onChanged: (t) => tab.value = t,
               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 220, maxWidth: 420),
-                        child: TextField(
-                          onChanged: (v) => query.value = v.trim().toLowerCase(),
-                          style: RescueText.body,
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            prefixIcon: Icon(Icons.search_rounded, size: 20, color: RescueColors.textSecondary),
-                            hintText: 'Найти программу, сайт или IP',
-                            semanticCounterText: '',
-                          ),
-                        ),
-                      ),
-                      FilterChips<_Filter>(
-                        options: const [
-                          (_Filter.all, 'Всё'),
-                          (_Filter.apps, 'Программы'),
-                          (_Filter.sites, 'Сайты'),
-                          (_Filter.ips, 'IP'),
-                        ],
-                        selected: filter.value,
-                        onSelected: (f) => filter.value = f,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _table(context, ref, data.entries, filter.value, query.value, gamesOpen),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '«Авто» — решают общие правила: российские сайты напрямую, остальное через VPN.',
-                    style: RescueText.caption,
-                  ),
-                  if (connections == null) ...[
-                    const SizedBox(height: 4),
-                    const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
-                  ],
-                ],
+              child: _SearchRow(
+                onChanged: (v) => query.value = v.trim().toLowerCase(),
+                hint: switch (tab.value) {
+                  _Tab.all => 'Списки важнее общих правил и действуют сразу',
+                  _Tab.bypass => 'Идут напрямую, с домашнего IP',
+                  _Tab.via => 'Всегда через сервер, даже российские сайты',
+                },
               ),
             ),
+            const SizedBox(height: 20),
+            LayoutBuilder(
+              builder: (context, constraints) => _list(
+                context,
+                ref,
+                data.entries,
+                tab.value,
+                query.value,
+                gamesOpen,
+                wide: constraints.maxWidth >= _wideFrom,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '«Авто» — решают общие правила: российские сайты напрямую, остальное через VPN.',
+              style: RescueText.caption,
+            ),
+            if (connections == null) ...[
+              const SizedBox(height: 4),
+              const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _table(
+  Widget _list(
     BuildContext context,
     WidgetRef ref,
     List<TunnelEntry> all,
-    _Filter filter,
+    _Tab tab,
     String query,
-    ValueNotifier<bool> gamesOpen,
-  ) {
+    ValueNotifier<bool> gamesOpen, {
+    required bool wide,
+  }) {
     final entries = all.where((e) {
-      final byKind = switch (filter) {
-        _Filter.all => true,
-        _Filter.apps => e.kind == SplitKind.app,
-        _Filter.sites => e.kind == SplitKind.domain,
-        _Filter.ips => e.kind == SplitKind.ip,
+      final byTab = switch (tab) {
+        _Tab.all => true,
+        _Tab.bypass => e.target == SplitTarget.bypass,
+        _Tab.via => e.target == SplitTarget.via,
       };
-      return byKind && (query.isEmpty || e.value.toLowerCase().contains(query));
+      return byTab && (query.isEmpty || e.value.toLowerCase().contains(query));
     }).toList();
 
-    // Игры по умолчанию, которые не в сети, сворачиваем в одну строку (при поиске — не сворачиваем).
+    // Игры по умолчанию, которые не в сети, сворачиваем в одну строку внизу (при поиске — не сворачиваем).
     final games = query.isEmpty
         ? entries.where((e) => e.isDefaultGame && e.target == SplitTarget.bypass && !e.online).toList()
         : const <TunnelEntry>[];
     final collapse = games.length >= 2;
+    final plain = collapse ? entries.where((e) => !games.contains(e)).toList() : entries;
 
-    final rows = <RescueTableRow>[];
-    var groupAdded = false;
-    for (final e in entries) {
-      if (collapse && games.contains(e)) {
-        if (!groupAdded) {
-          groupAdded = true;
-          rows.add(_gamesRow(ref, games, gamesOpen));
-          if (gamesOpen.value) rows.addAll(games.map((g) => _entryRow(context, ref, g, indent: true)));
-        }
-        continue;
-      }
-      rows.add(_entryRow(context, ref, e));
-    }
-
-    if (rows.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Text(
-          all.isEmpty ? 'Списки пусты. Добавьте программу, сайт или IP.' : 'Ничего не нашлось.',
-          style: RescueText.smallSecondary,
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    return RescueTable(
-      minWidth: 820,
-      rowHeight: 60,
-      columns: const [
-        RescueColumn('Название', flex: 2.4),
-        RescueColumn('Тип'),
-        RescueColumn('Куда идёт', width: 230),
-        RescueColumn('Сейчас', flex: 1.4),
-        RescueColumn('Ошибки за сутки', alignEnd: true),
+    final rows = <Widget>[
+      if (wide) const _HeaderRow(),
+      for (final (i, e) in plain.indexed) _entryRow(context, ref, e, highlighted: i == 0, wide: wide),
+      if (collapse) ...[
+        _gamesRow(ref, games, gamesOpen, wide: wide),
+        if (gamesOpen.value)
+          for (final g in games) _entryRow(context, ref, g, highlighted: false, wide: wide, indent: true),
       ],
-      rows: rows,
+    ];
+
+    return DeepList(
+      radius: 36,
+      semanticLabel: 'Записи',
+      children: [
+        if (plain.isEmpty && !collapse)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              all.isEmpty ? 'Списки пусты. Добавьте программу, сайт или IP.' : 'Ничего не нашлось.',
+              style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          ...rows,
+      ],
     );
   }
 
-  RescueTableRow _gamesRow(WidgetRef ref, List<TunnelEntry> games, ValueNotifier<bool> open) {
+  Widget _gamesRow(WidgetRef ref, List<TunnelEntry> games, ValueNotifier<bool> open, {required bool wide}) {
     final errors = games.fold(0, (sum, g) => sum + g.errors);
     final values = [for (final g in games) g.value];
-    return RescueTableRow(
+    return _TunnelRow(
+      dashed: true,
+      wide: wide,
       onTap: () => open.value = !open.value,
-      cells: [
-        _NameCell(
-          title: 'Игры и лаунчеры (${games.length})',
-          detail: open.value ? 'список по умолчанию · свернуть' : 'список по умолчанию · раскрыть',
-          leading: const Icon(Icons.sports_esports_rounded, size: 18, color: Colors.white),
-          tint: const Color(0xFF1B2838),
-          trailing: Icon(
-            open.value ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-            size: 20,
-            color: RescueColors.textSecondary,
-          ),
-        ),
-        const _KindText('Программы'),
-        RouteSwitch(
-          value: RouteChoice.bypass,
-          semanticLabel: 'Куда идут игры и лаунчеры',
-          onChanged: (choice) {
-            final notifier = ref.read(splitTunnelProvider.notifier);
-            switch (choice) {
-              case RouteChoice.auto:
-                notifier.removeEverywhere(SplitKind.app, values);
-              case RouteChoice.vpn:
-                notifier.addAll(SplitTarget.via, SplitKind.app, values);
-              case RouteChoice.bypass:
-                break;
-            }
-          },
-        ),
-        const _LiveCell(connections: 0),
-        _ErrorsCell(errors),
-      ],
+      semanticLabel: 'Игры и лаунчеры, ${games.length}, ${open.value ? 'свернуть' : 'раскрыть'}',
+      icon: Icons.sports_esports_rounded,
+      title: 'Игры и лаунчеры · ${games.length}',
+      subtitle: open.value ? 'список по умолчанию · свернуть' : 'список по умолчанию · раскрыть',
+      trailingIcon: open.value ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+      kind: 'Программы',
+      connections: 0,
+      errors: errors,
+      route: (highlighted) => RouteSwitch(
+        value: RouteChoice.bypass,
+        semanticLabel: 'Куда идут игры и лаунчеры',
+        width: wide ? _routeWidth : null,
+        onAccent: highlighted,
+        onChanged: (choice) {
+          final notifier = ref.read(splitTunnelProvider.notifier);
+          switch (choice) {
+            case RouteChoice.auto:
+              notifier.removeEverywhere(SplitKind.app, values);
+            case RouteChoice.vpn:
+              notifier.addAll(SplitTarget.via, SplitKind.app, values);
+            case RouteChoice.bypass:
+              break;
+          }
+        },
+      ),
     );
   }
 
-  RescueTableRow _entryRow(BuildContext context, WidgetRef ref, TunnelEntry e, {bool indent = false}) {
+  Widget _entryRow(
+    BuildContext context,
+    WidgetRef ref,
+    TunnelEntry e, {
+    required bool highlighted,
+    required bool wide,
+    bool indent = false,
+  }) {
     final title = _title(e);
     final choice = switch (e.target) {
       null => RouteChoice.auto,
       SplitTarget.bypass => RouteChoice.bypass,
       SplitTarget.via => RouteChoice.vpn,
     };
-    return RescueTableRow(
+    final row = _TunnelRow(
+      wide: wide,
+      highlighted: highlighted,
       // Программа в сети: по нажатию — куда она ходит, с переносом сайта или IP в списки.
       onTap: e.kind == SplitKind.app && e.online
           ? () => showDialog<void>(
@@ -243,30 +232,25 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               builder: (_) => _AppConnectionsDialog(exe: e.value),
             )
           : null,
-      cells: [
-        Padding(
-          padding: EdgeInsets.only(left: indent ? 24 : 0),
-          child: _NameCell(
-            title: title,
-            detail: _detail(e),
-            letter: e.kind == SplitKind.ip ? '#' : title.characters.first.toUpperCase(),
-            tint: e.kind == SplitKind.ip ? RescueColors.muted : _tint(e.value),
-          ),
-        ),
-        _KindText(switch (e.kind) {
-          SplitKind.app => 'Программа',
-          SplitKind.domain => 'Сайт',
-          SplitKind.ip => 'IP / сеть',
-        }),
-        RouteSwitch(
-          value: choice,
-          semanticLabel: 'Куда идёт $title',
-          onChanged: (c) => _setRoute(ref, e.kind, e.value, c),
-        ),
-        _LiveCell(connections: e.connections),
-        _ErrorsCell(e.errors),
-      ],
+      letter: e.kind == SplitKind.ip ? '#' : title.characters.first.toUpperCase(),
+      title: title,
+      subtitle: _detail(e),
+      kind: switch (e.kind) {
+        SplitKind.app => 'Программа',
+        SplitKind.domain => 'Сайт',
+        SplitKind.ip => 'IP и сеть',
+      },
+      connections: e.connections,
+      errors: e.errors,
+      route: (onAccent) => RouteSwitch(
+        value: choice,
+        semanticLabel: 'Куда идёт $title',
+        width: wide ? _routeWidth : null,
+        onAccent: onAccent,
+        onChanged: (c) => _setRoute(ref, e.kind, e.value, c),
+      ),
     );
+    return indent ? Padding(padding: const EdgeInsets.only(left: 24), child: row) : row;
   }
 
   static void _setRoute(WidgetRef ref, SplitKind kind, String value, RouteChoice choice) {
@@ -291,26 +275,6 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     SplitKind.ip when e.value.endsWith('/32') || e.value.endsWith('/128') => 'один адрес',
     SplitKind.ip => 'сеть',
   };
-
-  static const _tints = [
-    Color(0xFF2F6FD6),
-    Color(0xFF1F8BC4),
-    Color(0xFFB5562F),
-    Color(0xFF5865F2),
-    Color(0xFF2E7D5B),
-    Color(0xFFC27C1A),
-    Color(0xFFC9372C),
-    Color(0xFFE0661B),
-  ];
-
-  // Цвет значка постоянный для имени (не меняется между запусками).
-  static Color _tint(String value) {
-    var h = 0;
-    for (final c in value.toLowerCase().codeUnits) {
-      h = (h * 31 + c) & 0x7FFFFFFF;
-    }
-    return _tints[h % _tints.length];
-  }
 
   // ---------- добавление ----------
 
@@ -393,45 +357,164 @@ class SplitTunnelTablePage extends HookConsumerWidget {
   }
 }
 
-// ---------- ячейки ----------
+// ---------- поиск и строки ----------
 
-class _NameCell extends StatelessWidget {
-  const _NameCell({
-    required this.title,
-    required this.detail,
-    required this.tint,
-    this.letter,
-    this.leading,
-    this.trailing,
-  });
+/// Поиск (таблетка цвета panel, высота 48) и подсказка к закладке справа.
+class _SearchRow extends StatelessWidget {
+  const _SearchRow({required this.onChanged, required this.hint});
 
-  final String title;
-  final String detail;
-  final Color tint;
-  final String? letter;
-  final Widget? leading;
-  final Widget? trailing;
+  final ValueChanged<String> onChanged;
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
-    final trailing = this.trailing;
-    return Row(
-      children: [
-        ExcludeSemantics(
-          child: Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
-            child:
-                leading ??
-                Text(
-                  letter ?? '',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
-                ),
-          ),
+    const pill = OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(999)), borderSide: BorderSide.none);
+    final field = TextField(
+      onChanged: onChanged,
+      style: RescueText.body,
+      decoration: const InputDecoration(
+        filled: true,
+        fillColor: RescueColors.panel,
+        hintText: 'Найти программу, сайт или IP',
+        prefixIcon: Icon(Icons.search_rounded, size: 18, color: RescueColors.muted),
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: pill,
+        enabledBorder: pill,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(999)),
+          borderSide: BorderSide(color: RescueColors.accent, width: 1.5),
         ),
-        const SizedBox(width: 10),
+        semanticCounterText: '',
+      ),
+    );
+    final note = Text(hint, style: RescueText.smallSecondary);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 560) {
+          return Row(
+            children: [
+              Expanded(child: field),
+              const SizedBox(width: 16),
+              Flexible(child: note),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [field, const SizedBox(height: 10), note],
+        );
+      },
+    );
+  }
+}
+
+/// Заголовки колонок тёмного списка (как в макете: 11 / 700 / 0.1em, subOnDeep).
+class _HeaderRow extends StatelessWidget {
+  const _HeaderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.1,
+      color: RescueColors.subOnDeep,
+    );
+    return const ExcludeSemantics(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(flex: 22, child: Text('НАЗВАНИЕ', style: style)),
+            SizedBox(width: 12),
+            Expanded(flex: 10, child: Text('ТИП', style: style)),
+            SizedBox(width: 12),
+            Expanded(flex: 10, child: Text('СЕЙЧАС', style: style)),
+            SizedBox(width: 12),
+            Expanded(flex: 8, child: Text('ОШИБКИ', style: style)),
+            SizedBox(width: 12),
+            SizedBox(
+              width: _routeWidth,
+              child: Text('КУДА ИДЁТ', style: style),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Строка тёмного списка: на широком окне — колонки «Название · Тип · Сейчас · Ошибки · Куда идёт»,
+/// на узком — название, под ним факты и переключатель во всю ширину.
+/// [highlighted] — жёлтая строка, [dashed] — пунктирная рамка (свёрнутая группа игр).
+class _TunnelRow extends StatelessWidget {
+  const _TunnelRow({
+    required this.wide,
+    required this.title,
+    required this.subtitle,
+    required this.kind,
+    required this.connections,
+    required this.errors,
+    required this.route,
+    this.highlighted = false,
+    this.dashed = false,
+    this.onTap,
+    this.letter,
+    this.icon,
+    this.trailingIcon,
+    this.semanticLabel,
+  });
+
+  final bool wide;
+  final String title;
+  final String subtitle;
+  final String kind;
+
+  /// Соединений сейчас; null — неизвестно (VPN не подключён).
+  final int? connections;
+
+  /// Ошибок за сутки.
+  final int errors;
+
+  /// Переключатель «Авто / Мимо / VPN»; аргумент — стоит ли он на жёлтом.
+  final Widget Function(bool onAccent) route;
+  final bool highlighted;
+  final bool dashed;
+  final VoidCallback? onTap;
+  final String? letter;
+  final IconData? icon;
+  final IconData? trailingIcon;
+  final String? semanticLabel;
+
+  String get _liveText => switch (connections) {
+    null => '—',
+    0 => 'не в сети',
+    final n => '$n ${pluralRu(n, 'соединение', 'соединения', 'соединений')}',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DeepTileColors.of(highlighted: highlighted);
+    final online = (connections ?? 0) > 0;
+    final trailingIcon = this.trailingIcon;
+
+    final tile = Container(
+      width: 38,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: c.tile, borderRadius: BorderRadius.circular(12)),
+      child: icon != null
+          ? Icon(icon, size: 18, color: c.foreground)
+          : Text(
+              letter ?? '',
+              maxLines: 1,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
+            ),
+    );
+    final name = Row(
+      children: [
+        tile,
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -441,80 +524,138 @@ class _NameCell extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: RescueColors.text),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.title),
               ),
-              Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: RescueText.caption),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.subtitle),
+              ),
             ],
           ),
         ),
-        if (trailing != null) ...[const SizedBox(width: 6), trailing],
+        if (trailingIcon != null) ...[const SizedBox(width: 6), Icon(trailingIcon, size: 20, color: c.subtitle)],
       ],
     );
-  }
-}
-
-class _KindText extends StatelessWidget {
-  const _KindText(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(text, style: const TextStyle(fontSize: 13, color: RescueColors.textTertiary));
-}
-
-class _LiveCell extends StatelessWidget {
-  const _LiveCell({required this.connections});
-
-  /// null — неизвестно (VPN не подключён).
-  final int? connections;
-
-  @override
-  Widget build(BuildContext context) {
-    final n = connections;
-    final online = (n ?? 0) > 0;
-    final text = switch (n) {
-      null => '—',
-      0 => 'не в сети',
-      _ => '$n ${pluralRu(n, 'соединение', 'соединения', 'соединений')}',
-    };
-    return Row(
+    final live = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(color: online ? RescueColors.good : RescueColors.muted, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: online ? (highlighted ? RescueColors.onAccent : RescueColors.accent) : RescueColors.off,
+            shape: BoxShape.circle,
+          ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Flexible(
           child: Text(
-            text,
-            semanticsLabel: n == null ? 'неизвестно' : null,
-            style: TextStyle(fontSize: 13, color: online ? RescueColors.text : RescueColors.textSecondary),
+            _liveText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: c.foreground),
           ),
         ),
       ],
     );
-  }
-}
+    final kindText = Text(kind, maxLines: 1, style: TextStyle(fontSize: 13, color: c.subtitle));
+    final errorsText = errors == 0 ? 'нет' : '$errors';
 
-class _ErrorsCell extends StatelessWidget {
-  const _ErrorsCell(this.errors);
-
-  final int errors;
-
-  @override
-  Widget build(BuildContext context) {
-    if (errors == 0) {
-      return const Text(
-        'нет',
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.textSecondary),
+    final Widget content;
+    if (wide) {
+      content = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(flex: 22, child: ExcludeSemantics(child: name)),
+            const SizedBox(width: 12),
+            Expanded(flex: 10, child: ExcludeSemantics(child: kindText)),
+            const SizedBox(width: 12),
+            Expanded(flex: 10, child: ExcludeSemantics(child: live)),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 8,
+              child: ExcludeSemantics(
+                child: Text(
+                  errorsText,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            route(highlighted),
+          ],
+        ),
+      );
+    } else {
+      content = Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExcludeSemantics(child: name),
+            const SizedBox(height: 6),
+            ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 50),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    kindText,
+                    live,
+                    Text(
+                      errors == 0 ? 'ошибок нет' : 'ошибок за сутки: $errors',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            route(highlighted),
+          ],
+        ),
       );
     }
-    return RescueBadge.tag(
-      label: '$errors',
-      kind: errors > 3 ? RescueBadgeKind.important : RescueBadgeKind.warning,
-      semanticLabel: '$errors ${pluralRu(errors, 'ошибка', 'ошибки', 'ошибок')} за сутки',
+
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(22),
+      side: dashed ? BorderSide.none : BorderSide(color: c.border),
+    );
+    final onTap = this.onTap;
+    Widget row = Material(
+      color: dashed ? Colors.transparent : c.background,
+      shape: shape,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: onTap == null
+            ? content
+            : InkWell(onTap: onTap, customBorder: shape, excludeFromSemantics: true, child: content),
+      ),
+    );
+    if (dashed) row = RescueCard.dashed(padding: EdgeInsets.zero, radius: 22, child: row);
+
+    final spoken =
+        semanticLabel ??
+        [
+          title,
+          subtitle,
+          kind,
+          if (connections == null) 'сейчас неизвестно' else _liveText,
+          if (errors == 0) 'ошибок нет' else '$errors ${pluralRu(errors, 'ошибка', 'ошибки', 'ошибок')} за сутки',
+        ].join(', ');
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      button: onTap != null,
+      label: spoken,
+      hint: onTap != null && !dashed ? 'Показать, куда ходит программа' : null,
+      onTap: onTap,
+      child: row,
     );
   }
 }
@@ -533,12 +674,7 @@ class _AddResult {
 
 /// Сегменты «Мимо VPN / Через VPN» для диалогов добавления.
 const _targetSegments = [
-  RescueSegment(
-    value: SplitTarget.bypass,
-    label: 'Мимо VPN',
-    selectedBackground: RescueColors.bypassBg,
-    selectedForeground: RescueColors.bypassText,
-  ),
+  RescueSegment(value: SplitTarget.bypass, label: 'Мимо VPN'),
   RescueSegment(value: SplitTarget.via, label: 'Через VPN'),
 ];
 
@@ -586,7 +722,7 @@ class _AddDialog extends HookWidget {
               onChanged: (t) => target.value = t,
               semanticLabel: 'Куда направить',
               expand: true,
-              background: RescueColors.background,
+              background: RescueColors.panel,
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -671,7 +807,7 @@ class _RunningAppsDialog extends HookConsumerWidget {
               onChanged: (t) => target.value = t,
               semanticLabel: 'Куда направить',
               expand: true,
-              background: RescueColors.background,
+              background: RescueColors.panel,
             ),
           ],
         ),
