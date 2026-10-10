@@ -10,17 +10,22 @@ import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Шлюпка: «Ошибки соединений» — счётчики за период, группы по сайтам и программам и подробности
-/// выбранной группы (по часам, список событий, сырые строки ядра, кнопки туннеля).
+/// Шлюпка: «Ошибки соединений» в стиле «Д» (макет docs/redesign/mockup/style-d-dark.html, экран
+/// errors): период, сводка, тёмный список групп по сайтам и программам (выбранная — жёлтая) и
+/// подробности выбранной группы (по часам, события, сырые строки ядра, кнопки туннеля).
 ///
-/// Без бокового меню: каркас (RescueShell) подключается снаружи. Уже 900 px список и подробности
-/// идут друг под другом в одной прокрутке, шире — рядом, каждая панель прокручивается сама.
+/// Без бокового меню: каркас (RescueShell) подключается снаружи. Уже [wideFrom] список и
+/// подробности идут друг под другом в одной прокрутке, шире — рядом; каждая колонка по высоте
+/// содержимого и прокручивается сама, если не влезает.
 class ErrorsPage extends HookConsumerWidget {
   const ErrorsPage({super.key, this.initialPeriod = InsightsPeriod.day});
 
   final InsightsPeriod initialPeriod;
 
-  static const wideFrom = 900.0;
+  static const wideFrom = 860.0;
+
+  /// Больше событий в подробностях не показываем: это для глаз, сырые строки — ниже.
+  static const maxEvents = 100;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,9 +40,15 @@ class ErrorsPage extends HookConsumerWidget {
     if (groups != null && groups.isNotEmpty) {
       selected = groups.firstWhere((g) => g.key == selectedKey.value, orElse: () => groups.first);
     }
-    void select(ErrorGroup g) => selectedKey.value = g.key;
 
-    final header = _Header(period: period.value, onChanged: (p) => period.value = p);
+    final header = SectionLabel.screen(
+      'Ошибки соединений',
+      trailing: PeriodSwitch<InsightsPeriod>(
+        options: [for (final p in InsightsPeriod.values) (p, p.title)],
+        value: period.value,
+        onChanged: (p) => period.value = p,
+      ),
+    );
     final stats = _Stats(events: events.valueOrNull);
 
     final Widget? placeholder = switch (groups) {
@@ -48,171 +59,60 @@ class ErrorsPage extends HookConsumerWidget {
     };
 
     return Material(
-      color: RescueColors.background,
+      color: RescueColors.panel,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= wideFrom;
           final group = selected;
-          if (placeholder != null || group == null || !wide) {
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: header),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                SliverToBoxAdapter(child: stats),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                if (placeholder != null || group == null)
-                  SliverToBoxAdapter(child: placeholder)
-                else ...[
-                  _cardSliver(
-                    padding: const EdgeInsets.all(16),
-                    slivers: [
-                      const SliverToBoxAdapter(child: _GroupsTitle()),
-                      SliverList.builder(
-                        itemCount: groups!.length,
-                        itemBuilder: (context, i) => _GroupTile(
-                          group: groups[i],
-                          selected: groups[i].key == group.key,
-                          now: now,
-                          onTap: () => select(groups[i]),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                  _cardSliver(padding: const EdgeInsets.all(20), slivers: _detailsSlivers(group, period.value, now)),
-                ],
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-              ],
+          final top = [header, const SizedBox(height: 20), stats, const SizedBox(height: 20)];
+          if (placeholder != null || group == null) {
+            return SingleChildScrollView(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...top, ?placeholder]),
             );
           }
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                header,
-                const SizedBox(height: 16),
-                stats,
-                const SizedBox(height: 16),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        flex: 10,
-                        child: RescueCard(
-                          semanticLabel: 'Список',
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const _GroupsTitle(),
-                              Expanded(
-                                child: ListView.builder(
-                                  itemCount: groups!.length,
-                                  itemBuilder: (context, i) => _GroupTile(
-                                    group: groups[i],
-                                    selected: groups[i].key == group.key,
-                                    now: now,
-                                    onTap: () => select(groups[i]),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 13,
-                        child: RescueCard(
-                          semanticLabel: 'Подробности',
-                          padding: EdgeInsets.zero,
-                          child: CustomScrollView(
-                            slivers: [
-                              SliverPadding(
-                                padding: const EdgeInsets.all(20),
-                                sliver: SliverMainAxisGroup(slivers: _detailsSlivers(group, period.value, now)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          final list = _GroupList(groups: groups!, selected: group, onSelect: (g) => selectedKey.value = g.key);
+          final details = _Details(key: ValueKey('details-${group.key}'), group: group, period: period.value, now: now);
+          if (constraints.maxWidth < wideFrom) {
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [...top, list, const SizedBox(height: 20), details],
+              ),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...top,
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 10, child: _Hug(child: list)),
+                    const SizedBox(width: 20),
+                    Expanded(flex: 13, child: _Hug(child: details)),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
     );
   }
+}
 
-  /// Карточка вокруг ленивого списка (на узком окне всё в одной прокрутке).
-  static Widget _cardSliver({required EdgeInsets padding, required List<Widget> slivers}) => DecoratedSliver(
-    decoration: BoxDecoration(
-      color: RescueColors.card,
-      border: Border.all(color: RescueColors.line),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    sliver: SliverPadding(
-      padding: padding,
-      sliver: SliverMainAxisGroup(slivers: slivers),
-    ),
+/// Колонка по высоте содержимого; если не влезает — своя прокрутка.
+class _Hug extends StatelessWidget {
+  const _Hug({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [Flexible(child: SingleChildScrollView(child: child))],
   );
-
-  static List<Widget> _detailsSlivers(ErrorGroup group, InsightsPeriod period, DateTime now) {
-    final bars = hourBuckets(group.events, period, now);
-    final appText = group.app.isEmpty ? 'программа неизвестна' : group.app;
-    final routeText = group.route == ErrorRoute.block ? 'заблокировано' : 'идёт ${group.route.long}';
-    final withDate = period == InsightsPeriod.week;
-    return [
-      SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Semantics(
-              header: true,
-              child: Text(
-                group.target,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: RescueColors.text),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
-              style: RescueText.smallSecondary,
-            ),
-            const SizedBox(height: 14),
-            HourBars(
-              key: const ValueKey('errors-hour-bars'),
-              counts: bars.counts,
-              title: bars.title,
-              startLabel: bars.start,
-              endLabel: bars.end,
-            ),
-            const SizedBox(height: 14),
-          ],
-        ),
-      ),
-      SliverList.builder(
-        itemCount: group.events.length,
-        itemBuilder: (context, i) => _EventRow(event: group.events[i], now: now, withDate: withDate),
-      ),
-      SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 14),
-            _RawLines(key: ValueKey('raw-${group.key}'), events: group.events),
-            const SizedBox(height: 14),
-            _Actions(group: group, period: period),
-          ],
-        ),
-      ),
-    ];
-  }
 }
 
 /// Столбики для HourBars: за час — по 5 минут, за сутки — по часам (24), за неделю — по дням (7).
@@ -232,14 +132,14 @@ class ErrorsPage extends HookConsumerWidget {
       n = 12;
       start = now.subtract(const Duration(hours: 1));
       index = (t) => t.difference(start).inMinutes ~/ 5;
-      title = 'Ошибки по 5 минут';
+      title = 'По 5 минут';
       startLabel = hhmm(start);
       endLabel = 'сейчас';
     case InsightsPeriod.day:
       n = 24;
       start = DateTime(now.year, now.month, now.day, now.hour).subtract(const Duration(hours: 23));
       index = (t) => t.difference(start).inMinutes ~/ 60;
-      title = 'Ошибки по часам';
+      title = 'По часам';
       startLabel = '${sameDay(start, now) ? 'сегодня' : 'вчера'} ${start.hour.toString().padLeft(2, '0')}:00';
       endLabel = 'сейчас';
     case InsightsPeriod.week:
@@ -247,7 +147,7 @@ class ErrorsPage extends HookConsumerWidget {
       start = DateTime(now.year, now.month, now.day - 6);
       // По календарным дням; round — чтобы переход на летнее время не сдвигал день.
       index = (t) => (DateTime(t.year, t.month, t.day).difference(start).inHours / 24).round();
-      title = 'Ошибки по дням';
+      title = 'По дням';
       startLabel = dayMonthShort(start);
       endLabel = 'сегодня';
   }
@@ -296,48 +196,6 @@ String ownerSummary(ErrorGroup group, InsightsPeriod period, DateTime now) {
   ].join('\n');
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.period, required this.onChanged});
-
-  final InsightsPeriod period;
-  final ValueChanged<InsightsPeriod> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 56),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        alignment: WrapAlignment.spaceBetween,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 240),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Semantics(header: true, child: const Text('Ошибки соединений', style: RescueText.pageTitle)),
-                const SizedBox(height: 2),
-                const Text(
-                  'Что не смогло подключиться. Хранится только на этом компьютере, 7 дней.',
-                  style: RescueText.pageSubtitle,
-                ),
-              ],
-            ),
-          ),
-          PeriodSwitch<InsightsPeriod>(
-            options: [for (final p in InsightsPeriod.values) (p, p.title)],
-            value: period,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Stats extends StatelessWidget {
   const _Stats({required this.events});
 
@@ -352,27 +210,34 @@ class _Stats extends StatelessWidget {
       return '${countErrors(list.where((e) => e.kind != ErrorKind.suppressed && test(e)))}';
     }
 
-    // На узком окне — два в ряд, а не столбиком.
-    return RescueGrid(
-      minItemWidth: 150,
-      children: [
-        StatTile(label: 'Всего ошибок', value: list == null ? '—' : '${countErrors(list)}'),
-        StatTile(
-          label: 'Через VPN',
-          value: count((e) => e.route == ErrorRoute.vpn),
-          valueColor: RescueColors.softAccentText,
-        ),
-        StatTile(
-          label: 'Мимо VPN',
-          value: count((e) => e.route == ErrorRoute.direct),
-          valueColor: RescueColors.bypassText,
-        ),
-        StatTile(
-          label: 'Замирания связи',
-          value: count((e) => e.kind == ErrorKind.stall),
-          valueColor: RescueColors.warningText,
-        ),
-      ],
+    return RescueCard(
+      semanticLabel: 'Сводка',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          StatColumns(
+            columns: [
+              StatColumn(label: 'ВСЕГО ОШИБОК', value: list == null ? '—' : '${countErrors(list)}'),
+              StatColumn(
+                label: 'ЧЕРЕЗ VPN',
+                value: count((e) => e.route == ErrorRoute.vpn),
+                lineColor: RescueColors.accent,
+              ),
+              StatColumn(label: 'МИМО VPN', value: count((e) => e.route == ErrorRoute.direct)),
+              StatColumn(
+                label: 'ЗАМИРАНИЯ СВЯЗИ',
+                value: count((e) => e.kind == ErrorKind.stall),
+                lineColor: RescueColors.warn,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Что не смогло подключиться. Хранится только на этом компьютере, 7 дней.',
+            style: RescueText.caption,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -383,7 +248,7 @@ class _Placeholder extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => RescueCard(
+  Widget build(BuildContext context) => RescueCard.dashed(
     child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Text(text, style: RescueText.body, textAlign: TextAlign.center),
@@ -391,100 +256,107 @@ class _Placeholder extends StatelessWidget {
   );
 }
 
-class _GroupsTitle extends StatelessWidget {
-  const _GroupsTitle();
+/// Тёмный список групп: выбранная строка жёлтая, справа — кольцо с числом ошибок.
+class _GroupList extends StatelessWidget {
+  const _GroupList({required this.groups, required this.selected, required this.onSelect});
 
-  @override
-  Widget build(BuildContext context) => const Padding(
-    padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
-    child: Row(
-      children: [
-        Expanded(child: Text('По сайтам и программам', style: RescueText.cardTitle)),
-        SizedBox(width: 8),
-        Text('сначала частые', style: RescueText.caption),
-      ],
-    ),
-  );
-}
-
-class _GroupTile extends StatelessWidget {
-  const _GroupTile({required this.group, required this.selected, required this.now, required this.onTap});
-
-  final ErrorGroup group;
-  final bool selected;
-  final DateTime now;
-  final VoidCallback onTap;
+  final List<ErrorGroup> groups;
+  final ErrorGroup selected;
+  final ValueChanged<ErrorGroup> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    final byApp = group.key.startsWith('app:');
-    final who = byApp ? 'сайт неизвестен' : (group.app.isEmpty ? 'программа неизвестна' : group.app);
-    final last = sameDay(group.last, now)
-        ? 'в ${hhmm(group.last)}'
-        : '${dayMonthShort(group.last)} в ${hhmm(group.last)}';
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
-      side: BorderSide(color: selected ? RescueColors.accent : RescueColors.line),
+    final most = groups.fold<int>(1, (m, g) => g.count > m ? g.count : m);
+    return DeepList(
+      title: 'По сайтам и программам',
+      count: '${groups.length}',
+      semanticLabel: 'Список',
+      radius: 36,
+      children: [for (final g in groups) _tile(g, most)],
     );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Semantics(
-        button: true,
-        selected: selected,
-        label: '${group.target}, $who, ${group.route.long}, ${group.count} ${errorsWord(group.count)}',
-        onTap: onTap,
-        child: ExcludeSemantics(
-          child: Material(
-            color: selected ? RescueColors.softAccent : RescueColors.background,
-            shape: shape,
-            child: InkWell(
-              customBorder: shape,
-              onTap: onTap,
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 64),
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            group.target,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: RescueText.bodyStrong,
-                          ),
-                          Text(
-                            '$who · последняя $last',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: RescueText.caption,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    routeTag(group.route),
-                    const SizedBox(width: 12),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 36),
-                      child: Text(
-                        '${group.count}',
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: group.count > 3 ? RescueColors.importantText : RescueColors.warningText,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+  }
+
+  Widget _tile(ErrorGroup g, int most) {
+    final on = g.key == selected.key;
+    final c = DeepTileColors.of(highlighted: on);
+    final sub = groupSubtitle(g);
+    return DeepListTile(
+      leading: tileLetter(g.target),
+      title: g.target,
+      subtitle: sub,
+      highlighted: on,
+      minHeight: 68,
+      tileSize: 38,
+      radius: 22,
+      semanticLabel: '${g.target}, $sub, ${g.count} ${errorsWord(g.count)}',
+      onTap: () => onSelect(g),
+      trailing: ExcludeSemantics(
+        child: RingStat(
+          value: g.count / most,
+          label: '${g.count}',
+          size: 40,
+          strokeWidth: 3.5,
+          color: c.ring,
+          trackColor: c.ringTrack,
+          labelColor: c.foreground,
+        ),
+      ),
+    );
+  }
+}
+
+/// Подробности выбранной группы: закладка с названием, по часам, события, сырые строки, кнопки.
+class _Details extends StatelessWidget {
+  const _Details({super.key, required this.group, required this.period, required this.now});
+
+  final ErrorGroup group;
+  final InsightsPeriod period;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final bars = hourBuckets(group.events, period, now);
+    final appText = group.app.isEmpty ? 'программа неизвестна' : group.app;
+    final routeText = group.route == ErrorRoute.block ? 'заблокировано' : 'идёт ${group.route.long}';
+    final withDate = period == InsightsPeriod.week;
+    final shown = group.events.take(ErrorsPage.maxEvents).toList();
+    final total = bars.counts.fold<int>(0, (s, v) => s + v);
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: 'Подробности',
+      child: FolderTabs<String>(
+        tabs: [FolderTab(value: group.key, title: group.target)],
+        value: group.key,
+        onChanged: null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
+              style: RescueText.smallSecondary,
             ),
-          ),
+            const SizedBox(height: 16),
+            HourBars(
+              key: const ValueKey('errors-hour-bars'),
+              counts: bars.counts,
+              title: bars.title.toUpperCase(),
+              startLabel: bars.start,
+              endLabel: bars.end,
+              height: 70,
+              semanticLabel: 'Ошибки ${bars.title.toLowerCase()}: всего $total',
+            ),
+            const SizedBox(height: 12),
+            for (final e in shown) _EventRow(event: e, now: now, withDate: withDate),
+            if (group.events.length > shown.length) ...[
+              const SizedBox(height: 8),
+              Text('Показаны последние ${shown.length} из ${group.events.length}', style: RescueText.caption),
+            ],
+            const SizedBox(height: 16),
+            _RawLines(key: ValueKey('raw-${group.key}'), events: group.events),
+            const SizedBox(height: 16),
+            _Actions(group: group, period: period),
+          ],
         ),
       ),
     );
@@ -503,24 +375,27 @@ class _EventRow extends StatelessWidget {
     final e = event;
     final address = e.ip.isNotEmpty ? '${e.ip}:${e.port}' : (e.host.isNotEmpty ? e.host : '—');
     return Container(
-      constraints: const BoxConstraints(minHeight: 40),
+      constraints: const BoxConstraints(minHeight: 42),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: RescueColors.rowLine)),
+        border: Border(bottom: BorderSide(color: RescueColors.line)),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: withDate ? 100 : 60,
-            child: Text(withDate ? eventTime(e.time, now) : hhmm(e.time), style: monoStyle, maxLines: 1),
+            width: withDate ? 100 : 56,
+            child: Text(
+              withDate ? eventTime(e.time, now) : hhmm(e.time),
+              style: monoStyle.copyWith(fontSize: 13),
+              maxLines: 1,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            flex: 13,
             child: Text(eventWhat(e), style: RescueText.small, maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(width: 12),
           Expanded(
-            flex: 10,
             child: Text(address, style: RescueText.smallSecondary, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ],
@@ -541,13 +416,9 @@ class _RawLines extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final open = useState(false);
-    final radius = BorderRadius.circular(12);
+    final radius = BorderRadius.circular(20);
     return Container(
-      decoration: BoxDecoration(
-        color: RescueColors.background,
-        border: Border.all(color: RescueColors.line),
-        borderRadius: radius,
-      ),
+      decoration: BoxDecoration(color: RescueColors.deep, borderRadius: radius),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -566,12 +437,12 @@ class _RawLines extends HookWidget {
                       Icon(
                         open.value ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
                         size: 18,
-                        color: RescueColors.textTertiary,
+                        color: RescueColors.subOnDeep,
                       ),
                       const SizedBox(width: 6),
                       const Text(
                         'Сырые строки',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.textTertiary),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.subOnDeep),
                       ),
                     ],
                   ),
@@ -617,28 +488,32 @@ class _Actions extends ConsumerWidget {
     final item = splitItemFor(group);
     final current = item == null ? null : ref.watch(splitTunnelProvider).targetOf(item.kind, item.value);
 
-    Widget addButton(SplitTarget target, String label, String done) {
-      final already = current == target;
-      return OutlinedButton(
-        onPressed: item == null || already
-            ? null
-            : () {
-                ref.read(splitTunnelProvider.notifier).add(target, item.kind, item.value);
-                ScaffoldMessenger.maybeOf(
-                  context,
-                )?.showSnackBar(SnackBar(content: Text('Добавлено в «${target.title}»: ${item.value}')));
-              },
-        child: Text(already ? done : label),
-      );
-    }
+    VoidCallback? add(SplitTarget target) => item == null || current == target
+        ? null
+        : () {
+            ref.read(splitTunnelProvider.notifier).add(target, item.kind, item.value);
+            ScaffoldMessenger.maybeOf(
+              context,
+            )?.showSnackBar(SnackBar(content: Text('Добавлено в «${target.title}»: ${item.value}')));
+          };
 
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        addButton(SplitTarget.bypass, 'Пустить мимо VPN', 'Уже мимо VPN'),
-        addButton(SplitTarget.via, 'Всегда через VPN', 'Уже через VPN'),
+        FilledButton(
+          onPressed: add(SplitTarget.bypass),
+          child: Text(current == SplitTarget.bypass ? 'Уже мимо VPN' : 'Пустить мимо VPN'),
+        ),
         OutlinedButton(
+          onPressed: add(SplitTarget.via),
+          child: Text(current == SplitTarget.via ? 'Уже через VPN' : 'Всегда через VPN'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: RescueColors.text,
+            textStyle: RescueText.button.copyWith(decoration: TextDecoration.underline),
+          ),
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: ownerSummary(group, period, DateTime.now())));
             if (!context.mounted) return;

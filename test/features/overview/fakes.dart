@@ -1,20 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart' show Unit, unit;
+import 'package:hiddify/core/app_info/app_info_provider.dart';
+import 'package:hiddify/core/model/app_info_entity.dart';
+import 'package:hiddify/core/model/environment.dart';
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
+import 'package:hiddify/features/insights/notifier/insights_settings.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_theme.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Подменённые провайдеры для экранов Обзора и Ошибок: без ядра, файлов и настроек.
+/// Подменённые провайдеры для Главной, Ошибок и каркаса: без ядра, файлов и настроек.
 
 class FakeConnection extends ConnectionNotifier {
   FakeConnection(this.status);
@@ -47,6 +55,43 @@ class FakeActiveProfile extends ActiveProfile {
   Stream<ProfileEntity?> build() => Stream.value(profile);
 }
 
+/// Список подписок в памяти; выбор делает подписку активной.
+class FakeProfiles extends ProfilesNotifier {
+  FakeProfiles(this.initial);
+
+  final List<ProfileEntity> initial;
+  final selected = <String>[];
+
+  @override
+  Stream<List<ProfileEntity>> build() => Stream.value(initial);
+
+  @override
+  Future<Unit> selectActiveProfile(String id) async {
+    selected.add(id);
+    final list = state.valueOrNull ?? initial;
+    state = AsyncData([for (final p in list) p.copyWith(active: p.id == id)]);
+    return unit;
+  }
+}
+
+class FakeInsightsSettings extends InsightsSettingsNotifier {
+  @override
+  InsightsSettings build() => const InsightsSettings();
+}
+
+class FakeAppInfo extends AppInfo {
+  @override
+  Future<AppInfoEntity> build() async => const AppInfoEntity(
+    name: 'Шлюпка спасения',
+    version: '0.2.0',
+    buildNumber: '1',
+    release: Release.general,
+    operatingSystem: 'windows',
+    operatingSystemVersion: '10',
+    environment: Environment.prod,
+  );
+}
+
 class FakeDialogs extends DialogNotifier {
   int notices = 0;
 
@@ -65,6 +110,22 @@ class FakeSplitTunnel extends SplitTunnelNotifier {
 
   @override
   SplitTunnel build() => initial;
+
+  @override
+  void addAll(SplitTarget target, SplitKind kind, Iterable<String> values) {
+    for (final v in values) {
+      add(target, kind, v);
+    }
+  }
+
+  @override
+  void removeEverywhere(SplitKind kind, Iterable<String> values) {
+    for (final v in values) {
+      state = state
+          .withList(SplitTarget.bypass, state.bypass.without(kind, v))
+          .withList(SplitTarget.via, state.via.without(kind, v));
+    }
+  }
 
   @override
   void add(SplitTarget target, SplitKind kind, String value) {
@@ -156,6 +217,14 @@ final sampleHistory = [
     ),
 ];
 
+final secondProfile = ProfileEntity.remote(
+  id: '2',
+  active: false,
+  name: 'Запасная NL',
+  url: 'https://backup.example.net/other-token',
+  lastUpdate: now,
+);
+
 final emptyHistory = [
   for (var i = 0; i < 30; i++)
     DailyHealth(day: DateTime(now.year, now.month, now.day - 29 + i), score: null, errors: 0, outageMinutes: 0),
@@ -182,6 +251,7 @@ List<Override> pageOverrides({
   FakeDialogs? dialogs,
   ProfileEntity? profile,
   OutboundInfo? proxy,
+  FakeProfiles? profiles,
   bool empty = false,
 }) => [
   connectionNotifierProvider.overrideWith(() => connection ?? FakeConnection(const Connected())),
@@ -199,7 +269,19 @@ List<Override> pageOverrides({
   ),
   healthProvider.overrideWith((ref) => AsyncData(empty ? HealthSnapshot.empty : sampleHealth)),
   healthHistoryProvider.overrideWith((ref) => AsyncData(empty ? emptyHistory : sampleHistory)),
+  profilesNotifierProvider.overrideWith(
+    () => profiles ?? FakeProfiles(empty ? const [] : [profile ?? sampleProfile, secondProfile]),
+  ),
+  insightsSettingsProvider.overrideWith(FakeInsightsSettings.new),
+  appInfoProvider.overrideWith(FakeAppInfo.new),
 ];
+
+/// Настройки (способ работы, регион) — из SharedPreferences в памяти, каждый раз пустые.
+Future<Override> mockPrefs() async {
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
+  return sharedPreferencesProvider.overrideWith((ref) => prefs);
+}
 
 void setWindowSize(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
@@ -215,9 +297,10 @@ Future<void> pumpPage(
   Size size = const Size(1440, 1000),
 }) async {
   setWindowSize(tester, size);
+  final prefs = await mockPrefs();
   await tester.pumpWidget(
     ProviderScope(
-      overrides: overrides,
+      overrides: [prefs, ...overrides],
       child: MaterialApp(
         theme: RescueTheme.dark(),
         home: Scaffold(body: page),
