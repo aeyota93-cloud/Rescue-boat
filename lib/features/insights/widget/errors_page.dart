@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hiddify/features/common/pinned_scroll.dart';
 import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -14,9 +15,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// errors): период, сводка, тёмный список групп по сайтам и программам (выбранная — жёлтая) и
 /// подробности выбранной группы (по часам, события, сырые строки ядра, кнопки туннеля).
 ///
-/// Без бокового меню: каркас (RescueShell) подключается снаружи. Уже [wideFrom] список и
-/// подробности идут друг под другом в одной прокрутке, шире — рядом; каждая колонка по высоте
-/// содержимого и прокручивается сама, если не влезает.
+/// Без бокового меню: каркас (RescueShell) подключается снаружи. Если области раздела хватает
+/// ([pinnedMinWidth] × [pinnedMinHeight]), закреплены заголовок с периодом, сводка, шапка списка,
+/// название, график и кнопки подробностей, а прокручиваются только группы и события — каждая
+/// колонка внутри своей карточки. Меньше — прокручивается вся страница (рядом, если шире
+/// [wideFrom], иначе друг под другом), длинные списки обрезаны с кнопкой «Показать ещё».
 class ErrorsPage extends HookConsumerWidget {
   const ErrorsPage({super.key, this.initialPeriod = InsightsPeriod.day});
 
@@ -26,6 +29,12 @@ class ErrorsPage extends HookConsumerWidget {
 
   /// Больше событий в подробностях не показываем: это для глаз, сырые строки — ниже.
   static const maxEvents = 100;
+
+  /// Область ниже этой (но не меньше [pinnedMinHeight]) — «тесная»: сводка без пояснения.
+  static const denseBelow = 700.0;
+
+  /// На маленьком окне (прокрутка всей страницы) сначала показываем столько, дальше — «Показать ещё».
+  static const compactStep = 30;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,7 +58,6 @@ class ErrorsPage extends HookConsumerWidget {
         onChanged: (p) => period.value = p,
       ),
     );
-    final stats = _Stats(events: events.valueOrNull);
 
     final Widget? placeholder = switch (groups) {
       null when groupsValue.hasError => const _Placeholder('Не удалось прочитать журнал ошибок'),
@@ -63,56 +71,73 @@ class ErrorsPage extends HookConsumerWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final group = selected;
-          final top = [header, const SizedBox(height: 20), stats, const SizedBox(height: 20)];
+          final pinned = isPinnedLayout(constraints);
+          // Невысокая область: сводка без пояснения и теснее, чтобы спискам осталось место.
+          final dense = pinned && constraints.maxHeight < denseBelow;
+          final gap = SizedBox(height: dense ? 12 : 20);
+          final top = [header, gap, _Stats(events: events.valueOrNull, compact: dense), gap];
           if (placeholder != null || group == null) {
             return SingleChildScrollView(
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...top, ?placeholder]),
             );
           }
-          final list = _GroupList(groups: groups!, selected: group, onSelect: (g) => selectedKey.value = g.key);
-          final details = _Details(key: ValueKey('details-${group.key}'), group: group, period: period.value, now: now);
-          if (constraints.maxWidth < wideFrom) {
-            return SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [...top, list, const SizedBox(height: 20), details],
-              ),
+          final list = _GroupList(
+            groups: groups!,
+            selected: group,
+            onSelect: (g) => selectedKey.value = g.key,
+            pinned: pinned,
+          );
+          final details = _Details(
+            key: ValueKey('details-${group.key}'),
+            group: group,
+            period: period.value,
+            now: now,
+            pinned: pinned,
+          );
+          if (pinned) {
+            // Всё закреплено, колонки делят оставшуюся высоту и прокручиваются сами.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ...top,
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(flex: 10, child: list),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 13, child: details),
+                    ],
+                  ),
+                ),
+              ],
             );
           }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ...top,
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 10, child: _Hug(child: list)),
-                    const SizedBox(width: 20),
-                    Expanded(flex: 13, child: _Hug(child: details)),
-                  ],
-                ),
-              ),
-            ],
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ...top,
+                if (constraints.maxWidth < wideFrom) ...[
+                  list,
+                  const SizedBox(height: 20),
+                  details,
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 10, child: list),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 13, child: details),
+                    ],
+                  ),
+              ],
+            ),
           );
         },
       ),
     );
   }
-}
-
-/// Колонка по высоте содержимого; если не влезает — своя прокрутка.
-class _Hug extends StatelessWidget {
-  const _Hug({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    mainAxisSize: MainAxisSize.min,
-    children: [Flexible(child: SingleChildScrollView(child: child))],
-  );
 }
 
 /// Столбики для HourBars: за час — по 5 минут, за сутки — по часам (24), за неделю — по дням (7).
@@ -197,10 +222,13 @@ String ownerSummary(ErrorGroup group, InsightsPeriod period, DateTime now) {
 }
 
 class _Stats extends StatelessWidget {
-  const _Stats({required this.events});
+  const _Stats({required this.events, this.compact = false});
 
   /// null — ещё читаются.
   final List<ErrorEvent>? events;
+
+  /// Без пояснения под числами (невысокое окно).
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -212,6 +240,7 @@ class _Stats extends StatelessWidget {
 
     return RescueCard(
       semanticLabel: 'Сводка',
+      padding: compact ? const EdgeInsets.symmetric(vertical: 14, horizontal: 20) : const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -231,11 +260,13 @@ class _Stats extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          const Text(
-            'Что не смогло подключиться. Хранится только на этом компьютере, 7 дней.',
-            style: RescueText.caption,
-          ),
+          if (!compact) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'Что не смогло подключиться. Хранится только на этом компьютере, 7 дней.',
+              style: RescueText.caption,
+            ),
+          ],
         ],
       ),
     );
@@ -257,22 +288,55 @@ class _Placeholder extends StatelessWidget {
 }
 
 /// Тёмный список групп: выбранная строка жёлтая, справа — кольцо с числом ошибок.
-class _GroupList extends StatelessWidget {
-  const _GroupList({required this.groups, required this.selected, required this.onSelect});
+/// [pinned] — шапка закреплена, группы прокручиваются внутри карточки (нужна ограниченная высота);
+/// иначе карточка по высоте списка, но не больше [ErrorsPage.compactStep] групп с «Показать ещё».
+class _GroupList extends HookWidget {
+  const _GroupList({required this.groups, required this.selected, required this.onSelect, required this.pinned});
 
   final List<ErrorGroup> groups;
   final ErrorGroup selected;
   final ValueChanged<ErrorGroup> onSelect;
+  final bool pinned;
 
   @override
   Widget build(BuildContext context) {
+    final limit = useState(ErrorsPage.compactStep);
     final most = groups.fold<int>(1, (m, g) => g.count > m ? g.count : m);
+    if (pinned) {
+      return DeepList(
+        title: 'По сайтам и программам',
+        count: '${groups.length}',
+        semanticLabel: 'Список',
+        radius: 36,
+        children: [
+          Expanded(
+            child: PinnedList(
+              key: const ValueKey('errors-groups-list'),
+              itemCount: groups.length,
+              spacing: 10,
+              itemBuilder: (_, i) => _tile(groups[i], most),
+            ),
+          ),
+        ],
+      );
+    }
+    final shown = groups.take(limit.value).toList();
     return DeepList(
       title: 'По сайтам и программам',
       count: '${groups.length}',
       semanticLabel: 'Список',
       radius: 36,
-      children: [for (final g in groups) _tile(g, most)],
+      children: [
+        for (final g in shown) _tile(g, most),
+        if (groups.length > shown.length)
+          _MoreButton(
+            key: const ValueKey('errors-groups-more'),
+            shown: shown.length,
+            total: groups.length,
+            onDeep: true,
+            onPressed: () => limit.value += ErrorsPage.compactStep,
+          ),
+      ],
     );
   }
 
@@ -306,21 +370,125 @@ class _GroupList extends StatelessWidget {
 }
 
 /// Подробности выбранной группы: закладка с названием, по часам, события, сырые строки, кнопки.
-class _Details extends StatelessWidget {
-  const _Details({super.key, required this.group, required this.period, required this.now});
+///
+/// [pinned]: название, подпись, график, «Сырые строки» и кнопки закреплены, события прокручиваются
+/// внутри карточки (раскрытые сырые строки занимают их место). Иначе всё идёт подряд, события
+/// обрезаны до [ErrorsPage.compactStep] с «Показать ещё».
+class _Details extends HookWidget {
+  const _Details({super.key, required this.group, required this.period, required this.now, required this.pinned});
 
   final ErrorGroup group;
   final InsightsPeriod period;
   final DateTime now;
+  final bool pinned;
 
   @override
   Widget build(BuildContext context) {
+    final rawOpen = useState(false);
+    final limit = useState(ErrorsPage.compactStep);
     final bars = hourBuckets(group.events, period, now);
     final appText = group.app.isEmpty ? 'программа неизвестна' : group.app;
     final routeText = group.route == ErrorRoute.block ? 'заблокировано' : 'идёт ${group.route.long}';
     final withDate = period == InsightsPeriod.week;
-    final shown = group.events.take(ErrorsPage.maxEvents).toList();
+    final cap = group.events.length < ErrorsPage.maxEvents ? group.events.length : ErrorsPage.maxEvents;
+    // Все события (до cap) — для своего списка с прокруткой; иначе только первые, остальное по кнопке.
+    final shownAll = group.events.take(cap).toList();
+    final shownFew = group.events.take(limit.value > cap ? cap : limit.value).toList();
     final total = bars.counts.fold<int>(0, (s, v) => s + v);
+    final summary = Text(
+      '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
+      style: RescueText.smallSecondary,
+    );
+    Widget chart(double height) => HourBars(
+      key: const ValueKey('errors-hour-bars'),
+      counts: bars.counts,
+      title: bars.title.toUpperCase(),
+      startLabel: bars.start,
+      endLabel: bars.end,
+      height: height,
+      semanticLabel: 'Ошибки ${bars.title.toLowerCase()}: всего $total',
+    );
+    final note = group.events.length > cap
+        ? Text('Показаны последние $cap из ${group.events.length}', style: RescueText.caption)
+        : null;
+    void toggleRaw() => rawOpen.value = !rawOpen.value;
+
+    // Всё подряд: для прокрутки всей страницы и для совсем низкой колонки (прокручивается карточка).
+    Widget inlineBody() => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        summary,
+        const SizedBox(height: 16),
+        chart(70),
+        const SizedBox(height: 12),
+        for (final e in shownFew) _EventRow(event: e, now: now, withDate: withDate),
+        if (shownFew.length < cap)
+          _MoreButton(
+            key: const ValueKey('errors-events-more'),
+            shown: shownFew.length,
+            total: group.events.length,
+            onPressed: () => limit.value = shownFew.length + ErrorsPage.compactStep,
+          ),
+        if (shownFew.length >= cap && note != null) ...[const SizedBox(height: 8), note],
+        const SizedBox(height: 16),
+        _RawLines(key: ValueKey('raw-${group.key}'), events: group.events, open: rawOpen.value, onToggle: toggleRaw),
+        const SizedBox(height: 16),
+        _Actions(group: group, period: period),
+      ],
+    );
+
+    if (pinned) {
+      return Semantics(
+        container: true,
+        explicitChildNodes: true,
+        label: 'Подробности',
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Совсем низкая колонка: закреплённое не оставило бы места событиям — крутим карточку целиком.
+            if (constraints.maxHeight < (constraints.maxWidth < 560 ? tightBelowNarrow : tightBelow)) {
+              return _PinnedFolder(
+                title: group.target,
+                padding: 14,
+                child: PinnedScroll(key: const ValueKey('errors-details-scroll'), child: inlineBody()),
+              );
+            }
+            // Невысокая колонка: график ниже, поля уже, чтобы событиям осталось место.
+            final low = constraints.maxHeight < 560;
+            return _PinnedFolder(
+              title: group.target,
+              padding: low ? 14 : 20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  summary,
+                  SizedBox(height: low ? 8 : 16),
+                  chart(low ? 40 : 70),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: rawOpen.value
+                        ? _RawBody(key: ValueKey('raw-${group.key}'), events: group.events)
+                        : PinnedList(
+                            key: const ValueKey('errors-events-list'),
+                            itemCount: shownAll.length + (note == null ? 0 : 1),
+                            itemBuilder: (_, i) => i < shownAll.length
+                                ? _EventRow(event: shownAll[i], now: now, withDate: withDate)
+                                : Padding(padding: const EdgeInsets.only(top: 8), child: note),
+                          ),
+                  ),
+                  SizedBox(height: low ? 10 : 16),
+                  _Actions(
+                    group: group,
+                    period: period,
+                    rawToggle: _RawToggle(open: rawOpen.value, onPressed: toggleRaw),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return Semantics(
       container: true,
       explicitChildNodes: true,
@@ -329,38 +497,89 @@ class _Details extends StatelessWidget {
         tabs: [FolderTab(value: group.key, title: group.target)],
         value: group.key,
         onChanged: null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
-              style: RescueText.smallSecondary,
-            ),
-            const SizedBox(height: 16),
-            HourBars(
-              key: const ValueKey('errors-hour-bars'),
-              counts: bars.counts,
-              title: bars.title.toUpperCase(),
-              startLabel: bars.start,
-              endLabel: bars.end,
-              height: 70,
-              semanticLabel: 'Ошибки ${bars.title.toLowerCase()}: всего $total',
-            ),
-            const SizedBox(height: 12),
-            for (final e in shown) _EventRow(event: e, now: now, withDate: withDate),
-            if (group.events.length > shown.length) ...[
-              const SizedBox(height: 8),
-              Text('Показаны последние ${shown.length} из ${group.events.length}', style: RescueText.caption),
-            ],
-            const SizedBox(height: 16),
-            _RawLines(key: ValueKey('raw-${group.key}'), events: group.events),
-            const SizedBox(height: 16),
-            _Actions(group: group, period: period),
-          ],
-        ),
+        child: inlineBody(),
       ),
     );
   }
+
+  /// Колонка ниже этой (с закладкой): закрепить график и кнопки нечем, прокручивается вся карточка.
+  /// В узкой колонке кнопки переносятся на больше строк, поэтому нужно больше места.
+  static const tightBelow = 400.0;
+  static const tightBelowNarrow = 480.0;
+}
+
+/// Закладка с названием над карточкой, которая занимает всю высоту колонки (как [FolderTabs] с одной
+/// неактивной закладкой, но с растягиваемой карточкой: внутри можно поставить [Expanded]).
+class _PinnedFolder extends StatelessWidget {
+  const _PinnedFolder({required this.title, required this.child, this.padding = 20});
+
+  final String title;
+  final Widget child;
+  final double padding;
+
+  @override
+  Widget build(BuildContext context) {
+    const r = Radius.circular(28);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 52),
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+            decoration: const BoxDecoration(
+              color: RescueColors.card,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: RescueText.tabTitle),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            key: const ValueKey('folder-tabs-card'),
+            padding: EdgeInsets.all(padding),
+            decoration: const BoxDecoration(
+              color: RescueColors.card,
+              borderRadius: BorderRadius.only(topRight: r, bottomLeft: r, bottomRight: r),
+            ),
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: RescueColors.text),
+              child: child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// «Показать ещё» под обрезанным списком: сколько показано из скольких.
+class _MoreButton extends StatelessWidget {
+  const _MoreButton({
+    super.key,
+    required this.shown,
+    required this.total,
+    required this.onPressed,
+    this.onDeep = false,
+  });
+
+  final int shown;
+  final int total;
+  final VoidCallback onPressed;
+
+  /// Стоит на тёмном списке (deep), а не на карточке.
+  final bool onDeep;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton(
+      style: TextButton.styleFrom(foregroundColor: onDeep ? RescueColors.textOnDeep : RescueColors.text),
+      onPressed: onPressed,
+      child: Text('Показать ещё · $shown из $total'),
+    ),
+  );
 }
 
 class _EventRow extends StatelessWidget {
@@ -404,18 +623,17 @@ class _EventRow extends StatelessWidget {
   }
 }
 
-/// «Сырые строки»: исходный текст ошибок ядра, свёрнуто по умолчанию.
-class _RawLines extends HookWidget {
-  const _RawLines({super.key, required this.events});
+/// «Сырые строки» одним блоком (прокрутка всей страницы): исходный текст ошибок ядра, свёрнуто по
+/// умолчанию. Состояние хранит хозяин ([open], [onToggle]).
+class _RawLines extends StatelessWidget {
+  const _RawLines({super.key, required this.events, required this.open, required this.onToggle});
 
   final List<ErrorEvent> events;
-
-  /// Больше не нужно: это для глаз, а не для выгрузки.
-  static const _max = 200;
+  final bool open;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
-    final open = useState(false);
     final radius = BorderRadius.circular(20);
     return Container(
       decoration: BoxDecoration(color: RescueColors.deep, borderRadius: radius),
@@ -424,10 +642,10 @@ class _RawLines extends HookWidget {
         children: [
           Semantics(
             button: true,
-            expanded: open.value,
+            expanded: open,
             child: InkWell(
               borderRadius: radius,
-              onTap: () => open.value = !open.value,
+              onTap: onToggle,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 44),
                 child: Padding(
@@ -435,7 +653,7 @@ class _RawLines extends HookWidget {
                   child: Row(
                     children: [
                       Icon(
-                        open.value ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
+                        open ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
                         size: 18,
                         color: RescueColors.subOnDeep,
                       ),
@@ -450,38 +668,82 @@ class _RawLines extends HookWidget {
               ),
             ),
           ),
-          if (open.value)
+          if (open)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: SelectableText(
-                [
-                  for (final e in events.take(_max)) _line(e),
-                  if (events.length > _max) '… и ещё ${events.length - _max}',
-                ].join('\n'),
-                style: monoStyle.copyWith(height: 1.6),
-              ),
+              child: SelectableText(_rawText(events), style: monoStyle.copyWith(height: 1.6)),
             ),
         ],
       ),
     );
   }
+}
 
-  static String _line(ErrorEvent e) {
-    final where = [
-      if (e.app.isNotEmpty) '[${e.app}]',
-      if (e.target.isNotEmpty) e.host.isNotEmpty && e.port > 0 ? '${e.host}:${e.port}' : e.target,
-      e.route.long,
-    ].join(' ');
-    final n = e.count > 1 ? ' (×${e.count})' : '';
-    return '${hhmmss(e.time)} ${e.kind.name} $where: ${e.message.isEmpty ? e.kind.title : e.message}$n';
-  }
+/// Закреплённый вариант: кнопка «Сырые строки» в ряду кнопок, раскрытый текст ([_RawBody]) занимает
+/// место списка событий.
+class _RawToggle extends StatelessWidget {
+  const _RawToggle({required this.open, required this.onPressed});
+
+  final bool open;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    expanded: open,
+    child: TextButton.icon(
+      style: TextButton.styleFrom(foregroundColor: RescueColors.text),
+      onPressed: onPressed,
+      icon: Icon(open ? Icons.expand_more_rounded : Icons.chevron_right_rounded, size: 18),
+      label: const Text('Сырые строки'),
+    ),
+  );
+}
+
+/// Раскрытые сырые строки в закреплённом режиме: тёмный блок, текст прокручивается внутри.
+class _RawBody extends StatelessWidget {
+  const _RawBody({super.key, required this.events});
+
+  final List<ErrorEvent> events;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(color: RescueColors.deep, borderRadius: BorderRadius.circular(20)),
+    child: PinnedScroll(
+      key: const ValueKey('errors-raw-scroll'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 2, 12),
+      child: SelectableText(_rawText(events), style: monoStyle.copyWith(height: 1.6)),
+    ),
+  );
+}
+
+/// Исходные строки ошибок ядра для «Сырых строк».
+String _rawText(List<ErrorEvent> events) {
+  /// Больше не нужно: это для глаз, а не для выгрузки.
+  const max = 200;
+  return [
+    for (final e in events.take(max)) _rawLine(e),
+    if (events.length > max) '… и ещё ${events.length - max}',
+  ].join('\n');
+}
+
+String _rawLine(ErrorEvent e) {
+  final where = [
+    if (e.app.isNotEmpty) '[${e.app}]',
+    if (e.target.isNotEmpty) e.host.isNotEmpty && e.port > 0 ? '${e.host}:${e.port}' : e.target,
+    e.route.long,
+  ].join(' ');
+  final n = e.count > 1 ? ' (×${e.count})' : '';
+  return '${hhmmss(e.time)} ${e.kind.name} $where: ${e.message.isEmpty ? e.kind.title : e.message}$n';
 }
 
 class _Actions extends ConsumerWidget {
-  const _Actions({required this.group, required this.period});
+  const _Actions({required this.group, required this.period, this.rawToggle});
 
   final ErrorGroup group;
   final InsightsPeriod period;
+
+  /// Ещё одна кнопка в конце ряда («Сырые строки» в закреплённом режиме).
+  final Widget? rawToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -523,6 +785,7 @@ class _Actions extends ConsumerWidget {
             style: TextStyle(decoration: TextDecoration.underline, decorationColor: RescueColors.text),
           ),
         ),
+        ?rawToggle,
       ],
     );
   }

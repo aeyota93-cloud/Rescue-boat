@@ -182,6 +182,12 @@ void main() {
       await tester.ensureVisible(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
       await tester.tap(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
       await tester.pumpAndSettle();
+      // Строки строятся по мере прокрутки: игры внизу списка (в узком окне — внизу страницы).
+      final rows = find.byKey(const ValueKey('tunnel-rows'));
+      final scrollable = rows.evaluate().isNotEmpty
+          ? find.descendant(of: rows, matching: find.byType(Scrollable)).first
+          : find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('steam'), 200, scrollable: scrollable);
       expect(find.text('steam'), findsOneWidget);
       expectNoLayoutErrors(tester);
 
@@ -189,6 +195,92 @@ void main() {
       await closePage(tester, container);
     });
   }
+
+  group('длинный список (200 записей)', () {
+    SplitTunnel longState() =>
+        SplitTunnel(via: SplitList(domains: [for (var i = 0; i < 200; i++) 'site-$i.example.com']));
+
+    Rect rect(WidgetTester tester, Finder f) => tester.getRect(f.first);
+
+    void expectOnScreen(WidgetTester tester, Finder f, Size window, String what) {
+      expect(f, findsWidgets, reason: what);
+      final r = rect(tester, f);
+      expect(r.top, greaterThanOrEqualTo(0), reason: '$what сверху: $r');
+      expect(r.bottom, lessThanOrEqualTo(window.height), reason: '$what снизу: $r');
+      expect(r.right, lessThanOrEqualTo(window.width), reason: '$what справа: $r');
+    }
+
+    testWidgets('1440×900: шапка, закладки, поиск и заголовки колонок на месте, крутятся только строки', (
+      tester,
+    ) async {
+      const window = Size(1440, 900);
+      writeState(longState());
+      final container = await start(tester, connections: const []);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: window);
+      expectNoLayoutErrors(tester);
+
+      final fixed = {
+        'заголовок': find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'),
+        'добавить': find.text('+ Добавить сайт, IP или программу'),
+        'из запущенных': find.text('Из запущенных'),
+        'закладка «Все»': find.byKey(const ValueKey('folder-tab-0')),
+        'закладка «Через VPN»': find.byKey(const ValueKey('folder-tab-2')),
+        'поиск': find.byType(TextField),
+        'колонка НАЗВАНИЕ': find.text('НАЗВАНИЕ'),
+        'колонка КУДА ИДЁТ': find.text('КУДА ИДЁТ'),
+      };
+      for (final e in fixed.entries) {
+        expectOnScreen(tester, e.value, window, e.key);
+      }
+      final before = {for (final e in fixed.entries) e.key: rect(tester, e.value)};
+
+      final rows = find.byKey(const ValueKey('tunnel-rows'));
+      final scrollable = find.descendant(of: rows, matching: find.byType(Scrollable)).first;
+      expect(find.byType(RouteSwitch).evaluate().length, lessThan(60), reason: 'строки строятся лениво');
+      expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
+      await tester.drag(scrollable, const Offset(0, -4000));
+      await tester.pump();
+      expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
+
+      for (final e in fixed.entries) {
+        expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
+      }
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
+    testWidgets('420×700: прокручивается вся страница, строк сначала 30, «Показать ещё»', (tester) async {
+      writeState(longState());
+      final container = await start(tester, connections: const []);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(420, 700));
+      expectNoLayoutErrors(tester);
+      expect(find.byKey(const ValueKey('tunnel-rows')), findsNothing);
+      expect(find.byType(RouteSwitch), findsNWidgets(30));
+
+      final page = find.byType(Scrollable).first;
+      final more = find.byKey(const ValueKey('tunnel-more'));
+      await tester.scrollUntilVisible(more, 300, scrollable: page);
+      expect(find.text('Показать ещё · 30 из 200'), findsOneWidget);
+      await tester.tap(more);
+      await tester.pump();
+      expect(find.byType(RouteSwitch), findsNWidgets(60));
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
+    testWidgets('1440×500: широко, но невысоко — прокручивается страница', (tester) async {
+      writeState(longState());
+      final container = await start(tester, connections: const []);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 500));
+      expectNoLayoutErrors(tester);
+      expect(find.byKey(const ValueKey('tunnel-rows')), findsNothing);
+      expect(find.text('НАЗВАНИЕ'), findsOneWidget, reason: 'таблица с колонками');
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -5000));
+      await tester.pump();
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+  });
 
   testWidgets('закладки «Все / Мимо / Через VPN» и поиск', (tester) async {
     writeState(

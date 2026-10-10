@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/common/pinned_scroll.dart';
 import 'package:hiddify/features/common/rescue_page_header.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -27,6 +28,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///
 /// Активная подписка — жёлтый блок с кольцами (расход, срок, автообновление — только то, что
 /// прислал сервер подписки), ниже — карточки серверов с пингом и пунктирная карточка «Запасной».
+///
+/// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка с кнопками и блок
+/// активной подписки закреплены, а «Другие подписки», серверы и «Запасной» прокручиваются в своей
+/// области. Меньше — прокручивается вся страница, серверов показано не больше [_compactServers].
+/// Сколько серверов показываем сразу, когда прокручивается вся страница; дальше — «Показать ещё».
+const _compactServers = 30;
+
 class ServersPage extends HookConsumerWidget {
   const ServersPage({super.key});
 
@@ -37,53 +45,84 @@ class ServersPage extends HookConsumerWidget {
     final adding = ref.watch(addProfileNotifierProvider).isLoading;
     final group = proxies.valueOrNull;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RescuePageHeader(
-              title: 'Подписки и серверы',
-              actions: [
-                OutlinedButton(
-                  onPressed: group == null
-                      ? null
-                      : () => ref.read(proxiesOverviewNotifierProvider.notifier).urlTest(group.tag),
-                  child: const Text('Проверить пинг'),
-                ),
-                FilledButton(
-                  onPressed: adding ? null : () => showAddSubscription(context, ref),
-                  child: Text(adding ? 'Добавляется…' : '+ Добавить подписку'),
-                ),
-                PopupMenuButton<void>(
-                  tooltip: 'Ещё',
-                  icon: const Icon(Icons.more_horiz_rounded),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      onTap: () => ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger(),
-                      child: const Text('Обновить все подписки'),
-                    ),
-                  ],
-                ),
-              ],
+    final header = RescuePageHeader(
+      title: 'Подписки и серверы',
+      actions: [
+        OutlinedButton(
+          onPressed: group == null ? null : () => ref.read(proxiesOverviewNotifierProvider.notifier).urlTest(group.tag),
+          child: const Text('Проверить пинг'),
+        ),
+        FilledButton(
+          onPressed: adding ? null : () => showAddSubscription(context, ref),
+          child: Text(adding ? 'Добавляется…' : '+ Добавить подписку'),
+        ),
+        PopupMenuButton<void>(
+          tooltip: 'Ещё',
+          icon: const Icon(Icons.more_horiz_rounded),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              onTap: () => ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger(),
+              child: const Text('Обновить все подписки'),
             ),
-            const SizedBox(height: 20),
-            switch (profiles) {
-              AsyncData(:final value) => _Subscriptions(profiles: value),
-              AsyncError() => const RescueCard(
-                child: Text('Не удалось прочитать список подписок.', style: RescueText.smallSecondary),
-              ),
-              _ => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            },
-            const SizedBox(height: 24),
-            const _ServersSection(),
           ],
         ),
+      ],
+    );
+
+    Widget subscriptions(_SubPart part) => switch (profiles) {
+      AsyncData(:final value) => _Subscriptions(profiles: value, part: part),
+      AsyncError() when part != _SubPart.others => const RescueCard(
+        child: Text('Не удалось прочитать список подписок.', style: RescueText.smallSecondary),
+      ),
+      _ when part != _SubPart.others && profiles is! AsyncError => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      _ => const SizedBox.shrink(),
+    };
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (isPinnedLayout(constraints)) {
+            // Шапка и активная подписка закреплены; всё остальное крутится в своей области.
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  const SizedBox(height: 20),
+                  subscriptions(_SubPart.active),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: PinnedScroll(
+                      key: const ValueKey('servers-scroll'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [subscriptions(_SubPart.others), const _ServersSection(pinned: true)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const SizedBox(height: 20),
+                subscriptions(_SubPart.all),
+                const SizedBox(height: 24),
+                const _ServersSection(pinned: false),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -105,22 +144,26 @@ Future<void> showAddSubscription(BuildContext context, WidgetRef ref) async {
 
 // ---------- подписки ----------
 
+/// Какую часть блока подписок показать: активную (закрепляется), остальные или всё вместе.
+enum _SubPart { all, active, others }
+
 class _Subscriptions extends StatelessWidget {
-  const _Subscriptions({required this.profiles});
+  const _Subscriptions({required this.profiles, required this.part});
 
   final List<ProfileEntity> profiles;
+  final _SubPart part;
 
   @override
   Widget build(BuildContext context) {
-    if (profiles.isEmpty) return const _EmptySubscriptions();
+    if (profiles.isEmpty) return part == _SubPart.others ? const SizedBox.shrink() : const _EmptySubscriptions();
     final active = profiles.firstWhere((p) => p.active, orElse: () => profiles.first);
     final others = profiles.where((p) => p.id != active.id).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SubscriptionCard(profile: active),
-        if (others.isNotEmpty) ...[
-          const SizedBox(height: 20),
+        if (part != _SubPart.others) _SubscriptionCard(profile: active),
+        if (part != _SubPart.active && others.isNotEmpty) ...[
+          if (part == _SubPart.all) const SizedBox(height: 20),
           RescueCard(
             semanticLabel: 'Другие подписки',
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 10),
@@ -138,6 +181,7 @@ class _Subscriptions extends StatelessWidget {
               ],
             ),
           ),
+          if (part == _SubPart.others) const SizedBox(height: 24),
         ],
       ],
     );
@@ -586,11 +630,15 @@ class _BackupCard extends ConsumerWidget {
 
 // ---------- серверы ----------
 
-class _ServersSection extends ConsumerWidget {
-  const _ServersSection();
+class _ServersSection extends HookConsumerWidget {
+  const _ServersSection({required this.pinned});
+
+  /// Прокручивается своя область — показываем все серверы; иначе обрезаем до [_compactServers].
+  final bool pinned;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final limit = useState(_compactServers);
     final proxies = ref.watch(proxiesOverviewNotifierProvider);
     final sortBy = ref.watch(proxiesSortNotifierProvider);
     final group = proxies.valueOrNull;
@@ -638,7 +686,22 @@ class _ServersSection extends ConsumerWidget {
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             ),
-          _FillGrid(children: [if (group != null) ..._cards(ref, group), const _BackupCard()]),
+          _FillGrid(
+            children: [
+              if (group != null) ..._cards(ref, group).take(pinned ? group.items.length : limit.value),
+              const _BackupCard(),
+            ],
+          ),
+          if (!pinned && group != null && group.items.length > limit.value)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const ValueKey('servers-more'),
+                style: TextButton.styleFrom(foregroundColor: RescueColors.text),
+                onPressed: () => limit.value += _compactServers,
+                child: Text('Показать ещё · ${limit.value} из ${group.items.length}'),
+              ),
+            ),
         ],
       ),
     );
