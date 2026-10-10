@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hiddify/features/common/pinned_scroll.dart';
 import 'package:hiddify/features/common/rescue_page_header.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -22,12 +23,19 @@ const _wideFrom = 780.0;
 /// Ширина колонки «Куда идёт» (переключатель «Авто / Мимо / VPN»).
 const _routeWidth = 236.0;
 
+/// Сколько строк показываем сразу, когда прокручивается вся страница; дальше — «Показать ещё».
+const _compactRows = 30;
+
 /// Шлюпка: «Раздельный туннель» в стиле «Д». Три положения у каждой записи: «Авто» (нет ни в
 /// одном списке), «Мимо» и «VPN». Изменения действуют сразу, без переподключения.
 ///
 /// Сверху закладки-«папки» «Все / Мимо / Через VPN» с поиском, ниже — тёмный список (deep):
 /// первая строка жёлтая, игры и лаунчеры по умолчанию свёрнуты в одну строку с пунктирной рамкой.
 /// Трафика по программам нет — только число соединений сейчас и ошибки за сутки.
+///
+/// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка с кнопками, закладки
+/// с поиском и заголовки колонок закреплены, а строки прокручиваются внутри тёмного списка.
+/// Меньше — прокручивается вся страница, показаны первые [_compactRows] строк.
 class SplitTunnelTablePage extends HookConsumerWidget {
   const SplitTunnelTablePage({super.key});
 
@@ -41,80 +49,107 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final query = useState('');
     final tab = useState(_Tab.all);
     final gamesOpen = useState(false);
+    final limit = useState(_compactRows);
 
     final data = buildTunnelRows(split, connections, groups);
     final summary = data.summary;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RescuePageHeader(
-              title: 'Раздельный туннель',
-              actions: [
-                OutlinedButton(onPressed: () => _pickRunning(context, ref), child: const Text('Из запущенных')),
-                FilledButton(
-                  onPressed: () => _add(context, ref),
-                  child: const Text('+ Добавить сайт, IP или программу'),
-                ),
-                PopupMenuButton<void>(
-                  tooltip: 'Ещё',
-                  icon: const Icon(Icons.more_horiz_rounded),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      onTap: () => _confirmReset(context, ref),
-                      child: const Text('Вернуть списки по умолчанию'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            FolderTabs<_Tab>(
-              semanticLabel: 'Списки',
-              tabs: [
-                FolderTab(value: _Tab.all, title: 'Все', badge: '${data.entries.length}'),
-                FolderTab(value: _Tab.bypass, title: 'Мимо', badge: '${summary.bypass}'),
-                FolderTab(value: _Tab.via, title: 'Через VPN', badge: '${summary.via}'),
-              ],
-              value: tab.value,
-              onChanged: (t) => tab.value = t,
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-              child: _SearchRow(
-                onChanged: (v) => query.value = v.trim().toLowerCase(),
-                hint: switch (tab.value) {
-                  _Tab.all => 'Списки важнее общих правил и действуют сразу',
-                  _Tab.bypass => 'Идут напрямую, с домашнего IP',
-                  _Tab.via => 'Всегда через сервер, даже российские сайты',
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, constraints) => _list(
-                context,
-                ref,
-                data.entries,
-                tab.value,
-                query.value,
-                gamesOpen,
-                wide: constraints.maxWidth >= _wideFrom,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '«Авто» — решают общие правила: российские сайты напрямую, остальное через VPN.',
-              style: RescueText.caption,
-            ),
-            if (connections == null) ...[
-              const SizedBox(height: 4),
-              const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
-            ],
+    final header = RescuePageHeader(
+      title: 'Раздельный туннель',
+      actions: [
+        OutlinedButton(onPressed: () => _pickRunning(context, ref), child: const Text('Из запущенных')),
+        FilledButton(onPressed: () => _add(context, ref), child: const Text('+ Добавить сайт, IP или программу')),
+        PopupMenuButton<void>(
+          tooltip: 'Ещё',
+          icon: const Icon(Icons.more_horiz_rounded),
+          itemBuilder: (_) => [
+            PopupMenuItem(onTap: () => _confirmReset(context, ref), child: const Text('Вернуть списки по умолчанию')),
           ],
         ),
+      ],
+    );
+    final tabs = FolderTabs<_Tab>(
+      semanticLabel: 'Списки',
+      tabs: [
+        FolderTab(value: _Tab.all, title: 'Все', badge: '${data.entries.length}'),
+        FolderTab(value: _Tab.bypass, title: 'Мимо', badge: '${summary.bypass}'),
+        FolderTab(value: _Tab.via, title: 'Через VPN', badge: '${summary.via}'),
+      ],
+      value: tab.value,
+      onChanged: (t) => tab.value = t,
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      child: _SearchRow(
+        onChanged: (v) => query.value = v.trim().toLowerCase(),
+        hint: switch (tab.value) {
+          _Tab.all => 'Списки важнее общих правил и действуют сразу',
+          _Tab.bypass => 'Идут напрямую, с домашнего IP',
+          _Tab.via => 'Всегда через сервер, даже российские сайты',
+        },
+      ),
+    );
+    final notes = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          '«Авто» — решают общие правила: российские сайты напрямую, остальное через VPN.',
+          style: RescueText.caption,
+        ),
+        if (connections == null) ...[
+          const SizedBox(height: 4),
+          const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
+        ],
+      ],
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final pinned = isPinnedLayout(constraints);
+          final list = _list(
+            context,
+            ref,
+            data.entries,
+            tab.value,
+            query.value,
+            gamesOpen,
+            limit,
+            wide: constraints.maxWidth >= _wideFrom,
+            pinned: pinned,
+          );
+          if (pinned) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  const SizedBox(height: 20),
+                  tabs,
+                  const SizedBox(height: 20),
+                  Expanded(child: list),
+                  const SizedBox(height: 12),
+                  notes,
+                ],
+              ),
+            );
+          }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const SizedBox(height: 20),
+                tabs,
+                const SizedBox(height: 20),
+                list,
+                const SizedBox(height: 12),
+                notes,
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -125,8 +160,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     List<TunnelEntry> all,
     _Tab tab,
     String query,
-    ValueNotifier<bool> gamesOpen, {
+    ValueNotifier<bool> gamesOpen,
+    ValueNotifier<int> limit, {
     required bool wide,
+    required bool pinned,
   }) {
     final entries = all.where((e) {
       final byTab = switch (tab) {
@@ -144,9 +181,17 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final collapse = games.length >= 2;
     final plain = collapse ? entries.where((e) => !games.contains(e)).toList() : entries;
 
+    // Прокручивается вся страница — длинный список обрезаем; в закреплённом режиме строит лениво.
+    final shownPlain = pinned ? plain : plain.take(limit.value).toList();
     final rows = <Widget>[
-      if (wide) const _HeaderRow(),
-      for (final (i, e) in plain.indexed) _entryRow(context, ref, e, highlighted: i == 0, wide: wide),
+      for (final (i, e) in shownPlain.indexed) _entryRow(context, ref, e, highlighted: i == 0, wide: wide),
+      if (shownPlain.length < plain.length)
+        _MoreRows(
+          key: const ValueKey('tunnel-more'),
+          shown: shownPlain.length,
+          total: plain.length,
+          onPressed: () => limit.value += _compactRows,
+        ),
       if (collapse) ...[
         _gamesRow(ref, games, gamesOpen, wide: wide),
         if (gamesOpen.value)
@@ -154,17 +199,30 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       ],
     ];
 
+    final empty = plain.isEmpty && !collapse;
+    final emptyNote = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Text(
+        all.isEmpty ? 'Списки пусты. Добавьте программу, сайт или IP.' : 'Ничего не нашлось.',
+        style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
+        textAlign: TextAlign.center,
+      ),
+    );
+
     return DeepList(
       radius: 36,
       semanticLabel: 'Записи',
       children: [
-        if (plain.isEmpty && !collapse)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              all.isEmpty ? 'Списки пусты. Добавьте программу, сайт или IP.' : 'Ничего не нашлось.',
-              style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
-              textAlign: TextAlign.center,
+        if (wide && !empty) const _HeaderRow(),
+        if (empty)
+          emptyNote
+        else if (pinned)
+          Expanded(
+            child: PinnedList(
+              key: const ValueKey('tunnel-rows'),
+              itemCount: rows.length,
+              spacing: 10,
+              itemBuilder: (_, i) => rows[i],
             ),
           )
         else
@@ -406,6 +464,25 @@ class _SearchRow extends StatelessWidget {
       },
     );
   }
+}
+
+/// «Показать ещё» под обрезанным списком (прокрутка всей страницы).
+class _MoreRows extends StatelessWidget {
+  const _MoreRows({super.key, required this.shown, required this.total, required this.onPressed});
+
+  final int shown;
+  final int total;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton(
+      style: TextButton.styleFrom(foregroundColor: RescueColors.textOnDeep),
+      onPressed: onPressed,
+      child: Text('Показать ещё · $shown из $total'),
+    ),
+  );
 }
 
 /// Заголовки колонок тёмного списка (как в макете: 11 / 700 / 0.1em, subOnDeep).
