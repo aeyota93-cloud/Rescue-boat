@@ -230,6 +230,117 @@ void main() {
     });
   }
 
+  group('много серверов (40)', () {
+    OutboundGroup manyServers() => OutboundGroup(
+      tag: 'select',
+      type: 'selector',
+      selected: 'srv0',
+      items: [
+        for (var i = 0; i < 40; i++)
+          OutboundInfo(tag: 'srv$i', type: 'vless', urlTestDelay: 50 + i, tagDisplay: 'Сервер $i', host: 'h$i.example'),
+      ],
+    );
+
+    Rect rect(WidgetTester tester, Finder f) => tester.getRect(f.first);
+
+    void expectOnScreen(WidgetTester tester, Finder f, Size window, String what) {
+      expect(f, findsWidgets, reason: what);
+      final r = rect(tester, f);
+      expect(r.top, greaterThanOrEqualTo(0), reason: '$what сверху: $r');
+      expect(r.bottom, lessThanOrEqualTo(window.height), reason: '$what снизу: $r');
+      expect(r.right, lessThanOrEqualTo(window.width), reason: '$what справа: $r');
+    }
+
+    testWidgets('1440×900: шапка и активная подписка на месте, остальное крутится в своей области', (tester) async {
+      const window = Size(1440, 900);
+      final container = await start(
+        tester,
+        profiles: _FakeProfiles([main, local]),
+        proxies: _FakeProxies(manyServers()),
+        size: window,
+      );
+      expectNoLayoutErrors(tester);
+
+      final fixed = {
+        'заголовок': find.text('ПОДПИСКИ И СЕРВЕРЫ'),
+        'проверить пинг': find.text('Проверить пинг'),
+        'добавить подписку': find.text('+ Добавить подписку'),
+        'название подписки': find.text('Основной'),
+        'метка': find.text('АКТИВНА'),
+        'обновить': find.text('Обновить'),
+        'удалить': find.text('Удалить').first,
+      };
+      for (final e in fixed.entries) {
+        expectOnScreen(tester, e.value, window, e.key);
+      }
+      final before = {for (final e in fixed.entries) e.key: rect(tester, e.value)};
+      final others = rect(tester, find.text('ДРУГИЕ ПОДПИСКИ'));
+
+      final scroll = find.byKey(const ValueKey('servers-scroll'));
+      final scrollable = find.descendant(of: scroll, matching: find.byType(Scrollable)).first;
+      expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
+      await tester.drag(scrollable, const Offset(0, -3000));
+      await tester.pump();
+      expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
+      expect(find.text('Запасной'), findsOneWidget, reason: 'конец списка достижим');
+      expect(rect(tester, find.text('Запасной')).bottom, lessThanOrEqualTo(window.height));
+
+      for (final e in fixed.entries) {
+        expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
+      }
+      expect(
+        find.text('ДРУГИЕ ПОДПИСКИ').evaluate().isEmpty || rect(tester, find.text('ДРУГИЕ ПОДПИСКИ')) != others,
+        isTrue,
+      );
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
+    testWidgets('420×700: прокручивается вся страница, серверов сначала 30, «Показать ещё»', (tester) async {
+      final container = await start(
+        tester,
+        profiles: _FakeProfiles([main, local]),
+        proxies: _FakeProxies(manyServers()),
+        size: const Size(420, 700),
+      );
+      expectNoLayoutErrors(tester);
+      expect(find.byKey(const ValueKey('servers-scroll')), findsNothing);
+
+      final page = find.byType(Scrollable).first;
+      final more = find.byKey(const ValueKey('servers-more'));
+      await tester.scrollUntilVisible(more, 300, scrollable: page);
+      expect(find.text('Показать ещё · 30 из 40'), findsOneWidget);
+      expect(find.text('Сервер 29'), findsOneWidget);
+      expect(find.text('Сервер 30'), findsNothing);
+      await tester.tap(more);
+      await tester.pump();
+      expect(find.text('Сервер 39'), findsOneWidget);
+      expect(more, findsNothing);
+      await tester.drag(page, const Offset(0, -9000));
+      await tester.pump();
+      expect(find.text('Запасной'), findsOneWidget);
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
+    testWidgets('860×600: нет переполнений, пустой список подписок тоже', (tester) async {
+      for (final profiles in [
+        <ProfileEntity>[main, local],
+        <ProfileEntity>[],
+      ]) {
+        final container = await start(
+          tester,
+          profiles: _FakeProfiles(profiles),
+          proxies: _FakeProxies(manyServers()),
+          size: const Size(860, 600),
+        );
+        expectNoLayoutErrors(tester);
+        expect(find.byKey(const ValueKey('servers-scroll')), findsOneWidget);
+        await closePage(tester, container);
+      }
+    });
+  });
+
   testWidgets('выбор сервера, проверка пинга, активная подписка, удаление с подтверждением', (tester) async {
     final profiles = _FakeProfiles([main, local]);
     final proxies = _FakeProxies(servers());
