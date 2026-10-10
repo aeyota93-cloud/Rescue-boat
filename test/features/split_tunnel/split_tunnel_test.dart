@@ -7,7 +7,11 @@ void main() {
     final cases = <String, ({SplitKind kind, String value})?>{
       'youtube.com': (kind: SplitKind.domain, value: 'youtube.com'),
       '  YouTube.COM ': (kind: SplitKind.domain, value: 'youtube.com'),
-      'https://www.example.com/page?x=1': (kind: SplitKind.domain, value: 'www.example.com'),
+      'https://www.example.com/page?x=1': (kind: SplitKind.domain, value: 'example.com'),
+      'www.dns-shop.ru': (kind: SplitKind.domain, value: 'dns-shop.ru'),
+      'www2.example.com': (kind: SplitKind.domain, value: 'example.com'),
+      'www.com': (kind: SplitKind.domain, value: 'www.com'),
+      'wwwexample.com': (kind: SplitKind.domain, value: 'wwwexample.com'),
       '*.googlevideo.com': (kind: SplitKind.domain, value: 'googlevideo.com'),
       '.example.org': (kind: SplitKind.domain, value: 'example.org'),
       'госуслуги.рф': (kind: SplitKind.domain, value: 'xn--c1aapkosapc.xn--p1ai'),

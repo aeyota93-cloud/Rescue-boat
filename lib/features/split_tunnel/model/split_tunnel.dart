@@ -153,6 +153,10 @@ bool sameItem(SplitKind kind, String a, String b) =>
   host = host.split(RegExp(r'[/?#]')).first;
   host = host.replaceFirst(RegExp(r'^[^@]*@'), '').replaceFirst(RegExp(r':\d+$'), '');
   host = host.replaceFirst(RegExp(r'^\*?\.'), '');
+  // «www.» — не отдельный сайт: без него правило накроет и соседние поддомены
+  // (www.dns-shop.ru грузит данные с restapi.dns-shop.ru).
+  final noWww = host.replaceFirst(RegExp(r'^www\d*\.'), '');
+  if (noWww.contains('.')) host = noWww;
   final labels = host.split('.');
   if (labels.length < 2 || labels.any((l) => l.isEmpty)) return null;
   final ascii = <String>[];
