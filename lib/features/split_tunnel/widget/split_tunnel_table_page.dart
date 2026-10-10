@@ -56,7 +56,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               title: 'Раздельный туннель',
               actions: [
                 OutlinedButton(onPressed: () => _pickRunning(context, ref), child: const Text('Из запущенных')),
-                FilledButton(onPressed: () => _add(context, ref), child: const Text('+ Добавить сайт, IP или программу')),
+                FilledButton(
+                  onPressed: () => _add(context, ref),
+                  child: const Text('+ Добавить сайт, IP или программу'),
+                ),
                 PopupMenuButton<void>(
                   tooltip: 'Ещё',
                   icon: const Icon(Icons.more_horiz_rounded),
@@ -411,7 +414,12 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: RescueColors.subOnDeep);
+    const style = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.1,
+      color: RescueColors.subOnDeep,
+    );
     return const ExcludeSemantics(
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -425,7 +433,10 @@ class _HeaderRow extends StatelessWidget {
             SizedBox(width: 12),
             Expanded(flex: 8, child: Text('ОШИБКИ', style: style)),
             SizedBox(width: 12),
-            SizedBox(width: _routeWidth, child: Text('КУДА ИДЁТ', style: style)),
+            SizedBox(
+              width: _routeWidth,
+              child: Text('КУДА ИДЁТ', style: style),
+            ),
           ],
         ),
       ),

@@ -65,7 +65,11 @@ void main() {
   });
   tearDown(() => dir.deleteSync(recursive: true));
 
-  Future<ProviderContainer> start(WidgetTester tester, {Size size = const Size(1440, 1000), bool inShell = false}) async {
+  Future<ProviderContainer> start(
+    WidgetTester tester, {
+    Size size = const Size(1440, 1000),
+    bool inShell = false,
+  }) async {
     final container = await tester.runAsync(
       () => screensContainer(
         dir,

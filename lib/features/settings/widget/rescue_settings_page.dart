@@ -101,10 +101,7 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 2),
-            child: SectionLabel(title),
-          ),
+          Padding(padding: const EdgeInsets.only(top: 12, bottom: 2), child: SectionLabel(title)),
           if (note != null)
             Padding(
               padding: const EdgeInsets.only(top: 2, bottom: 4),
