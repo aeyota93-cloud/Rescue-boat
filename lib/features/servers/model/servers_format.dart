@@ -101,3 +101,27 @@ double pingFraction(int delay) {
   if (pingTimedOut(delay)) return 1;
   return (delay / 300).clamp(0.03, 1.0);
 }
+
+/// Доля полоски «скорость отклика» в карточке сервера: чем меньше пинг, тем длиннее;
+/// 0 — не проверяли, нет ответа или 300 мс и больше почти пустая.
+double pingSpeedFraction(int delay) {
+  if (delay <= 0 || pingTimedOut(delay)) return 0;
+  return (1 - delay / 300).clamp(0.03, 1.0);
+}
+
+/// Код в плитке сервера: флаг-эмодзи в начале имени («🇳🇱 Нидерланды») → «NL», иначе первая буква имени.
+String serverCode(String name) {
+  bool flagPart(int r) => r >= 0x1F1E6 && r <= 0x1F1FF;
+  final runes = name.trim().runes.toList();
+  if (runes.length >= 2 && flagPart(runes[0]) && flagPart(runes[1])) {
+    return String.fromCharCodes([runes[0] - 0x1F1E6 + 0x41, runes[1] - 0x1F1E6 + 0x41]);
+  }
+  final plain = name.replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+  return plain.isEmpty ? '?' : String.fromCharCode(plain.runes.first).toUpperCase();
+}
+
+/// Домен из ссылки подписки (без пути и параметров — в них бывает токен); null — не разобрать.
+String? subscriptionHost(String url) {
+  final host = Uri.tryParse(url.trim())?.host ?? '';
+  return host.isEmpty ? null : host;
+}
