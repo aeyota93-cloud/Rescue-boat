@@ -107,10 +107,7 @@ void main() {
       find.descendant(of: find.byKey(top), matching: find.byType(DecoratedBox)),
     );
     expect((inner.decoration as BoxDecoration).color, RescueColors.page);
-    expect(
-      (inner.decoration as BoxDecoration).borderRadius,
-      const BorderRadius.only(bottomRight: Radius.circular(20)),
-    );
+    expect((inner.decoration as BoxDecoration).borderRadius, const BorderRadius.only(bottomRight: Radius.circular(20)));
 
     // Переход на другой пункт — «ушки» переезжают.
     await tester.tap(find.text('Ошибки'));

@@ -114,10 +114,7 @@ void main() {
   });
 
   testWidgets('на жёлтом (onAccent): выбранный тёмный с жёлтым текстом', (tester) async {
-    await pumpRescue(
-      tester,
-      const RouteSwitch(value: RouteChoice.bypass, onChanged: null, onAccent: true),
-    );
+    await pumpRescue(tester, const RouteSwitch(value: RouteChoice.bypass, onChanged: null, onAccent: true));
     expect(segmentColor(tester, 'Мимо'), RescueColors.onAccent);
     expect(tester.widget<Text>(find.text('Мимо')).style!.color, RescueColors.accent);
     expect(tester.widget<Text>(find.text('VPN')).style!.color, RescueColors.onAccent);
