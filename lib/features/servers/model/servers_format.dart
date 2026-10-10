@@ -117,6 +117,8 @@ String serverCode(String name) {
     return String.fromCharCodes([runes[0] - 0x1F1E6 + 0x41, runes[1] - 0x1F1E6 + 0x41]);
   }
   final plain = name.replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+  // «NL», «de» — имя уже код страны.
+  if (RegExp(r'^[A-Za-z]{2}$').hasMatch(plain)) return plain.toUpperCase();
   return plain.isEmpty ? '?' : String.fromCharCode(plain.runes.first).toUpperCase();
 }
 

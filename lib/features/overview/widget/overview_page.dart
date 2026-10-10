@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/region.dart';
+import 'package:hiddify/features/servers/model/servers_format.dart';
 import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -580,7 +581,6 @@ String sizeText(int bytes) {
 }
 
 /// Больше этого — «без ограничения» (как в старой карточке профиля).
-const _unlimitedBytes = 10 * 1099511627776;
 
 /// Метка справа от подписи блока: «ДО 9 НОЯБРЯ».
 class _Tag extends StatelessWidget {
@@ -628,7 +628,7 @@ class _SubscriptionCard extends ConsumerWidget {
       ]);
     } else {
       if (sub != null) {
-        final limited = sub.total > 0 && sub.total <= _unlimitedBytes;
+        final limited = sub.total > 0 && !isUnlimitedTraffic(sub);
         children.addAll([
           const SizedBox(height: 12),
           Text.rich(

@@ -173,6 +173,8 @@ void main() {
       expect(serverCode('🇳🇱 Нидерланды'), 'NL');
       expect(serverCode('Автовыбор'), 'А');
       expect(serverCode('  ★ fast-1'), 'F');
+      expect(serverCode('NL'), 'NL');
+      expect(serverCode('de'), 'DE');
       expect(serverTitle('🇳🇱 Нидерланды'), 'Нидерланды');
       expect(serverTitle('🇳🇱'), '🇳🇱');
       expect(subscriptionHost('https://first.example.com/sub/SECRET?x=1'), 'first.example.com');
