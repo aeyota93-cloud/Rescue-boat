@@ -398,20 +398,19 @@ class _BypassBlocksSection extends ConsumerWidget {
 }
 
 class _ParamRow extends StatelessWidget {
-  const _ParamRow({required this.title, required this.subtitle, required this.child, this.divider = true});
+  const _ParamRow({required this.title, required this.subtitle, required this.child});
 
   final String title;
   final String subtitle;
   final Widget child;
-  final bool divider;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: RescueColors.line)),
       ),
       child: Wrap(
         spacing: 12,
