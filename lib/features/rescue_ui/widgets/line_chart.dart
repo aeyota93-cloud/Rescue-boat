@@ -10,7 +10,7 @@ class LineChartMarker {
     required this.color,
     this.radius = 7,
     this.label,
-    this.labelColor = RescueColors.importantText,
+    this.labelColor = RescueColors.warn,
   });
 
   final int index;
@@ -78,7 +78,7 @@ class LineChart extends StatelessWidget {
               markers: markers,
               lineColor: lineColor,
               showLastPoint: showLastPoint,
-              textStyle: base.merge(const TextStyle(fontSize: 11, color: RescueColors.textSecondary)),
+              textStyle: base.merge(const TextStyle(fontSize: 11, color: RescueColors.muted)),
             ),
           ),
         ),

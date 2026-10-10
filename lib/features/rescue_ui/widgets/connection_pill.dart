@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 import 'package:hiddify/features/rescue_ui/widgets/rescue_toggle.dart';
 
-/// Шлюпка: «таблетка» подключения в шапке — точка, текст статуса и переключатель.
+/// Шлюпка: «таблетка» подключения — точка, текст статуса и переключатель (фон card, без рамки).
 ///
 /// Нажимается целиком (мышь, Enter/Пробел). Для чтеца — переключатель с подписью [label].
 class ConnectionPill extends StatelessWidget {
@@ -30,14 +30,11 @@ class ConnectionPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final onChanged = this.onChanged;
     final dot = busy
-        ? RescueColors.fair
+        ? RescueColors.warn
         : connected
-        ? RescueColors.good
+        ? RescueColors.accent
         : RescueColors.off;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(999),
-      side: const BorderSide(color: RescueColors.line),
-    );
+    const shape = StadiumBorder();
     return Semantics(
       toggled: connected,
       enabled: onChanged != null,
@@ -51,9 +48,9 @@ class ConnectionPill extends StatelessWidget {
             customBorder: shape,
             onTap: onChanged == null ? null : () => onChanged(!connected),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48),
+              constraints: const BoxConstraints(minHeight: 52),
               child: Padding(
-                padding: const EdgeInsets.only(left: 16, right: 8),
+                padding: const EdgeInsets.only(left: 18, right: 10),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -68,7 +65,7 @@ class ConnectionPill extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: RescueColors.text),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: RescueColors.text),
                       ),
                     ),
                     const SizedBox(width: 12),

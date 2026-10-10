@@ -80,12 +80,12 @@ class RescueLink extends StatelessWidget {
       child: ExcludeSemantics(
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: RescueColors.softAccent.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(999),
+          hoverColor: RescueColors.text.withValues(alpha: 0.06),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Center(widthFactor: 1, child: Text('$label ›', style: style)),
             ),
           ),

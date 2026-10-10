@@ -5,7 +5,7 @@ import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
 /// Шлюпка: логотип — спасательный круг (белое кольцо с четырьмя красными вставками).
 class RescueLogo extends StatelessWidget {
-  const RescueLogo({super.key, this.size = 34});
+  const RescueLogo({super.key, this.size = 36});
 
   final double size;
 

@@ -1,9 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
-/// Шлюпка: тонкая полоска заполнения (расход подписки, пинг сервера).
+/// Шлюпка: тонкая полоска заполнения (расход подписки, пинг сервера): дорожка line, заполнение accent.
+/// На жёлтом фоне передайте `color: RescueColors.ink`.
 class RescueProgressBar extends StatelessWidget {
-  const RescueProgressBar({super.key, required this.value, this.color = RescueColors.good, this.height = 6});
+  const RescueProgressBar({super.key, required this.value, this.color = RescueColors.accent, this.height = 6});
 
   /// Доля заполнения 0..1 (вне диапазона обрезается).
   final double value;
@@ -17,7 +18,7 @@ class RescueProgressBar extends StatelessWidget {
     return ExcludeSemantics(
       child: Container(
         height: height,
-        decoration: BoxDecoration(color: RescueColors.track, borderRadius: radius),
+        decoration: BoxDecoration(color: RescueColors.line, borderRadius: radius),
         alignment: Alignment.centerLeft,
         child: FractionallySizedBox(
           widthFactor: fraction,

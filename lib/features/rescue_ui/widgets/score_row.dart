@@ -37,7 +37,7 @@ class ScoreBar extends StatelessWidget {
         child: Container(
           key: const ValueKey('score-bar-empty'),
           height: height,
-          decoration: BoxDecoration(color: RescueColors.track, borderRadius: radius),
+          decoration: BoxDecoration(color: RescueColors.line, borderRadius: radius),
         ),
       );
     }
@@ -85,7 +85,7 @@ class ScoreRow extends StatelessWidget {
   /// Значение, обычно «92»; «—», если нет данных.
   final String value;
 
-  /// Изменение к прошлому периоду: >0 — «↗ 3» зелёным, <0 — «↘ 4» красным, 0 — «→ 0». null — не показывать.
+  /// Изменение к прошлому периоду: >0 — «↗ 3» жёлтым, <0 — «↘ 4» оранжевым, 0 — «→ 0». null — не показывать.
   final int? trend;
 
   /// Доли минут «хорошо / средне / плохо» (см. [ScoreBar]).
@@ -147,11 +147,15 @@ class ScoreRow extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     trendText(trend),
-                    style: TextStyle(fontSize: 12, color: trend < 0 ? RescueColors.poor : RescueColors.good),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: trend < 0 ? RescueColors.poor : RescueColors.good,
+                    ),
                   ),
                 ],
                 const SizedBox(width: 6),
-                Text(value, style: RescueText.bodyStrong),
+                Text(value, style: RescueText.rowTitle),
               ],
             ),
             const SizedBox(height: 8),

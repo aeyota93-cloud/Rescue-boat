@@ -6,13 +6,16 @@ import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'helpers.dart';
 
 void main() {
-  test('тема: цвета и шрифт с макета', () {
+  test('тема: цвета стиля «Д» и шрифт', () {
     final theme = RescueTheme.dark();
     expect(theme.useMaterial3, isTrue);
     expect(theme.brightness, Brightness.dark);
-    expect(theme.scaffoldBackgroundColor, const Color(0xFF121220));
-    expect(theme.colorScheme.surface, const Color(0xFF1C1C2E));
-    expect(theme.colorScheme.primary, const Color(0xFF8B88F0));
+    // Экраны лежат на области каркаса (panel), карточки — card, действие — жёлтое.
+    expect(theme.scaffoldBackgroundColor, const Color(0xFF1F1E1B));
+    expect(theme.colorScheme.surface, const Color(0xFF1F1E1B));
+    expect(theme.colorScheme.surfaceContainer, const Color(0xFF2A2825));
+    expect(theme.colorScheme.primary, const Color(0xFFF4CC56));
+    expect(theme.colorScheme.onPrimary, const Color(0xFF1F1D1A));
     expect(theme.textTheme.bodyMedium!.fontFamily, 'Segoe UI');
     expect(theme.textTheme.bodyMedium!.fontFamilyFallback, ['Segoe UI Variable', 'Segoe UI', 'Tahoma']);
     expect(theme.textTheme.bodyMedium!.color, RescueColors.text);
@@ -37,7 +40,8 @@ void main() {
     );
     final decoration = box.decoration! as BoxDecoration;
     expect(decoration.color, RescueColors.card);
-    expect(decoration.borderRadius, BorderRadius.circular(20));
+    expect(decoration.borderRadius, BorderRadius.circular(32));
+    expect(decoration.border, isNull, reason: 'в стиле «Д» у карточек нет рамки');
     expect(find.bySemanticsLabel('Секция'), findsOneWidget);
   });
 
@@ -87,9 +91,12 @@ void main() {
       final text = tester.widget<Text>(find.text(k.name));
       expect(text.style!.color, k.foreground);
     }
-    expect(RescueBadgeKind.important.background, const Color(0xFF4A1D1A));
-    expect(RescueBadgeKind.warning.foreground, const Color(0xFFFFCB85));
-    expect(RescueBadgeKind.bypass.background, const Color(0xFF123B35));
+    // Стиль «Д»: счётчик — оранжевая плашка с тёмным текстом, «внимание» — жёлтая метка-рамка.
+    expect(RescueBadgeKind.important.background, RescueColors.warn);
+    expect(RescueBadgeKind.important.foreground, RescueColors.onAccent);
+    expect(RescueBadgeKind.warning.foreground, RescueColors.accent);
+    expect(RescueBadgeKind.warning.border, RescueColors.accent);
+    expect(RescueBadgeKind.bypass.border, RescueColors.line2);
   });
 
   testWidgets('ConnectionPill: нажатие переключает, есть подпись для чтеца', (tester) async {
@@ -224,9 +231,10 @@ void main() {
     expect(h(2), 63);
     expect(h(1), greaterThan(10));
     expect(h(1), lessThan(h(2)));
+    // Стиль «Д»: обычный столбик жёлтый, от порога — оранжевый.
     expect(c(0), RescueColors.line);
-    expect(c(1), RescueColors.fair);
-    expect(c(2), RescueColors.poor);
+    expect(c(1), RescueColors.accent);
+    expect(c(2), RescueColors.warn);
     expect(find.text('сейчас'), findsOneWidget);
   });
 

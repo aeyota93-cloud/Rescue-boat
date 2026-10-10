@@ -40,7 +40,7 @@ class ChartLegend extends StatelessWidget {
                       ),
               ),
               const SizedBox(width: 6),
-              Text(item.label, style: const TextStyle(fontSize: 13, color: RescueColors.textSecondary)),
+              Text(item.label, style: const TextStyle(fontSize: 13, color: RescueColors.muted)),
             ],
           ),
       ],

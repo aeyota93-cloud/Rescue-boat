@@ -32,7 +32,7 @@ class RescueTableRow {
   final String? semanticLabel;
 }
 
-/// Шлюпка: таблица — серые заголовки колонок, строки с разделителями.
+/// Шлюпка: таблица — заголовки колонок 11 / 700 с разрядкой, строки с разделителями line.
 ///
 /// Если окно уже [minWidth], таблица прокручивается по горизонтали (как overflow-x в макете).
 /// Строится целиком (не лениво) — для коротких списков на карточках.
@@ -118,8 +118,8 @@ class RescueTable extends StatelessWidget {
       constraints: BoxConstraints(minHeight: onTap != null && rowHeight < 44 ? 44 : rowHeight),
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       decoration: BoxDecoration(
-        color: row.selected ? RescueColors.selected : null,
-        border: const Border(bottom: BorderSide(color: RescueColors.rowLine)),
+        color: row.selected ? RescueColors.panel : null,
+        border: const Border(bottom: BorderSide(color: RescueColors.line)),
       ),
       child: DefaultTextStyle.merge(
         style: RescueText.small,

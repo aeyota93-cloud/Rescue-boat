@@ -1,36 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
-/// Варианты бейджа: цвета фона и текста с макета.
+/// Варианты бейджа стиля «Д»: фон, текст и рамка (метка-рамка — прозрачный фон с рамкой цвета текста).
 enum RescueBadgeKind {
-  /// Важно: «7 за час», много ошибок.
-  important(RescueColors.importantBg, RescueColors.importantText),
+  /// Важно: счётчик ошибок — оранжевая плашка с тёмным текстом (6.3:1).
+  important(RescueColors.warn, RescueColors.onAccent),
 
-  /// Внимание: «Авто», немного ошибок.
-  warning(RescueColors.warningBg, RescueColors.warningText),
+  /// Внимание: метка-рамка жёлтая («7» у «ОШИБКИ ЗА ЧАС»).
+  warning(Colors.transparent, RescueColors.accent, RescueColors.accent),
 
-  /// Мягкий акцент: путь «VPN».
-  soft(RescueColors.softAccent, RescueColors.softAccentText),
+  /// Мягкий акцент: тёмная плашка с жёлтым текстом («АКТИВНА», путь «VPN»).
+  soft(RescueColors.deep, RescueColors.accent),
 
-  /// Нейтральный: «23 за сутки».
-  neutral(RescueColors.track, RescueColors.textTertiary),
+  /// Нейтральный: плашка line со светлым текстом («ДО 9 НОЯБРЯ», «23 за сутки»).
+  neutral(RescueColors.line, RescueColors.text),
 
-  /// Мимо VPN: путь «мимо».
-  bypass(RescueColors.bypassBg, RescueColors.bypassText),
+  /// Мимо VPN: метка-рамка line2 со светлым текстом.
+  bypass(Colors.transparent, RescueColors.text, RescueColors.line2),
 
-  /// Успех: «активна».
-  success(RescueColors.successBg, RescueColors.successText);
+  /// Успех: жёлтая плашка с тёмным текстом.
+  success(RescueColors.accent, RescueColors.onAccent);
 
-  const RescueBadgeKind(this.background, this.foreground);
+  const RescueBadgeKind(this.background, this.foreground, [this.border]);
 
   final Color background;
   final Color foreground;
+
+  /// Рамка 1.5 px; null — без рамки.
+  final Color? border;
 }
 
-/// Форма бейджа: [pill] — круглая «таблетка» 12/600 (счётчики), [tag] — метка радиус 6 (путь в таблице).
+/// Форма бейджа: [pill] — «таблетка» (счётчики), [tag] — метка радиус 6 (путь в таблице).
 enum RescueBadgeShape { pill, tag }
 
-/// Шлюпка: бейдж-метка.
+/// Шлюпка: бейдж-метка, 11 / 700.
 class RescueBadge extends StatelessWidget {
   const RescueBadge({
     super.key,
@@ -54,17 +57,22 @@ class RescueBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pill = shape == RescueBadgeShape.pill;
+    final border = kind.border;
     return Container(
       padding: pill
-          ? const EdgeInsets.symmetric(vertical: 3, horizontal: 10)
-          : const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-      decoration: BoxDecoration(color: kind.background, borderRadius: BorderRadius.circular(pill ? 999 : 6)),
+          ? const EdgeInsets.symmetric(vertical: 3, horizontal: 9)
+          : const EdgeInsets.symmetric(vertical: 2, horizontal: 7),
+      decoration: BoxDecoration(
+        color: kind.background,
+        borderRadius: BorderRadius.circular(pill ? 999 : 6),
+        border: border != null ? Border.all(color: border, width: 1.5) : null,
+      ),
       child: Text(
         label,
         semanticsLabel: semanticLabel,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, fontWeight: pill ? FontWeight.w600 : FontWeight.w400, color: kind.foreground),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: kind.foreground),
       ),
     );
   }

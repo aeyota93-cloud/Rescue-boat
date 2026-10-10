@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
-/// Шлюпка: переключатель как в макете — дорожка 48×28, белый кружок 22.
+/// Шлюпка: переключатель стиля «Д» — дорожка 46×28, кружок 22.
 ///
-/// Зона нажатия 48×44. Если [onChanged] = null — только отображение
+/// Включено — жёлтая дорожка с тёмным кружком, выключено — дорожка line с кружком muted.
+/// Зона нажатия 46×44. Если [onChanged] = null — только отображение
 /// (так его используют внутри SettingsSwitchTile и ConnectionPill, где нажимается вся строка).
 class RescueToggle extends StatelessWidget {
   const RescueToggle({super.key, required this.value, this.onChanged, this.semanticLabel});
@@ -16,20 +17,23 @@ class RescueToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final track = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
-      width: 48,
+      width: 46,
       height: 28,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: value ? RescueColors.good : RescueColors.track,
+        color: value ? RescueColors.accent : RescueColors.line,
         borderRadius: BorderRadius.circular(999),
       ),
       child: AnimatedAlign(
         duration: const Duration(milliseconds: 150),
         alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-        child: const SizedBox.square(
+        child: SizedBox.square(
           dimension: 22,
           child: DecoratedBox(
-            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: value ? RescueColors.onAccent : RescueColors.muted,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),
@@ -45,7 +49,7 @@ class RescueToggle extends StatelessWidget {
         onTap: () => onChanged(!value),
         borderRadius: BorderRadius.circular(999),
         excludeFromSemantics: true,
-        child: SizedBox(width: 48, height: 44, child: Center(child: track)),
+        child: SizedBox(width: 46, height: 44, child: Center(child: track)),
       ),
     );
   }

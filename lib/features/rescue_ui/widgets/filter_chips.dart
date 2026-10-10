@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
-/// Шлюпка: фильтры-кнопки «Всё / Программы / Сайты / IP» (выбран один).
+/// Шлюпка: фильтры-таблетки «Всё / Программы / Сайты / IP» (выбран один).
+///
+/// Выбранный — светлая таблетка с тёмным текстом, остальные — рамка line2 со светлым текстом.
 ///
 /// Каждый фильтр — отдельная кнопка (Tab, Enter/Пробел), высота 44.
 class FilterChips<T> extends StatelessWidget {
@@ -15,8 +17,8 @@ class FilterChips<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         for (final (value, label) in options)
           _Chip(label: label, selected: value == selected, onTap: onSelected == null ? null : () => onSelected!(value)),
@@ -34,10 +36,7 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
-      side: BorderSide(color: selected ? RescueColors.accent : RescueColors.line),
-    );
+    final shape = StadiumBorder(side: BorderSide(color: selected ? RescueColors.text : RescueColors.line2, width: 1.5));
     return Semantics(
       button: true,
       selected: selected,
@@ -46,7 +45,7 @@ class _Chip extends StatelessWidget {
       onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
-          color: selected ? RescueColors.softAccent : Colors.transparent,
+          color: selected ? RescueColors.text : Colors.transparent,
           shape: shape,
           child: InkWell(
             onTap: onTap,
@@ -54,15 +53,15 @@ class _Chip extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Center(
                   widthFactor: 1,
                   child: Text(
                     label,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: selected ? RescueColors.softAccentText : RescueColors.textTertiary,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? RescueColors.onAccent : RescueColors.text,
                     ),
                   ),
                 ),
