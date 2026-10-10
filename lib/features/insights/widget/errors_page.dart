@@ -510,10 +510,7 @@ class _Actions extends ConsumerWidget {
           child: Text(current == SplitTarget.via ? 'Уже через VPN' : 'Всегда через VPN'),
         ),
         TextButton(
-          style: TextButton.styleFrom(
-            foregroundColor: RescueColors.text,
-            textStyle: RescueText.button.copyWith(decoration: TextDecoration.underline),
-          ),
+          style: TextButton.styleFrom(foregroundColor: RescueColors.text),
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: ownerSummary(group, period, DateTime.now())));
             if (!context.mounted) return;
@@ -521,7 +518,10 @@ class _Actions extends ConsumerWidget {
               const SnackBar(content: Text('Скопировано: сайт, программа, путь, виды ошибок и время, без IP')),
             );
           },
-          child: const Text('Скопировать для владельца сервера'),
+          child: const Text(
+            'Скопировать для владельца сервера',
+            style: TextStyle(decoration: TextDecoration.underline, decorationColor: RescueColors.text),
+          ),
         ),
       ],
     );
