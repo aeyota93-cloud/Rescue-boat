@@ -46,6 +46,8 @@ class SingboxConfigOption with _$SingboxConfigOption {
     // Шлюпка: папка статистики (ошибки соединений, замеры качества). null — ядро ничего не собирает.
     @JsonKey(includeIfNull: false) String? rescueStatsDir,
     @JsonKey(includeIfNull: false) bool? rescueStatsProbe,
+    // Шлюпка: папка обмена файлами «Сравнить пути» (req-*.json / res-*.json). null — функция выключена.
+    @JsonKey(includeIfNull: false) String? rescueCompareDir,
     required bool enableTun,
     // required bool enableTunService,
     required bool setSystemProxy,

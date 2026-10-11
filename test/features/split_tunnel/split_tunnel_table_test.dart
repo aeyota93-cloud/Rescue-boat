@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hiddify/features/compare/notifier/compare_notifier.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
+import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
@@ -14,6 +16,7 @@ import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dar
 import 'package:hiddify/features/split_tunnel/widget/split_tunnel_table_page.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../compare/fake_core.dart';
 import '../screens_test_helpers.dart';
 import '../shell_frame_helper.dart';
 
@@ -69,6 +72,7 @@ void main() {
     WidgetTester tester, {
     List<NetConnection>? connections,
     List<ErrorGroup> groups = const [],
+    List<Override> extra = const [],
   }) async {
     final container = await tester.runAsync(
       () => screensContainer(
@@ -76,6 +80,7 @@ void main() {
         overrides: [
           liveConnectionsProvider.overrideWith((ref) => Stream.value(connections)),
           errorGroupsProvider.overrideWith((ref, period) => AsyncData(groups)),
+          ...extra,
         ],
       ),
     );
@@ -389,5 +394,96 @@ void main() {
     expect(state.bypass.apps, isEmpty);
 
     await closePage(tester, container);
+  });
+
+  group('«Сравнить пути»', () {
+    final vpnOn = [
+      vpnStatusProvider.overrideWith(
+        (ref) => const VpnStatus(connected: true, busy: false, label: 'Подключено', canToggle: true),
+      ),
+      compareEnvProvider.overrideWithValue(CompareEnv(newId: () => 'tableid00001')),
+    ];
+
+    Future<void> closeDialog(WidgetTester tester) async {
+      await tester.tap(find.text('Закрыть'));
+      await tester.pumpAndSettle();
+    }
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      testWidgets('${size.width.toInt()}×${size.height.toInt()}: у сайта, IP и программы в сети есть действие', (
+        tester,
+      ) async {
+        writeState(
+          const SplitTunnel(
+            via: SplitList(domains: ['youtube.com'], ips: ['8.8.8.8/32']),
+            bypass: SplitList(apps: ['steam.exe'], ips: ['192.168.0.0/16', '10.0.0.0/8']),
+          ),
+        );
+        final container = await start(
+          tester,
+          connections: [
+            conn('chrome.exe', host: 'www.youtube.com'),
+            conn('chrome.exe', host: 'www.youtube.com'),
+          ],
+          extra: vpnOn,
+        );
+        await pumpInShell(tester, container, const SplitTunnelTablePage(), size: size, selected: 1);
+        expectNoLayoutErrors(tester);
+        final core = FakeCore(dir);
+
+        expect(find.byTooltip('Сравнить пути: youtube.com'), findsOneWidget);
+        expect(find.byTooltip('Сравнить пути: chrome'), findsOneWidget);
+        // Сети целиком сравнить нельзя; программа не в сети — кнопка есть, но объясняет, почему нельзя.
+        expect(find.byTooltip('Запустите программу, чтобы сравнить пути'), findsOneWidget);
+        expect(find.byTooltip(RegExp('^Сравнить пути: 192')), findsNothing);
+
+        final ip = find.byWidgetPredicate(
+          (w) => w is Tooltip && (w.message ?? '').startsWith('Сравнить пути: 8.8.8.8'),
+        );
+        expect(ip, findsOneWidget);
+        await tester.ensureVisible(ip);
+        await tester.pumpAndSettle();
+        await tester.tap(ip);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.text('ЦЕЛЬ'), findsOneWidget);
+        expect(core.request!['target'], '8.8.8.8');
+        expectNoLayoutErrors(tester);
+        await closeDialog(tester);
+        expect(core.allFiles, isEmpty);
+
+        // Программа: цели — её текущие адреса.
+        await tester.ensureVisible(find.byTooltip('Сравнить пути: chrome'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Сравнить пути: chrome'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(core.request!['target'], 'www.youtube.com');
+        expect(find.textContaining('программа chrome.exe'), findsOneWidget);
+        await closeDialog(tester);
+
+        await closePage(tester, container);
+      });
+    }
+
+    testWidgets('меню «⋯»: «Сравнить пути…» с вводом адреса', (tester) async {
+      writeState(const SplitTunnel());
+      final container = await start(tester, extra: vpnOn);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+      final core = FakeCore(dir);
+      await tester.tap(find.byTooltip('Ещё'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Сравнить пути…'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('compare-address')), findsOneWidget);
+      expect(core.allFiles, isEmpty, reason: 'без адреса запроса нет');
+      await tester.enterText(find.byKey(const ValueKey('compare-address')), 'example.org:8443');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Сравнить'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect((core.request!['target'], core.request!['port']), ('example.org', 8443));
+      await closeDialog(tester);
+      await closePage(tester, container);
+    });
   });
 }

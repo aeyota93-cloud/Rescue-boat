@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hiddify/features/compare/model/compare_target.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -338,6 +340,53 @@ void main() {
       final steam = groups.firstWhere((g) => g.target == 'steam.exe');
       expect(splitItemFor(kino), (kind: SplitKind.domain, value: 'kinopoisk.ru'));
       expect(splitItemFor(steam), (kind: SplitKind.app, value: 'steam.exe'));
+    });
+  });
+
+  group('«Сравнить пути»', () {
+    testWidgets('кнопка в ряду действий: цель — сайт группы, без сайта — IP', (tester) async {
+      // VPN выключен: окно открывается, но замер не запускается — файлов не пишем.
+      await pumpPage(
+        tester,
+        const ErrorsPage(),
+        overrides: pageOverrides(split: FakeSplitTunnel(), connection: FakeConnection(const Disconnected())),
+      );
+      final button = find.widgetWithText(OutlinedButton, 'Сравнить пути');
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('compare-target')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const ValueKey('compare-target'))).data, 'kinopoisk.ru');
+      expect(find.text('Подключите VPN, чтобы сравнить пути'), findsOneWidget);
+      await tester.tap(find.text('Закрыть'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.bySemanticsLabel(RegExp('^steam.exe, сайт неизвестен')));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Сравнить пути'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(find.byKey(const ValueKey('compare-target'))).data, '23.62.214.9');
+      expect(tester.takeException(), isNull);
+    });
+
+    test('цель группы: сайт, иначе IP не из домашней сети, иначе ничего', () {
+      ErrorGroup group(List<ErrorEvent> events) => ErrorGroup(
+        key: 'k',
+        target: 'k',
+        app: '',
+        route: ErrorRoute.vpn,
+        count: events.length,
+        last: now,
+        events: events,
+      );
+      final site = group([event(Duration.zero, ErrorKind.reset, host: 'Kinopoisk.ru', ip: '1.2.3.4')]);
+      expect(compareEndpointOf(site), const CompareEndpoint('kinopoisk.ru'));
+      final ip = group([event(Duration.zero, ErrorKind.timeout, app: 'steam.exe', ip: '23.62.214.9')]);
+      expect(compareEndpointOf(ip), const CompareEndpoint('23.62.214.9'));
+      final home = group([event(Duration.zero, ErrorKind.timeout, app: 'nas.exe', ip: '192.168.1.5')]);
+      expect(compareEndpointOf(home), isNull);
+      final none = group([event(Duration.zero, ErrorKind.dns, app: 'x.exe')]);
+      expect(compareEndpointOf(none), isNull);
     });
   });
 }
