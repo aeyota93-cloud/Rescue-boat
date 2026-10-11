@@ -10,8 +10,11 @@ import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/servers/widget/servers_page.dart';
+import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -211,9 +214,13 @@ void main() {
       expect(find.bySemanticsLabel(RegExp(r'^Действует до .*, ещё 31 день$')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('^Обновляется сама, раз в 6 часов, обновлена ')), findsOneWidget);
       expect(find.textContaining('example.com · до '), findsOneWidget);
-      expect(find.text('Запасной'), findsOneWidget);
-      expect(find.text('Добавить подписку'), findsWidgets);
-      expect(find.text('Автоматическое переключение на запасной сервер появится в следующей версии.'), findsOneWidget);
+      // Два сервера в подписке — запасной второй по порядку, автопереключение включено.
+      expect(find.text('Запасной: Германия'), findsOneWidget);
+      expect(find.text('готов'), findsOneWidget);
+      expect(find.text('пинг нет ответа'), findsOneWidget);
+      expect(find.text('Переключаться автоматически'), findsOneWidget);
+      expect(tester.widget<RescueToggle>(find.byKey(const ValueKey('failover-toggle'))).value, isTrue);
+      expect(find.text('Добавить подписку'), findsNothing);
       expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 
@@ -284,8 +291,8 @@ void main() {
       await tester.drag(scrollable, const Offset(0, -3000));
       await tester.pump();
       expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
-      expect(find.text('Запасной'), findsOneWidget, reason: 'конец списка достижим');
-      expect(rect(tester, find.text('Запасной')).bottom, lessThanOrEqualTo(window.height));
+      expect(find.text('Запасной: Сервер 1'), findsOneWidget, reason: 'конец списка достижим');
+      expect(rect(tester, find.text('Запасной: Сервер 1')).bottom, lessThanOrEqualTo(window.height));
 
       for (final e in fixed.entries) {
         expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
@@ -320,7 +327,7 @@ void main() {
       expect(more, findsNothing);
       await tester.drag(page, const Offset(0, -9000));
       await tester.pump();
-      expect(find.text('Запасной'), findsOneWidget);
+      expect(find.text('Запасной: Сервер 1'), findsOneWidget);
       expectNoLayoutErrors(tester);
       await closePage(tester, container);
     });
@@ -340,6 +347,102 @@ void main() {
         expect(find.byKey(const ValueKey('servers-scroll')), findsOneWidget);
         await closePage(tester, container);
       }
+    });
+  });
+
+  group('запасной', () {
+    OutboundGroup oneServer() => OutboundGroup(
+      tag: 'select',
+      type: 'selector',
+      selected: 'nl',
+      items: [
+        OutboundInfo(tag: 'auto', type: 'urltest', urlTestDelay: 48, isGroup: true, tagDisplay: 'Автовыбор'),
+        OutboundInfo(tag: 'nl', type: 'vless', urlTestDelay: 120, tagDisplay: 'Нидерланды'),
+      ],
+    );
+
+    OutboundGroup onBackup() => OutboundGroup(
+      tag: 'select',
+      type: 'selector',
+      selected: 'nl-b',
+      items: [
+        OutboundInfo(tag: 'balance', type: 'balancer', isGroup: true, tagDisplay: 'Балансировщик'),
+        OutboundInfo(tag: 'nl', type: 'vless', urlTestDelay: 70000, tagDisplay: '🇳🇱 NL'),
+        OutboundInfo(tag: 'nl-b', type: 'vless', urlTestDelay: 64, tagDisplay: '🇳🇱 NL запасной'),
+      ],
+    );
+
+    test('порядок подписки, а не сортировка по пингу; группы не считаются', () {
+      final g = onBackup();
+      final sorted = OutboundGroup(tag: g.tag, type: g.type, selected: 'nl-b', items: g.items.reversed);
+      final s = failoverServersOf(sorted, const ['balance', 'nl', 'nl-b'])!;
+      expect(s.main.tag, 'nl');
+      expect(s.backup.tag, 'nl-b');
+      expect(s.backupInUse, isTrue);
+      expect(s.onBackup, isTrue);
+      expect(failoverServersOf(oneServer()), isNull);
+      expect(failoverServersOf(null), isNull);
+      final onMain = failoverServersOf(OutboundGroup(tag: 'select', selected: 'nl', items: g.items))!;
+      expect(onMain.backupInUse, isFalse);
+      expect(onMain.onBackup, isFalse);
+      // Выбран балансировщик (так по умолчанию) — это не запасной.
+      expect(failoverServersOf(OutboundGroup(tag: 'select', selected: 'balance', items: g.items))!.onBackup, isFalse);
+    });
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      testWidgets('один сервер — честная заглушка, ${size.width.toInt()}×${size.height.toInt()}', (tester) async {
+        final container = await start(
+          tester,
+          profiles: _FakeProfiles([main]),
+          proxies: _FakeProxies(oneServer()),
+          size: size,
+          inShell: true,
+        );
+        expectNoLayoutErrors(tester);
+        await tester.scrollUntilVisible(find.text('Добавить подписку'), 300, scrollable: find.byType(Scrollable).last);
+        expect(find.text('Запасной'), findsOneWidget);
+        expect(find.text('Добавить подписку'), findsWidgets);
+        expect(find.text('Пока запасного нет: в подписке один сервер.'), findsOneWidget);
+        expect(find.byKey(const ValueKey('failover-toggle')), findsNothing);
+        expectNoLayoutErrors(tester);
+        await closePage(tester, container);
+      });
+
+      testWidgets('два сервера, запасной сейчас работает, ${size.width.toInt()}×${size.height.toInt()}', (
+        tester,
+      ) async {
+        final container = await start(
+          tester,
+          profiles: _FakeProfiles([main]),
+          proxies: _FakeProxies(onBackup()),
+          size: size,
+          inShell: true,
+        );
+        expectNoLayoutErrors(tester);
+        final toggle = find.byKey(const ValueKey('failover-toggle'));
+        await tester.scrollUntilVisible(toggle, 300, scrollable: find.byType(Scrollable).last);
+        expect(find.text('Запасной: NL запасной'), findsOneWidget);
+        expect(find.text('используется сейчас'), findsOneWidget);
+        expect(find.text('пинг 64 мс'), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await closePage(tester, container);
+      });
+    }
+
+    testWidgets('переключатель меняет настройку, а она — опцию ядра', (tester) async {
+      final container = await start(tester, profiles: _FakeProfiles([main]), proxies: _FakeProxies(servers()));
+      expect(container.read(FailoverPreferences.auto), isTrue);
+      expect(container.read(ConfigOptions.singboxConfigOptions).toJson()['rescue-failover'], isTrue);
+
+      await tapText(tester, find.byKey(const ValueKey('failover-toggle')));
+      expect(container.read(FailoverPreferences.auto), isFalse);
+      expect(tester.widget<RescueToggle>(find.byKey(const ValueKey('failover-toggle'))).value, isFalse);
+      expect(find.text('Автопереключение выключено: сервер выбирается только вручную.'), findsOneWidget);
+      expect(container.read(ConfigOptions.singboxConfigOptions).toJson().containsKey('rescue-failover'), isFalse);
+
+      await tapText(tester, find.byKey(const ValueKey('failover-toggle')));
+      expect(container.read(FailoverPreferences.auto), isTrue);
+      await closePage(tester, container);
     });
   });
 

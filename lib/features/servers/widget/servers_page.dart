@@ -17,6 +17,7 @@ import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/data/rename_profile.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
@@ -598,9 +599,84 @@ Future<void> _delete(BuildContext context, WidgetRef ref, ProfileEntity profile)
   if (ok ?? false) await ref.read(profilesNotifierProvider.notifier).deleteProfile(profile);
 }
 
-/// Честная заглушка «Запасной»: автопереключения пока нет.
+/// «Запасной»: при двух и больше серверах в подписке — второй сервер, его состояние, пинг и
+/// переключатель автопереключения (docs/redesign/failover.md); при одном — честная заглушка.
 class _BackupCard extends ConsumerWidget {
   const _BackupCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers = ref.watch(failoverServersProvider);
+    if (servers == null) return const _NoBackupCard();
+    final auto = ref.watch(FailoverPreferences.auto);
+    final backup = servers.backup;
+    final name = serverTitle(backup.tagDisplay.isNotEmpty ? backup.tagDisplay : backup.tag);
+    final inUse = servers.backupInUse;
+    final delay = backup.urlTestDelay;
+    final timedOut = pingTimedOut(delay);
+    return RescueCard.dashed(
+      semanticLabel: 'Запасной сервер',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 154),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Запасной: $name',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamilyFallback: [FontFamily.emoji]),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  inUse ? 'используется сейчас' : 'готов',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: inUse ? RescueColors.accent : RescueColors.text,
+                  ),
+                ),
+                Text(
+                  'пинг ${pingLabel(delay)}',
+                  style: TextStyle(fontSize: 13, color: timedOut ? RescueColors.warn : RescueColors.muted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              auto
+                  ? 'Если основной не отвечает полторы минуты, Шлюпка перейдёт на запасной и вернётся, когда основной оживёт.'
+                  : 'Автопереключение выключено: сервер выбирается только вручную.',
+              style: RescueText.caption,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(child: Text('Переключаться автоматически', style: RescueText.small)),
+                const SizedBox(width: 12),
+                RescueToggle(
+                  key: const ValueKey('failover-toggle'),
+                  value: auto,
+                  semanticLabel: 'Переключаться на запасной автоматически',
+                  onChanged: (v) => ref.read(FailoverPreferences.auto.notifier).update(v),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Честная заглушка «Запасной»: в подписке один сервер — переключаться не на что.
+class _NoBackupCard extends ConsumerWidget {
+  const _NoBackupCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -613,12 +689,13 @@ class _BackupCard extends ConsumerWidget {
           children: [
             const Text('Запасной', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            const Text(
-              'Автоматическое переключение на запасной сервер появится в следующей версии.',
-              style: RescueText.smallSecondary,
-            ),
+            const Text('Пока запасного нет: в подписке один сервер.', style: RescueText.smallSecondary),
             const SizedBox(height: 6),
-            const Text('Пока запасной можно добавить второй подпиской и выбрать вручную.', style: RescueText.caption),
+            const Text(
+              'Когда в подписке их два, Шлюпка сама перейдёт на запасной, если основной не отвечает. '
+              'Ещё запасной можно добавить второй подпиской и выбрать вручную.',
+              style: RescueText.caption,
+            ),
             const SizedBox(height: 12),
             OutlinedButton(onPressed: () => showAddSubscription(context, ref), child: const Text('Добавить подписку')),
           ],

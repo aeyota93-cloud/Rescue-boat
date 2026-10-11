@@ -12,6 +12,7 @@ import 'package:hiddify/features/log/model/log_level.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/route_rules/data/core_rules.dart';
 import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/settings/model/config_option_failure.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
@@ -475,6 +476,8 @@ abstract class ConfigOptions {
       // false — ядро не делает замеры пинга (ошибки пишутся по-прежнему).
       rescueStatsProbe: ref.watch(insightsSettingsProvider).measurePing ? null : false,
       rescueCompareDir: _rescueCompareDir(ref),
+      // true — ядро само переключается на запасной; сколько серверов в профиле, ядро проверит само.
+      rescueFailover: rescueFailoverOption(ref.watch(FailoverPreferences.auto)),
       enableTun: mode == ServiceMode.tun,
       // enableTunService: mode == false, //ServiceMode.tunService,
       setSystemProxy: mode == ServiceMode.systemProxy,
