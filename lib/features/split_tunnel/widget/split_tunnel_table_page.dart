@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/pinned_scroll.dart';
 import 'package:hiddify/features/common/rescue_page_header.dart';
+import 'package:hiddify/features/compare/model/compare_target.dart';
+import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
@@ -22,6 +24,9 @@ const _wideFrom = 780.0;
 
 /// Ширина колонки «Куда идёт» (переключатель «Авто / Мимо / VPN»).
 const _routeWidth = 236.0;
+
+/// Ширина места под кнопку «Сравнить пути» в конце строки таблицы.
+const _compareWidth = 52.0;
 
 /// Сколько строк показываем сразу, когда прокручивается вся страница; дальше — «Показать ещё».
 const _compactRows = 30;
@@ -63,6 +68,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           tooltip: 'Ещё',
           icon: const Icon(Icons.more_horiz_rounded),
           itemBuilder: (_) => [
+            PopupMenuItem(
+              onTap: () => showComparePathsDialog(context, const CompareSubject.ask()),
+              child: const Text('Сравнить пути…'),
+            ),
             PopupMenuItem(onTap: () => _confirmReset(context, ref), child: const Text('Вернуть списки по умолчанию')),
           ],
         ),
@@ -283,6 +292,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final row = _TunnelRow(
       wide: wide,
       highlighted: highlighted,
+      compare: _compareAction(context, ref, e, title),
       // Программа в сети: по нажатию — куда она ходит, с переносом сайта или IP в списки.
       onTap: e.kind == SplitKind.app && e.online
           ? () => showDialog<void>(
@@ -309,6 +319,35 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       ),
     );
     return indent ? Padding(padding: const EdgeInsets.only(left: 24), child: row) : row;
+  }
+
+  /// «Сравнить пути» у строки: сайт и IP — сразу; программа — если она в сети (цели берём из её соединений);
+  /// сеть целиком (не один адрес) сравнить нельзя — действия нет.
+  static _CompareAction? _compareAction(BuildContext context, WidgetRef ref, TunnelEntry e, String title) {
+    switch (e.kind) {
+      case SplitKind.domain:
+        return _CompareAction(
+          tooltip: 'Сравнить пути: $title',
+          onPressed: () => showComparePathsDialog(context, CompareSubject(endpoints: [CompareEndpoint(e.value)])),
+        );
+      case SplitKind.ip:
+        final single = e.value.endsWith('/32') || e.value.endsWith('/128');
+        final host = e.value.split('/').first;
+        if (!single || isHomeNetwork(e.value)) return null;
+        return _CompareAction(
+          tooltip: 'Сравнить пути: $title',
+          onPressed: () => showComparePathsDialog(context, CompareSubject(endpoints: [CompareEndpoint(host)])),
+        );
+      case SplitKind.app:
+        if (!e.online) return const _CompareAction(tooltip: 'Запустите программу, чтобы сравнить пути');
+        return _CompareAction(
+          tooltip: 'Сравнить пути: $title',
+          onPressed: () {
+            final all = ref.read(liveConnectionsProvider).valueOrNull ?? const <NetConnection>[];
+            showComparePathsDialog(context, CompareSubject(endpoints: endpointsForApp(e.value, all), appExe: e.value));
+          },
+        );
+    }
   }
 
   static void _setRoute(WidgetRef ref, SplitKind kind, String value, RouteChoice choice) {
@@ -514,6 +553,7 @@ class _HeaderRow extends StatelessWidget {
               width: _routeWidth,
               child: Text('КУДА ИДЁТ', style: style),
             ),
+            SizedBox(width: _compareWidth),
           ],
         ),
       ),
@@ -536,6 +576,7 @@ class _TunnelRow extends StatelessWidget {
     this.highlighted = false,
     this.dashed = false,
     this.onTap,
+    this.compare,
     this.letter,
     this.icon,
     this.trailingIcon,
@@ -558,6 +599,9 @@ class _TunnelRow extends StatelessWidget {
   final bool highlighted;
   final bool dashed;
   final VoidCallback? onTap;
+
+  /// Кнопка «Сравнить пути» в конце строки; null — у строки её нет.
+  final _CompareAction? compare;
   final String? letter;
   final IconData? icon;
   final IconData? trailingIcon;
@@ -637,6 +681,19 @@ class _TunnelRow extends StatelessWidget {
         ),
       ],
     );
+    final compare = this.compare;
+    final compareButton = compare == null
+        ? null
+        : IconButton(
+            tooltip: compare.tooltip,
+            onPressed: compare.onPressed,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(44, 44),
+              foregroundColor: c.foreground,
+              disabledForegroundColor: c.subtitle.withValues(alpha: 0.5),
+            ),
+            icon: const Icon(Icons.compare_arrows_rounded, size: 22),
+          );
     final kindText = Text(kind, maxLines: 1, style: TextStyle(fontSize: 13, color: c.subtitle));
     final errorsText = errors == 0 ? 'нет' : '$errors';
 
@@ -663,6 +720,10 @@ class _TunnelRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             route(highlighted),
+            SizedBox(
+              width: _compareWidth,
+              child: compareButton == null ? null : Center(child: compareButton),
+            ),
           ],
         ),
       );
@@ -672,7 +733,15 @@ class _TunnelRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ExcludeSemantics(child: name),
+            if (compareButton == null)
+              ExcludeSemantics(child: name)
+            else
+              Row(
+                children: [
+                  Expanded(child: ExcludeSemantics(child: name)),
+                  compareButton,
+                ],
+              ),
             const SizedBox(height: 6),
             ExcludeSemantics(
               child: Padding(
@@ -735,6 +804,14 @@ class _TunnelRow extends StatelessWidget {
       child: row,
     );
   }
+}
+
+/// Действие «Сравнить пути» у строки: [onPressed] null — кнопка есть, но нажать нельзя (подсказка объясняет почему).
+class _CompareAction {
+  const _CompareAction({required this.tooltip, this.onPressed});
+
+  final String tooltip;
+  final VoidCallback? onPressed;
 }
 
 // ---------- диалоги ----------

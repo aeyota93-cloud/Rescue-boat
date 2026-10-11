@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/pinned_scroll.dart';
+import 'package:hiddify/features/compare/model/compare_target.dart';
+import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
 import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/insights/widget/insights_format.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
+import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -192,6 +195,21 @@ class ErrorsPage extends HookConsumerWidget {
     return (kind: SplitKind.domain, value: parsed?.kind == SplitKind.domain ? parsed!.value : host.toLowerCase());
   }
   if (group.app.isNotEmpty) return (kind: SplitKind.app, value: group.app);
+  return null;
+}
+
+/// Что сравнивать для группы ошибок: её сайт, а если сайта нет — IP (домашние сети пропускаем).
+CompareEndpoint? compareEndpointOf(ErrorGroup group) {
+  for (final e in group.events) {
+    if (e.host.isNotEmpty) {
+      final parsed = parseCompareTarget(e.host);
+      if (parsed != null) return CompareEndpoint(parsed.host, e.port > 0 && e.network == 'tcp' ? e.port : 443);
+    }
+  }
+  for (final e in group.events) {
+    if (e.ip.isEmpty || !isIpAddress(e.ip) || isHomeNetwork(cidrOf(e.ip))) continue;
+    return CompareEndpoint(e.ip.toLowerCase(), e.port > 0 && e.network == 'tcp' ? e.port : 443);
+  }
   return null;
 }
 
@@ -749,6 +767,7 @@ class _Actions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final item = splitItemFor(group);
     final current = item == null ? null : ref.watch(splitTunnelProvider).targetOf(item.kind, item.value);
+    final compareTarget = compareEndpointOf(group);
 
     VoidCallback? add(SplitTarget target) => item == null || current == target
         ? null
@@ -770,6 +789,12 @@ class _Actions extends ConsumerWidget {
         OutlinedButton(
           onPressed: add(SplitTarget.via),
           child: Text(current == SplitTarget.via ? 'Уже через VPN' : 'Всегда через VPN'),
+        ),
+        OutlinedButton(
+          onPressed: compareTarget == null
+              ? null
+              : () => showComparePathsDialog(context, CompareSubject(endpoints: [compareTarget])),
+          child: const Text('Сравнить пути'),
         ),
         TextButton(
           style: TextButton.styleFrom(foregroundColor: RescueColors.text),
