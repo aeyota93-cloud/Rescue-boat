@@ -189,6 +189,7 @@ class ErrorsPage extends HookConsumerWidget {
 
 /// Как пустить группу в туннель: сайт — правилом для домена, без сайта — правилом для программы.
 ({SplitKind kind, String value})? splitItemFor(ErrorGroup group) {
+  if (isFailoverGroup(group)) return null;
   final host = group.events.map((e) => e.host).firstWhere((h) => h.isNotEmpty, orElse: () => '');
   if (host.isNotEmpty) {
     final parsed = parseSplitItem(host);
@@ -200,6 +201,7 @@ class ErrorsPage extends HookConsumerWidget {
 
 /// Что сравнивать для группы ошибок: её сайт, а если сайта нет — IP (домашние сети пропускаем).
 CompareEndpoint? compareEndpointOf(ErrorGroup group) {
+  if (isFailoverGroup(group)) return null;
   for (final e in group.events) {
     if (e.host.isNotEmpty) {
       final parsed = parseCompareTarget(e.host);
@@ -370,7 +372,8 @@ class _GroupList extends HookWidget {
       minHeight: 68,
       tileSize: 38,
       radius: 22,
-      semanticLabel: '${g.target}, $sub, ${g.count} ${errorsWord(g.count)}',
+      semanticLabel:
+          '${g.target}, $sub, ${g.count} ${isFailoverGroup(g) ? switchesWord(g.count) : errorsWord(g.count)}',
       onTap: () => onSelect(g),
       trailing: ExcludeSemantics(
         child: RingStat(
@@ -414,7 +417,10 @@ class _Details extends HookWidget {
     final shownFew = group.events.take(limit.value > cap ? cap : limit.value).toList();
     final total = bars.counts.fold<int>(0, (s, v) => s + v);
     final summary = Text(
-      '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
+      isFailoverGroup(group)
+          ? 'Основной сервер не отвечал — ядро перешло на запасной · '
+                '${group.count} ${switchesWord(group.count)} ${periodPhrase(period)}'
+          : '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
       style: RescueText.smallSecondary,
     );
     Widget chart(double height) => HourBars(

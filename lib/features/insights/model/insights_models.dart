@@ -25,7 +25,11 @@ enum ErrorKind {
   eof('соединение закрылось сразу'),
   stall('замирание связи'),
   other('другая ошибка'),
-  suppressed('слишком много ошибок, часть пропущена');
+  suppressed('слишком много ошибок, часть пропущена'),
+
+  /// Не ошибка соединения: ядро переключилось основной ↔ запасной (docs/redesign/failover.md).
+  /// Направление — в [ErrorEvent.failoverBack], новый сервер — в [ErrorEvent.host].
+  failover('переключение на запасной');
 
   const ErrorKind(this.title);
 
@@ -82,6 +86,9 @@ class ErrorEvent {
   /// Сколько одинаковых событий схлопнуто в одно.
   final int count;
   final String message;
+
+  /// Событие автопереключения — возврат на основной (иначе — переход на запасной).
+  bool get failoverBack => kind == ErrorKind.failover && message.contains('снова');
 
   /// Сайт, если известен, иначе «ip:port».
   String get target => host.isNotEmpty ? host : (ip.isEmpty ? '' : '$ip:$port');

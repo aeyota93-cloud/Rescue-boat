@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 
@@ -70,7 +71,7 @@ Widget routeTag(ErrorRoute route) => RescueBadge.tag(
 
 /// Что случилось — одной строкой: вид ошибки, длина замирания, сколько раз подряд.
 String eventWhat(ErrorEvent e) {
-  final parts = [e.kind.title];
+  final parts = [if (e.kind == ErrorKind.failover) failoverTitle(e) else e.kind.title];
   if (e.kind == ErrorKind.stall && e.gapMs > 0) {
     parts.add('на ${(e.gapMs / 1000).toStringAsFixed(1).replaceAll('.', ',')} с');
   }
@@ -97,7 +98,14 @@ String kindShort(ErrorKind kind) => switch (kind) {
   ErrorKind.stall => 'замирание',
   ErrorKind.other => 'другое',
   ErrorKind.suppressed => 'пропущено',
+  ErrorKind.failover => 'переключение',
 };
+
+/// Переключение сервера для людей: «переключение на запасной» / «возврат на основной».
+String failoverTitle(ErrorEvent e) => e.failoverBack ? 'возврат на основной' : 'переключение на запасной';
+
+/// «2 переключения» — сколько раз ядро меняло сервер.
+String switchesWord(int n) => plural(n, 'переключение', 'переключения', 'переключений');
 
 /// Самый частый вид ошибки в группе (с учётом схлопнутых n).
 ErrorKind mainKind(ErrorGroup group) {
@@ -120,8 +128,13 @@ String tileLetter(String target) {
   return t.characters.first.toUpperCase();
 }
 
-/// Подпись группы: «chrome.exe · сброс · VPN»; без сайта — «сайт неизвестен · …».
+/// Подпись группы: «chrome.exe · сброс · VPN»; без сайта — «сайт неизвестен · …»;
+/// переключения сервера — последнее из них и куда перешли.
 String groupSubtitle(ErrorGroup group) {
+  if (isFailoverGroup(group)) {
+    final last = group.events.first;
+    return '${failoverTitle(last)}${last.host.isEmpty ? '' : ' · сейчас ${last.host}'}';
+  }
   final byApp = group.key.startsWith('app:');
   final who = byApp ? 'сайт неизвестен' : (group.app.isEmpty ? 'программа неизвестна' : group.app);
   return '$who · ${kindShort(mainKind(group))} · ${group.route.long}';

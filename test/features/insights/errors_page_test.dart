@@ -7,6 +7,7 @@ import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/insights/widget/errors_page.dart';
+import 'package:hiddify/features/insights/widget/insights_format.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -46,6 +47,75 @@ void main() {
     expect(bars.counts.reduce((a, b) => a + b), 4);
     expect(find.text('213.180.204.211:443'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  group('переключение сервера (failover)', () {
+    final withFailover = [
+      event(const Duration(minutes: 2), ErrorKind.failover, host: 'NL', message: 'основной снова отвечает'),
+      event(
+        const Duration(minutes: 30),
+        ErrorKind.failover,
+        host: 'NL запасной',
+        message: 'основной не отвечает 3 раза подряд',
+      ),
+      ...sampleEvents,
+    ];
+
+    test('вид из файла ядра; неизвестный вид не ломает чтение', () {
+      final t = DateTime(2026, 10, 11, 12).millisecondsSinceEpoch;
+      final e = ErrorEvent.tryParse({
+        'v': 1,
+        't': t,
+        'kind': 'failover',
+        'route': 'vpn',
+        'host': 'NL запасной',
+        'msg': 'основной не отвечает 3 раза подряд',
+      })!;
+      expect(e.kind, ErrorKind.failover);
+      expect(e.failoverBack, isFalse);
+      expect(eventWhat(e), 'переключение на запасной');
+      final back = ErrorEvent.tryParse({'t': t, 'kind': 'failover', 'host': 'NL', 'msg': 'основной снова отвечает'})!;
+      expect(back.failoverBack, isTrue);
+      expect(eventWhat(back), 'возврат на основной');
+      expect(ErrorEvent.tryParse({'t': t, 'kind': 'что-то-новое'})!.kind, ErrorKind.other);
+    });
+
+    test('не считаются ошибками и собираются в одну группу без действий', () {
+      expect(countErrors(withFailover), countErrors(sampleEvents));
+      final groups = groupErrors(withFailover);
+      final g = groups.singleWhere(isFailoverGroup);
+      expect(g.target, 'Переключение сервера');
+      expect(g.count, 2);
+      expect(g.events.first.host, 'NL');
+      expect(groupSubtitle(g), 'возврат на основной · сейчас NL');
+      expect(splitItemFor(g), isNull);
+      expect(compareEndpointOf(g), isNull);
+    });
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      testWidgets('в Ошибках отдельным видом, ${size.width.toInt()}×${size.height.toInt()}', (tester) async {
+        await pumpPage(
+          tester,
+          const ErrorsPage(),
+          overrides: pageOverrides(split: FakeSplitTunnel(), events: withFailover),
+          size: size,
+        );
+        expect(tester.takeException(), isNull);
+        expect(stat(tester, 'ВСЕГО ОШИБОК'), '7', reason: 'переключения — не ошибки');
+        final tile = find.bySemanticsLabel(RegExp('^Переключение сервера, возврат на основной'));
+        await tester.ensureVisible(tile);
+        await tester.pump();
+        await tester.tap(tile);
+        await tester.pump();
+        expect(detailsTitle(tester).data, 'Переключение сервера');
+        expect(find.textContaining('2 переключения за сутки'), findsOneWidget);
+        expect(find.text('возврат на основной'), findsOneWidget);
+        expect(find.text('переключение на запасной'), findsOneWidget);
+        final bypass = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Пустить мимо VPN'));
+        expect(bypass.onPressed, isNull);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   testWidgets('выбор группы меняет подробности', (tester) async {
