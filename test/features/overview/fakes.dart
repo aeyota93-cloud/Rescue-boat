@@ -15,6 +15,8 @@ import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/model/proxy_failure.dart';
+import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_theme.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
@@ -45,6 +47,28 @@ class FakeActiveProxy extends ActiveProxyNotifier {
   @override
   Stream<OutboundInfo> build() => Stream.value(info);
 }
+
+/// Выход `select` ядра: серверы подписки и кто выбран (для «Запасного»). null — VPN выключен.
+class FakeProxiesOverview extends ProxiesOverviewNotifier {
+  FakeProxiesOverview(this.group);
+
+  final OutboundGroup? group;
+
+  @override
+  Stream<OutboundGroup?> build() => group == null ? Stream.error(const ServiceNotRunning()) : Stream.value(group);
+}
+
+/// Подписка с основным и запасным; [selected] — тег выбранного сервера.
+OutboundGroup twoServers({String selected = 'nl'}) => OutboundGroup(
+  tag: 'select',
+  type: 'selector',
+  selected: selected,
+  items: [
+    OutboundInfo(tag: 'balance', type: 'balancer', isGroup: true, tagDisplay: 'Балансировщик'),
+    OutboundInfo(tag: 'nl', type: 'vless', urlTestDelay: 48, tagDisplay: 'Нидерланды'),
+    OutboundInfo(tag: 'nl-b', type: 'vless', urlTestDelay: 60, tagDisplay: 'Нидерланды запасной'),
+  ],
+);
 
 class FakeActiveProfile extends ActiveProfile {
   FakeActiveProfile(this.profile);
@@ -188,8 +212,8 @@ final sampleEvents = [
   ),
 ];
 
-List<ErrorEvent> eventsFor(InsightsPeriod p) => [
-  for (final e in sampleEvents)
+List<ErrorEvent> eventsFor(InsightsPeriod p, [List<ErrorEvent>? events]) => [
+  for (final e in events ?? sampleEvents)
     if (now.difference(e.time) <= p.duration) e,
 ];
 
@@ -252,8 +276,11 @@ List<Override> pageOverrides({
   ProfileEntity? profile,
   OutboundInfo? proxy,
   FakeProfiles? profiles,
+  OutboundGroup? servers,
+  List<ErrorEvent>? events,
   bool empty = false,
 }) => [
+  proxiesOverviewNotifierProvider.overrideWith(() => FakeProxiesOverview(empty ? null : servers ?? twoServers())),
   connectionNotifierProvider.overrideWith(() => connection ?? FakeConnection(const Connected())),
   activeProxyNotifierProvider.overrideWith(
     () => FakeActiveProxy(proxy ?? OutboundInfo(urlTestDelay: 48, tagDisplay: 'Нидерланды')),
@@ -261,7 +288,7 @@ List<Override> pageOverrides({
   activeProfileProvider.overrideWith(() => FakeActiveProfile(empty ? null : profile ?? sampleProfile)),
   dialogNotifierProvider.overrideWith(() => dialogs ?? FakeDialogs()),
   splitTunnelProvider.overrideWith(() => split ?? FakeSplitTunnel(SplitTunnel.defaults)),
-  errorEventsProvider.overrideWith((ref, period) => AsyncData(empty ? const [] : eventsFor(period))),
+  errorEventsProvider.overrideWith((ref, period) => AsyncData(empty ? const [] : eventsFor(period, events))),
   errorCountProvider.overrideWith(
     (ref, window) => empty
         ? 0
