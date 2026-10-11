@@ -6,6 +6,7 @@ import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/core/utils/json_converters.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
+import 'package:hiddify/features/compare/data/compare_files.dart';
 import 'package:hiddify/features/insights/notifier/insights_settings.dart';
 import 'package:hiddify/features/log/model/log_level.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
@@ -393,6 +394,12 @@ abstract class ConfigOptions {
     );
   }
 
+  // Шлюпка: папка файлов «Сравнить пути»; передаётся всегда (не зависит от сбора ошибок).
+  static String? _rescueCompareDir(Ref ref) {
+    if (!PlatformUtils.isDesktop) return null;
+    return rescueCompareDirOption(ref.watch(appDirectoriesProvider).requireValue.baseDir);
+  }
+
   static final singboxConfigOptions = Provider<SingboxConfigOption>((ref) {
     // Шлюпка: правила пользователя (сайты, программы мимо VPN) уходят в ядро.
     final rules = ref.watch(rulesNotifierProvider).map(ruleToCoreJson).toList();
@@ -467,6 +474,7 @@ abstract class ConfigOptions {
       rescueStatsDir: _rescueStatsDir(ref),
       // false — ядро не делает замеры пинга (ошибки пишутся по-прежнему).
       rescueStatsProbe: ref.watch(insightsSettingsProvider).measurePing ? null : false,
+      rescueCompareDir: _rescueCompareDir(ref),
       enableTun: mode == ServiceMode.tun,
       // enableTunService: mode == false, //ServiceMode.tunService,
       setSystemProxy: mode == ServiceMode.systemProxy,

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/directories.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
+import 'package:hiddify/features/compare/data/compare_files.dart';
 import 'package:hiddify/features/insights/data/stats_reader.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -85,6 +86,17 @@ void main() {
         const InsightsSettings(collectErrors: false, measurePing: false),
       );
       expect(coreJson().containsKey('rescue-stats-dir'), isFalse);
+    });
+  });
+
+  group('rescue-compare-dir в настройках ядра', () {
+    test('передаётся всегда, даже когда сбор ошибок выключен; папка создана', () async {
+      await start({'rescue-collect-errors': false, 'rescue-measure-ping': false});
+      final json = coreJson();
+      expect(json.containsKey('rescue-stats-dir'), isFalse);
+      expect(json['rescue-compare-dir'], rescueCompareDir(dir));
+      expect(rescueCompareDir(dir), endsWith('${Platform.pathSeparator}compare'));
+      expect(Directory(rescueCompareDir(dir)).existsSync(), isTrue);
     });
   });
 
