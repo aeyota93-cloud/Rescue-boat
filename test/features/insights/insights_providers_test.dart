@@ -100,6 +100,18 @@ void main() {
     });
   });
 
+  group('rescue-failover в настройках ядра', () {
+    test('по умолчанию включено — true', () async {
+      await start();
+      expect(coreJson()['rescue-failover'], isTrue);
+    });
+
+    test('выключено в настройках — ключа нет', () async {
+      await start({'rescue-failover': false});
+      expect(coreJson().containsKey('rescue-failover'), isFalse);
+    });
+  });
+
   group('провайдеры на файлах', () {
     final now = DateTime.now();
 

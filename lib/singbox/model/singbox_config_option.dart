@@ -48,6 +48,8 @@ class SingboxConfigOption with _$SingboxConfigOption {
     @JsonKey(includeIfNull: false) bool? rescueStatsProbe,
     // Шлюпка: папка обмена файлами «Сравнить пути» (req-*.json / res-*.json). null — функция выключена.
     @JsonKey(includeIfNull: false) String? rescueCompareDir,
+    // Шлюпка: «сторож» ядра переключает основной ↔ запасной (docs/redesign/failover.md). null — выключен.
+    @JsonKey(includeIfNull: false) bool? rescueFailover,
     required bool enableTun,
     // required bool enableTunService,
     required bool setSystemProxy,

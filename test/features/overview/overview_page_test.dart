@@ -6,6 +6,7 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/overview/widget/overview_page.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -150,6 +151,50 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  group('запасной', () {
+    final note = find.byKey(const ValueKey('home-failover-note'));
+
+    testWidgets('на основном пометки нет', (tester) async {
+      await pumpPage(tester, const OverviewPage(), overrides: pageOverrides());
+      expect(note, findsNothing);
+      expect(find.text('работаем через запасной'), findsNothing);
+    });
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      testWidgets('ядро перешло на запасной — пометка под «Сервер», ${size.width.toInt()}×${size.height.toInt()}', (
+        tester,
+      ) async {
+        await pumpPage(
+          tester,
+          size.width > 1000 ? homeInShell() : const OverviewPage(),
+          overrides: pageOverrides(servers: twoServers(selected: 'nl-b')),
+          size: size,
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.text('работаем через запасной'), findsOneWidget);
+        final server = tester.getRect(find.text('СЕРВЕР'));
+        expect(tester.getRect(note).top, greaterThan(server.bottom));
+        expect(tester.getRect(note).top, lessThan(tester.getRect(find.text('РЕЖИМ')).top));
+        await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -3000));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('автопереключение выключили — пометка пропала', (tester) async {
+      await pumpPage(
+        tester,
+        const OverviewPage(),
+        overrides: pageOverrides(servers: twoServers(selected: 'nl-b')),
+      );
+      expect(note, findsOneWidget);
+      final container = ProviderScope.containerOf(tester.element(find.byType(OverviewPage)));
+      await container.read(FailoverPreferences.auto.notifier).update(false);
+      await tester.pump();
+      expect(note, findsNothing);
+    });
+  });
 
   testWidgets('выбор сервера делает подписку активной', (tester) async {
     final profiles = FakeProfiles([sampleProfile, secondProfile]);

@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/insights/data/error_groups.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
@@ -220,11 +221,31 @@ class _PickerColumn extends StatelessWidget {
         SectionLabel('Сервер'),
         SizedBox(height: 10),
         ServerPicker(),
+        _FailoverNote(),
         SizedBox(height: 16),
         SectionLabel('Режим'),
         SizedBox(height: 10),
         _Modes(),
       ],
+    );
+  }
+}
+
+/// «Работаем через запасной» под выбором сервера: ядро само перешло (или пользователь выбрал)
+/// не основной сервер, а автопереключение включено (docs/redesign/failover.md).
+class _FailoverNote extends ConsumerWidget {
+  const _FailoverNote();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(failoverOnBackupProvider)) return const SizedBox.shrink();
+    return const Padding(
+      padding: EdgeInsets.only(top: 8),
+      child: Text(
+        'работаем через запасной',
+        key: ValueKey('home-failover-note'),
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.onAccentMuted),
+      ),
     );
   }
 }

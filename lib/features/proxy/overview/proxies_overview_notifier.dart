@@ -137,8 +137,13 @@ class ProxiesOverviewNotifier extends _$ProxiesOverviewNotifier with AppLogger {
   //   return sortedProxies;
   // }
 
+  /// Шлюпка: теги выхода `select` в порядке подписки (до сортировки): первый сервер — основной,
+  /// остальные — запасные (docs/redesign/failover.md). Пусто — порядок ещё неизвестен.
+  List<String> subscriptionOrder = const [];
+
   Future<OutboundGroup?> _sortOutbounds(OutboundGroup? proxies, ProxiesSort sortBy) async {
     if (proxies == null) return null;
+    subscriptionOrder = List.unmodifiable(proxies.items.map((e) => e.tag));
 
     final sortedItems = switch (sortBy) {
       ProxiesSort.name => proxies.items.sortedWith((a, b) {

@@ -4,8 +4,19 @@ import 'package:hiddify/features/insights/model/insights_models.dart';
 List<ErrorEvent> sortNewestFirst(Iterable<ErrorEvent> events) =>
     events.toList()..sort((a, b) => b.time.compareTo(a.time));
 
-/// Сколько ошибок с учётом схлопнутых (поле n) и пропущенных сверх лимита.
-int countErrors(Iterable<ErrorEvent> events) => events.fold(0, (sum, e) => sum + e.count);
+/// Сколько ошибок с учётом схлопнутых (поле n) и пропущенных сверх лимита. Переключения
+/// основной ↔ запасной — не ошибки соединений, их не считаем.
+int countErrors(Iterable<ErrorEvent> events) =>
+    events.fold(0, (sum, e) => e.kind == ErrorKind.failover ? sum : sum + e.count);
+
+/// Ключ группы «переключения сервера»: все события автопереключения — одной строкой списка.
+const failoverGroupKey = 'failover:';
+
+/// Название группы переключений в списке.
+const failoverGroupTitle = 'Переключение сервера';
+
+/// Группа переключений основной ↔ запасной (а не сайт или программа).
+bool isFailoverGroup(ErrorGroup group) => group.key == failoverGroupKey;
 
 /// Группы по сайту, а если сайт неизвестен — по программе. Частые сверху (при равенстве —
 /// у кого ошибка новее), внутри группы новые события сверху. Строки «часть пропущена» в группы
@@ -14,7 +25,9 @@ List<ErrorGroup> groupErrors(Iterable<ErrorEvent> events) {
   final byKey = <String, List<ErrorEvent>>{};
   for (final e in events) {
     if (e.kind == ErrorKind.suppressed) continue;
-    final key = e.host.isNotEmpty
+    final key = e.kind == ErrorKind.failover
+        ? failoverGroupKey
+        : e.host.isNotEmpty
         ? e.host.toLowerCase()
         : e.app.isNotEmpty
         ? 'app:${e.app.toLowerCase()}'
@@ -28,12 +41,18 @@ List<ErrorGroup> groupErrors(Iterable<ErrorEvent> events) {
         final list = sortNewestFirst(value);
         final newest = list.first;
         final app = _mostFrequentApp(list);
+        final failover = key == failoverGroupKey;
         return ErrorGroup(
           key: key,
-          target: newest.host.isNotEmpty ? newest.host : (app.isNotEmpty ? app : 'неизвестный адрес'),
+          target: failover
+              ? failoverGroupTitle
+              : newest.host.isNotEmpty
+              ? newest.host
+              : (app.isNotEmpty ? app : 'неизвестный адрес'),
           app: app,
           route: newest.route,
-          count: countErrors(list),
+          // У переключений «сколько» — число переключений, а не ошибок.
+          count: failover ? list.fold(0, (s, e) => s + e.count) : countErrors(list),
           last: newest.time,
           events: list,
         );
