@@ -394,7 +394,11 @@ void main() {
       final b = hourBuckets(eventsFor(InsightsPeriod.day), InsightsPeriod.day, now);
       expect(b.counts, hasLength(24));
       expect(b.counts.reduce((a, c) => a + c), 7);
-      expect(b.counts.last, greaterThanOrEqualTo(3), reason: 'свежие ошибки — в последнем столбике');
+      // Последний столбик — текущий час: события с его начала (в первые минуты часа «3 минуты
+      // назад» — ещё прошлый час, поэтому считаем, а не ждём фиксированное число).
+      final hourStart = DateTime(now.year, now.month, now.day, now.hour);
+      final thisHour = eventsFor(InsightsPeriod.day).where((e) => !e.time.isBefore(hourStart));
+      expect(b.counts.last, thisHour.fold(0, (s, e) => s + e.count), reason: 'свежие ошибки — в последнем столбике');
       expect(b.end, 'сейчас');
     });
 
