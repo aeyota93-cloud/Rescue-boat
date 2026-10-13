@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:hiddify/utils/platform_utils.dart';
@@ -9,6 +11,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Папка с наборами правил для ядра (HiddifyOptions.split-tunnel-dir).
 String splitTunnelDir(Directory baseDir) => '${baseDir.path}${Platform.pathSeparator}split';
+
+/// Имя файла пунктов сервера с ключом [key] (см. serverKey).
+String viaServerFile(String key) => 'via-server-$key.json';
 
 final splitTunnelProvider = NotifierProvider<SplitTunnelNotifier, SplitTunnel>(SplitTunnelNotifier.new);
 
@@ -38,26 +43,24 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     return state;
   }
 
-  /// Добавить в список. Если запись была в другом списке, она оттуда убирается.
-  void add(SplitTarget target, SplitKind kind, String value) {
-    final updated = state
-        .withList(target.other, state.list(target.other).without(kind, value))
-        .withList(target, state.list(target).withItem(kind, value));
-    _set(updated);
-  }
+  /// Добавить в список. Если запись была в другом месте (другой список, сервер), она оттуда убирается.
+  void add(SplitTarget target, SplitKind kind, String value) => commit(state.placed(kind, value, target));
+
+  /// Закрепить запись за сервером с тегом [tag] (меню «Через VPN ▸ Запасной 1»). Из списков и с других
+  /// серверов она убирается.
+  void addToServer(String tag, SplitKind kind, String value) =>
+      commit(state.placed(kind, value, SplitTarget.via, server: tag));
 
   void remove(SplitTarget target, SplitKind kind, String value) =>
-      _set(state.withList(target, state.list(target).without(kind, value)));
+      commit(state.withList(target, state.list(target).without(kind, value)));
 
   /// Много записей одного вида в список одним сохранением (из другого списка они убираются).
   void addAll(SplitTarget target, SplitKind kind, Iterable<String> values) {
-    var into = state.list(target);
-    var other = state.list(target.other);
+    var updated = state;
     for (final v in values) {
-      other = other.without(kind, v);
-      into = into.withItem(kind, v);
+      updated = updated.placed(kind, v, target);
     }
-    _set(state.withList(target.other, other).withList(target, into));
+    commit(updated);
   }
 
   /// «Авто» в таблице туннеля: как по умолчанию. Обычные записи убираются из обоих списков
@@ -69,15 +72,13 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     if (games.isNotEmpty) addAll(SplitTarget.bypass, kind, games.toList());
   }
 
-  /// Убрать записи из обоих списков.
+  /// Убрать записи из обоих списков и с серверов.
   void removeEverywhere(SplitKind kind, Iterable<String> values) {
-    var bypass = state.bypass;
-    var via = state.via;
+    var updated = state;
     for (final v in values) {
-      bypass = bypass.without(kind, v);
-      via = via.without(kind, v);
+      updated = updated.without(kind, v);
     }
-    _set(SplitTunnel(bypass: bypass, via: via));
+    commit(updated);
   }
 
   /// Вставка блоком: каждая строка (или элемент через запятую) распознаётся сама.
@@ -98,9 +99,11 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     return (added: added, skipped: skipped);
   }
 
-  void resetToDefaults() => _set(PlatformUtils.isWindows ? SplitTunnel.defaults : const SplitTunnel());
+  void resetToDefaults() => commit(PlatformUtils.isWindows ? SplitTunnel.defaults : const SplitTunnel());
 
-  void _set(SplitTunnel updated) {
+  /// Новое состояние: сохранить и выгрузить наборы правил. В тестах подменяется.
+  @protected
+  void commit(SplitTunnel updated) {
     state = updated;
     _save(updated);
     _writeRuleSets(updated);
@@ -118,13 +121,32 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     final dir = Directory(splitTunnelDir(_baseDir));
     try {
       dir.createSync(recursive: true);
-      _writeAtomic(dir, 'via-vpn.json', s.via.toRuleSet());
+      // «Через VPN» — это «Авто» вместе со всеми серверными пунктами: пропал сервер из подписки —
+      // его пункты идут через «Авто», а не мимо VPN.
+      final via = s.viaAll;
+      _writeAtomic(dir, 'via-vpn.json', via.toRuleSet());
       // Ядро rb.12+: DNS сайтов «через VPN» идёт через VPN и не режется блокировкой рекламы.
-      _writeAtomic(dir, 'via-domains.json', s.via.toDomainsRuleSet());
+      _writeAtomic(dir, 'via-domains.json', via.toDomainsRuleSet());
       _writeAtomic(dir, 'bypass-vpn.json', s.bypass.toRuleSet());
       _writeAtomic(dir, 'bypass-domains.json', s.bypass.toDomainsRuleSet());
+      _writeServerRuleSets(dir, s);
     } catch (e, st) {
       loggy.error("split tunnel: could not write rule sets", e, st);
+    }
+  }
+
+  /// `via-server-<key>.json` для каждого сервера с пунктами. У серверов, с которых пункты убрали,
+  /// файл перезаписывается пустым (а не удаляется), чтобы ядро перечитало его и сняло правила.
+  void _writeServerRuleSets(Directory dir, SplitTunnel s) {
+    final wanted = {for (final e in s.servers.entries) viaServerFile(serverKey(e.key)): e.value};
+    for (final f in dir.listSync().whereType<File>()) {
+      final name = f.uri.pathSegments.last;
+      if (RegExp(r'^via-server-[0-9a-f]{12}\.json$').hasMatch(name) && !wanted.containsKey(name)) {
+        _writeAtomic(dir, name, const SplitList().toRuleSet());
+      }
+    }
+    for (final e in wanted.entries) {
+      _writeAtomic(dir, e.key, e.value.toRuleSet());
     }
   }
 

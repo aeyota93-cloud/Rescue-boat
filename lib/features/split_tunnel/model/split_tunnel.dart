@@ -1,8 +1,9 @@
-/// Шлюпка: раздельный туннель — два списка, «через VPN» и «мимо VPN».
+/// Шлюпка: раздельный туннель — два списка, «через VPN» и «мимо VPN», плюс пункты, закреплённые
+/// за конкретным сервером подписки (docs/redesign/servers-v2.md).
 ///
 /// Списки хранятся в split-tunnel.json рядом с настройками и выгружаются в наборы правил
 /// sing-box (папка split/), за которыми следит ядро (Rescue-boat-core, split_tunnel.go):
-/// изменение действует сразу, без переподключения. Оба списка важнее всех остальных правил.
+/// изменение действует сразу, без переподключения. Списки важнее всех остальных правил.
 library;
 
 enum SplitTarget {
@@ -32,6 +33,21 @@ class SplitList {
   final List<String> ips;
 
   bool get isEmpty => apps.isEmpty && domains.isEmpty && ips.isEmpty;
+
+  int get length => apps.length + domains.length + ips.length;
+
+  /// Все записи [others] вместе с этими, без повторов (порядок — как встретились).
+  SplitList union(Iterable<SplitList> others) {
+    var out = this;
+    for (final o in others) {
+      for (final kind in SplitKind.values) {
+        for (final v in o.of(kind)) {
+          out = out.withItem(kind, v);
+        }
+      }
+    }
+    return out;
+  }
 
   List<String> of(SplitKind kind) => switch (kind) {
     SplitKind.app => apps,
@@ -83,28 +99,83 @@ class SplitList {
 }
 
 class SplitTunnel {
-  const SplitTunnel({this.bypass = const SplitList(), this.via = const SplitList()});
+  const SplitTunnel({this.bypass = const SplitList(), this.via = const SplitList(), this.servers = const {}});
 
   final SplitList bypass;
+
+  /// «Через VPN (Авто)»: через выбранный сервер, при сбое — запасные.
   final SplitList via;
+
+  /// Закреплённые за сервером: тег выхода → пункты. Пустых списков здесь не держим.
+  final Map<String, SplitList> servers;
 
   SplitList list(SplitTarget target) => target == SplitTarget.bypass ? bypass : via;
 
+  /// Куда идёт запись: «через VPN» — и «Авто», и за сервером. Порядок как в ядре: сервер, «Авто», «мимо».
   SplitTarget? targetOf(SplitKind kind, String value) {
+    if (serverOf(kind, value) != null) return SplitTarget.via;
     if (via.contains(kind, value)) return SplitTarget.via;
     if (bypass.contains(kind, value)) return SplitTarget.bypass;
     return null;
   }
 
-  SplitTunnel withList(SplitTarget target, SplitList list) =>
-      target == SplitTarget.bypass ? SplitTunnel(bypass: list, via: via) : SplitTunnel(bypass: bypass, via: list);
+  /// Тег сервера, за которым закреплена запись; null — не закреплена.
+  String? serverOf(SplitKind kind, String value) {
+    for (final MapEntry(key: tag, value: list) in servers.entries) {
+      if (list.contains(kind, value)) return tag;
+    }
+    return null;
+  }
 
-  Map<String, dynamic> toJson() => {'bypass': bypass.toJson(), 'via': via.toJson()};
+  /// Всё, что идёт через VPN: «Авто» и все серверные пункты (содержимое via-vpn.json). Если сервер
+  /// пропал из подписки, ядро не знает его набора, и его пункты честно идут через «Авто».
+  SplitList get viaAll => via.union(servers.values);
 
-  factory SplitTunnel.fromJson(Map<String, dynamic> json) => SplitTunnel(
-    bypass: SplitList.fromJson(json['bypass'] as Map<String, dynamic>? ?? const {}),
-    via: SplitList.fromJson(json['via'] as Map<String, dynamic>? ?? const {}),
+  SplitTunnel withList(SplitTarget target, SplitList list) => target == SplitTarget.bypass
+      ? SplitTunnel(bypass: list, via: via, servers: servers)
+      : SplitTunnel(bypass: bypass, via: list, servers: servers);
+
+  SplitTunnel withServer(String tag, SplitList list) =>
+      SplitTunnel(bypass: bypass, via: via, servers: _clean({...servers, tag: list}));
+
+  /// Убрать запись отовсюду: из обоих списков и со всех серверов.
+  SplitTunnel without(SplitKind kind, String value) => SplitTunnel(
+    bypass: bypass.without(kind, value),
+    via: via.without(kind, value),
+    servers: _clean({for (final e in servers.entries) e.key: e.value.without(kind, value)}),
   );
+
+  /// Поставить запись в одно место: [target] или, если задан [server], за этим сервером
+  /// (тогда [target] — «через VPN»). Из остальных мест запись убирается.
+  SplitTunnel placed(SplitKind kind, String value, SplitTarget target, {String? server}) {
+    final rest = without(kind, value);
+    if (server != null) return rest.withServer(server, (rest.servers[server] ?? const SplitList()).withItem(kind, value));
+    return rest.withList(target, rest.list(target).withItem(kind, value));
+  }
+
+  Map<String, dynamic> toJson() => {
+    'bypass': bypass.toJson(),
+    'via': via.toJson(),
+    'servers': {for (final e in servers.entries) e.key: e.value.toJson()},
+  };
+
+  /// Старый файл без `servers` читается: серверных пунктов просто нет.
+  factory SplitTunnel.fromJson(Map<String, dynamic> json) {
+    final raw = json['servers'];
+    return SplitTunnel(
+      bypass: SplitList.fromJson(json['bypass'] as Map<String, dynamic>? ?? const {}),
+      via: SplitList.fromJson(json['via'] as Map<String, dynamic>? ?? const {}),
+      servers: raw is Map<String, dynamic>
+          ? _clean({
+              for (final e in raw.entries)
+                if (e.value is Map<String, dynamic>) e.key: SplitList.fromJson(e.value as Map<String, dynamic>),
+            })
+          : const {},
+    );
+  }
+
+  static Map<String, SplitList> _clean(Map<String, SplitList> map) =>
+      Map.unmodifiable({for (final e in map.entries) if (!e.value.isEmpty) e.key: e.value});
 
   /// Первый запуск: игры и лаунчеры мимо VPN (ниже пинг, загрузки не идут через сервер).
   static SplitTunnel get defaults => const SplitTunnel(bypass: SplitList(apps: defaultBypassApps));

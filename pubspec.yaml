@@ -62,6 +62,8 @@ dependencies:
   flutter_loggy: ^2.0.2
   meta: ^1.15.0
   dartx: ^1.2.0
+  # Шлюпка: ключ сервера для файлов раздельного туннеля (sha256 тега), docs/redesign/servers-v2.md.
+  crypto: ^3.0.6
   uuid: ^4.3.3
   tint: ^2.0.1
   accessibility_tools: ^2.2.3

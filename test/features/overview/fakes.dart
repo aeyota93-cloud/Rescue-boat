@@ -135,6 +135,10 @@ class FakeSplitTunnel extends SplitTunnelNotifier {
   @override
   SplitTunnel build() => initial;
 
+  /// Без файлов: только состояние.
+  @override
+  void commit(SplitTunnel updated) => state = updated;
+
   @override
   void addAll(SplitTarget target, SplitKind kind, Iterable<String> values) {
     for (final v in values) {
