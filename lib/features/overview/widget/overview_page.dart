@@ -25,8 +25,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Шлюпка: «Главная» в стиле «Д» (макет docs/redesign/mockup/style-d-dark.html, экран home).
 ///
-/// Сверху жёлтый блок подключения: кнопка питания и статус, выбор подписки и режимы, закладки
-/// «Связь | Здоровье» с кольцами. Ниже — ошибки за час, раздельный туннель и подписка.
+/// Сверху жёлтый блок подключения: кнопка питания и статус, выбор подписки и режимы. Под ним —
+/// отдельные тёмные карточки «Связь» и «Здоровье» с компактными кольцами (пользователь 14.10:
+/// вынести из жёлтого, сделать компактнее), ниже — ошибки за час, раздельный туннель и подписка.
 /// Без бокового меню: каркас (RescueShell) подключается снаружи. Трафика по программам и сайтам
 /// здесь нет и не будет (решение пользователя), только факты из ядра и файлов статистики.
 class OverviewPage extends StatelessWidget {
@@ -43,8 +44,10 @@ class OverviewPage extends StatelessWidget {
             _Header(),
             SizedBox(height: 20),
             ConnectionBlock(),
-            SizedBox(height: 20),
-            RescueGrid(minItemWidth: 300, spacing: 20, children: [_ErrorsCard(), _TunnelCard(), _SubscriptionCard()]),
+            SizedBox(height: 16),
+            RescueGrid(minItemWidth: 380, spacing: 16, runSpacing: 16, children: [_LinkCard(), _HealthCard()]),
+            SizedBox(height: 16),
+            RescueGrid(minItemWidth: 300, spacing: 16, children: [_ErrorsCard(), _TunnelCard(), _SubscriptionCard()]),
           ],
         ),
       ),
@@ -73,10 +76,8 @@ class _Header extends ConsumerWidget {
 
 // ---------------------------------------------------------------- Жёлтый блок
 
-/// Жёлтый блок подключения: кнопка и статус, сервер и режим, закладки «Связь | Здоровье».
-///
-/// Широко (≥ 900 внутри блока) — три колонки, как в макете; средне — кнопка с сервером в ряд,
-/// закладки ниже; узко — всё столбиком.
+/// Жёлтый блок подключения: кнопка и статус, сервер и режим. Широко (≥ 560 внутри блока) —
+/// кнопка и выбор в ряд; узко — столбиком. «Связь» и «Здоровье» — отдельные карточки ниже.
 class ConnectionBlock extends StatelessWidget {
   const ConnectionBlock({super.key});
 
@@ -86,37 +87,18 @@ class ConnectionBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     const power = _PowerColumn();
     const picker = _PickerColumn();
-    const tabs = _SummaryTabs();
     return RescueCard.accent(
       semanticLabel: 'Подключение',
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
       child: LayoutBuilder(
         builder: (context, c) {
-          if (c.maxWidth >= 900) {
+          if (c.maxWidth >= 560) {
             return const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(width: 230, child: power),
                 SizedBox(width: _gap),
-                Expanded(flex: 30, child: picker),
-                SizedBox(width: _gap),
-                Expanded(flex: 36, child: tabs),
-              ],
-            );
-          }
-          if (c.maxWidth >= 560) {
-            return const Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(width: 230, child: power),
-                    SizedBox(width: _gap),
-                    Expanded(child: picker),
-                  ],
-                ),
-                SizedBox(height: _gap),
-                tabs,
+                Expanded(child: picker),
               ],
             );
           }
@@ -126,8 +108,6 @@ class ConnectionBlock extends StatelessWidget {
               power,
               SizedBox(height: _gap),
               picker,
-              SizedBox(height: _gap),
-              tabs,
             ],
           );
         },
@@ -388,108 +368,180 @@ class _Modes extends ConsumerWidget {
 
 // ---------------------------------------------------------------- Связь | Здоровье
 
-enum _Tab { link, health }
-
 /// Доля дуги кольца: значение относительно «плохо» из формулы оценки.
 double _share(num? value, num bad) => value == null ? 0 : (value / bad).clamp(0, 1).toDouble();
 
-class _SummaryTabs extends HookConsumerWidget {
-  const _SummaryTabs();
+/// Подпись, если замеров нет или они ещё читаются.
+String _healthNote(AsyncValue<HealthSnapshot> value) {
+  if (value.valueOrNull == null) return value.hasError ? 'Не удалось прочитать замеры' : 'Читаем замеры…';
+  return noHealthData;
+}
+
+/// Компактное кольцо карточек «Связь» и «Здоровье».
+HomeStat _ring({required double value, required String label, required String title, String? caption, Color? color}) =>
+    HomeStat(value: value, label: label, title: title, caption: caption, color: color ?? RescueColors.accent);
+
+/// Показатель карточек «Связь» и «Здоровье»: кольцо с числом, под ним название и одна строка
+/// пояснения — четыре помещаются в ряд.
+class HomeStat extends StatelessWidget {
+  const HomeStat({
+    super.key,
+    required this.value,
+    required this.label,
+    required this.title,
+    this.caption,
+    this.color = RescueColors.accent,
+  });
+
+  final double value;
+  final String label;
+  final String title;
+  final String? caption;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = this.caption;
+    return Semantics(
+      container: true,
+      label: [title, label, ?caption].join(', '),
+      child: ExcludeSemantics(
+        child: Column(
+          children: [
+            RingStat(value: value, label: label, color: color, size: 40),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: RescueColors.textOnDeep,
+              ),
+            ),
+            if (caption != null)
+              Tooltip(
+                message: caption,
+                child: Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11, color: RescueColors.muted),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Тёмная карточка сводки: подпись с меткой справа, строка состояния, кольца сеткой.
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.title, required this.tag, required this.note, required this.rings});
+
+  final String title;
+  final String tag;
+  final String note;
+  final List<Widget> rings;
+
+  @override
+  Widget build(BuildContext context) => RescueCard.deep(
+    radius: 28,
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+    semanticLabel: '$title, $tag',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionLabel(title, trailing: _Tag(tag)),
+        const SizedBox(height: 4),
+        Text(note, style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep)),
+        const SizedBox(height: 14),
+        RescueGrid(minItemWidth: 100, spacing: 8, runSpacing: 12, children: rings),
+      ],
+    ),
+  );
+}
+
+class _LinkCard extends ConsumerWidget {
+  const _LinkCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tab = useState(_Tab.link);
     final vpn = ref.watch(vpnStatusProvider);
     final healthValue = ref.watch(healthProvider);
     final health = healthValue.valueOrNull;
     final known = health != null && !health.isEmpty;
     final hourEvents = ref.watch(errorEventsProvider(InsightsPeriod.hour)).valueOrNull;
     final stalls = hourEvents == null ? null : countErrors(hourEvents.where((e) => e.kind == ErrorKind.stall));
-
-    String note() {
-      if (health == null) return healthValue.hasError ? 'Не удалось прочитать замеры' : 'Читаем замеры…';
-      return noHealthData;
-    }
-
-    final List<Widget> rings;
-    final String title;
-    if (tab.value == _Tab.link) {
-      title = [
+    final loss = health?.lossPercent;
+    return _SummaryCard(
+      title: 'Связь',
+      tag: vpn.on ? 'ВКЛ' : 'ВЫКЛ',
+      note: [
         if (!vpn.on) 'VPN выключен' else 'VPN включён',
         if (vpn.on && vpn.server.isNotEmpty) vpn.server,
-        if (!known) note(),
-      ].join(' · ');
-      final loss = health?.lossPercent;
-      rings = [
-        RingStat(
+        if (!known) _healthNote(healthValue),
+      ].join(' · '),
+      rings: [
+        _ring(
           value: _share(health?.pingMs, 150),
           label: health?.pingMs?.toString() ?? '—',
           title: 'МС ПИНГ',
           caption: 'медиана за сутки',
         ),
-        RingStat(
+        _ring(
           value: _share(health?.jitterMs, 60),
           label: health?.jitterMs?.toString() ?? '—',
           title: 'МС РАЗБРОС',
           caption: 'джиттер за сутки',
         ),
-        RingStat(
+        _ring(
           value: _share(loss, 10),
           label: loss == null ? '—' : formatPercentNumber(loss),
           title: '% ПОТЕРЬ',
           caption: 'за сутки',
         ),
-        RingStat(
+        _ring(
           value: _share(stalls, 10),
           label: stalls?.toString() ?? '—',
           title: 'ЗАМИРАНИЙ',
           caption: 'за час',
           color: (stalls ?? 0) > 0 ? RescueColors.warn : RescueColors.accent,
         ),
-      ];
-    } else {
-      title = known ? 'За 24 часа' : note();
-      RingStat ring(HealthMetric? m, String name) => RingStat(
-        value: m?.score == null ? 0 : m!.score! / 100,
-        label: m?.score?.toString() ?? '—',
-        title: name,
-        caption: m?.caption ?? 'нет данных',
-      );
-      rings = [
+      ],
+    );
+  }
+}
+
+class _HealthCard extends ConsumerWidget {
+  const _HealthCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final healthValue = ref.watch(healthProvider);
+    final health = healthValue.valueOrNull;
+    final known = health != null && !health.isEmpty;
+    HomeStat ring(HealthMetric? m, String name) => _ring(
+      value: m?.score == null ? 0 : m!.score! / 100,
+      label: m?.score?.toString() ?? '—',
+      title: name,
+      caption: m?.caption ?? 'нет данных',
+    );
+    return _SummaryCard(
+      title: 'Здоровье',
+      tag: health?.overall.score?.toString() ?? '—',
+      note: known ? 'За 24 часа' : _healthNote(healthValue),
+      rings: [
         ring(health?.overall, 'ОБЩАЯ'),
         ring(health?.ping, 'ПИНГ'),
         ring(health?.stability, 'СТАБИЛЬНОСТЬ'),
         ring(health?.errorsFree, 'БЕЗ ОШИБОК'),
-      ];
-    }
-
-    return FolderTabs<_Tab>(
-      semanticLabel: 'Сводка',
-      tabs: [
-        FolderTab(
-          value: _Tab.link,
-          title: 'Связь',
-          badge: vpn.on ? 'ВКЛ' : 'ВЫКЛ',
-          semanticLabel: 'Связь, VPN ${vpn.on ? 'включён' : 'выключен'}',
-        ),
-        FolderTab(
-          value: _Tab.health,
-          title: 'Здоровье',
-          badge: health?.overall.score?.toString() ?? '—',
-          semanticLabel: 'Здоровье, ${health?.overall.score ?? 'нет данных'}',
-        ),
       ],
-      value: tab.value,
-      onChanged: (t) => tab.value = t,
-      inactiveForeground: RescueColors.onAccent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: RescueText.smallSecondary),
-          const SizedBox(height: 16),
-          RescueGrid(minItemWidth: 150, runSpacing: 16, children: rings),
-        ],
-      ),
     );
   }
 }
@@ -506,7 +558,7 @@ String formatPercentNumber(double percent) {
 class _ErrorsCard extends ConsumerWidget {
   const _ErrorsCard();
 
-  static const _shown = 3;
+  static const _shown = 5;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -517,13 +569,13 @@ class _ErrorsCard extends ConsumerWidget {
     final List<Widget> rows;
     if (groups != null && groups.isNotEmpty) {
       rows = [
-        for (final (i, g) in groups.take(_shown).indexed)
+        for (final g in groups.take(_shown))
           DeepListTile(
             leading: tileLetter(g.target),
             title: g.target,
             subtitle: groupSubtitle(g),
             trailingText: '${g.count}',
-            highlighted: i == 0,
+            minHeight: 46,
             semanticLabel: '${g.target}, ${groupSubtitle(g)}, ${g.count} ${errorsWord(g.count)}',
           ),
       ];
@@ -542,6 +594,9 @@ class _ErrorsCard extends ConsumerWidget {
     }
 
     return DeepList(
+      radius: 28,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      spacing: 6,
       title: 'Ошибки за час',
       count: '$hour',
       semanticLabel: 'Ошибки за час: $hour',

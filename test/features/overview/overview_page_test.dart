@@ -22,8 +22,8 @@ Widget shell({int selected = 0}) => RescueAppShell(
   child: const Center(child: Text('раздел')),
 );
 
-RingStat ring(WidgetTester tester, String title) =>
-    tester.widget<RingStat>(find.byWidgetPredicate((w) => w is RingStat && w.title == title));
+HomeStat ring(WidgetTester tester, String title) =>
+    tester.widget<HomeStat>(find.byWidgetPredicate((w) => w is HomeStat && w.title == title));
 
 void main() {
   testWidgets('подключено: статус, сервер, режимы, кольца, ошибки, туннель, подписка', (tester) async {
@@ -57,23 +57,23 @@ void main() {
     expect(ring(tester, 'ЗАМИРАНИЙ').label, '1');
     expect(ring(tester, 'ЗАМИРАНИЙ').color, RescueColors.warn);
 
-    // Здоровье: общий балл и составляющие.
-    await tester.tap(find.text('Здоровье'));
-    await tester.pump();
+    // Здоровье — отдельная карточка рядом (не закладка): общий балл и составляющие.
+    expect(find.text('СВЯЗЬ'), findsOneWidget);
+    expect(find.text('ЗДОРОВЬЕ'), findsOneWidget);
     expect(ring(tester, 'ОБЩАЯ').label, '92');
     expect(ring(tester, 'ПИНГ').caption, '48 мс, обычно 45–60');
     expect(ring(tester, 'СТАБИЛЬНОСТЬ').label, '81');
     expect(ring(tester, 'БЕЗ ОШИБОК').label, '97');
 
-    // Ошибки за час: счётчик и частые группы, первая — жёлтая.
+    // Ошибки за час: счётчик и частые группы, компактно и без жёлтой первой строки.
     final errors = tester.widget<DeepList>(find.byType(DeepList));
     expect(errors.count, '5');
     final tiles = tester.widgetList<DeepListTile>(find.byType(DeepListTile)).toList();
     expect(tiles.first.title, 'kinopoisk.ru');
     expect(tiles.first.trailingText, '4');
-    expect(tiles.first.highlighted, isTrue);
+    expect(tiles.every((t) => !t.highlighted), isTrue);
+    expect(tiles.first.minHeight, 46);
     expect(tiles.first.subtitle, 'chrome.exe · сброс · через VPN');
-    expect(tiles[1].highlighted, isFalse);
 
     // Туннель: размеры списков.
     final split = SplitTunnel.defaults;
@@ -98,7 +98,7 @@ void main() {
     expect(find.text('Сначала добавьте подписку'), findsOneWidget);
     expect(find.text('Подписка не добавлена'), findsNWidgets(2), reason: 'кнопка сервера и карточка подписки');
     expect(ring(tester, 'МС ПИНГ').label, '—');
-    expect(find.textContaining('Нет данных: замеры идут, пока VPN включён'), findsOneWidget);
+    expect(find.textContaining('Нет данных: замеры идут, пока VPN включён'), findsNWidgets(2), reason: 'Связь и Здоровье');
     expect(tester.widget<DeepList>(find.byType(DeepList)).count, '0');
     expect(find.text('За последний час ошибок не было'), findsOneWidget);
     expect(find.textContaining('ГБ'), findsNothing);
