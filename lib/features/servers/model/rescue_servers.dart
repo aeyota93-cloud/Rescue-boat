@@ -1,8 +1,10 @@
 /// Шлюпка: серверы активной подписки и их имена в интерфейсе (docs/redesign/servers-v2.md).
 ///
-/// Имена — по порядку подписки, а не по remark: первый — «Основной», дальше «Запасной 1»,
-/// «Запасной 2», … Так их называют все экраны: Подписки и серверы, Туннель, «Сейчас в сети»,
-/// «Сравнить пути», Главная. Без виджетов, чтобы проверять тестами.
+/// Имя сервера на всех экранах — его протокол из конфига подписки: «VLESS Reality», «XHTTP»,
+/// «Hysteria2» (пользователь 14.10: «запасной 1», «запасной 2» непонятно). Роль по порядку подписки
+/// — «Основной», «Запасной 1», … — остаётся мелкой подписью: от неё зависит автопереключение.
+/// Протокол неизвестен — имя по роли; у двух серверов один протокол — «XHTTP · запасной 2».
+/// Без виджетов, чтобы проверять тестами.
 library;
 
 import 'dart:convert';
@@ -34,6 +36,7 @@ class RescueServer {
     this.remark = '',
     this.delay = 0,
     this.protocol = '',
+    this.sharedProtocol = false,
   });
 
   /// Тег выхода в ядре — по нему правила и выбор в `select`.
@@ -54,16 +57,37 @@ class RescueServer {
   /// Протокол из конфига подписки: «VLESS Reality», «XHTTP», «Hysteria2»; пусто — неизвестен.
   final String protocol;
 
-  String get name => serverName(index);
+  /// Такой же протокол есть у другого сервера подписки — к имени добавляется роль.
+  final bool sharedProtocol;
 
-  /// Имя с протоколом — в списках и меню выбора сервера: «Запасной 2 · Hysteria2».
-  String get fullName => protocol.isEmpty ? name : '$name · $protocol';
+  /// Роль по порядку подписки: «Основной», «Запасной 1».
+  String get role => serverName(index);
 
-  RescueServer withProtocol(String value) =>
-      RescueServer(tag: tag, index: index, type: type, remark: remark, delay: delay, protocol: value);
+  /// «основной», «запасной 1» — для подписей.
+  String get roleLower => role.toLowerCase();
 
-  /// Для середины фразы: «через запасной 2».
-  String get lowerName => name.toLowerCase();
+  /// Имя на экранах: протокол («XHTTP»), при совпадении протоколов — с ролью, без протокола — роль.
+  String get name => switch ((protocol.isEmpty, sharedProtocol)) {
+    (true, _) => role,
+    (false, false) => protocol,
+    (false, true) => '$protocol · $roleLower',
+  };
+
+  /// Для середины фразы: «через XHTTP», «через запасной 2» (если протокол неизвестен).
+  String get lowerName => protocol.isEmpty ? name.toLowerCase() : name;
+
+  /// Имя и роль в скобках, когда роль из имени не видна: «XHTTP (запасной 1)».
+  String get nameWithRole => protocol.isEmpty || sharedProtocol ? lowerName : '$name ($roleLower)';
+
+  RescueServer withProtocol(String value, {required bool shared}) => RescueServer(
+    tag: tag,
+    index: index,
+    type: type,
+    remark: remark,
+    delay: delay,
+    protocol: value,
+    sharedProtocol: shared,
+  );
 
   String? get hint => serverHint(type, index);
 
@@ -96,14 +120,23 @@ class RescueServers {
   bool get isEmpty => servers.isEmpty;
 
   /// Те же серверы с протоколами из конфига ([protocolsOfConfig]); неизвестные — как были.
-  RescueServers withProtocols(Map<String, String> protocols) => protocols.isEmpty
-      ? this
-      : RescueServers(
-          servers: [for (final s in servers) protocols[s.tag] == null ? s : s.withProtocol(protocols[s.tag]!)],
-          selected: selected,
-          group: group,
-          live: live,
-        );
+  RescueServers withProtocols(Map<String, String> protocols) {
+    if (protocols.isEmpty) return this;
+    final counts = <String, int>{};
+    for (final s in servers) {
+      final p = protocols[s.tag];
+      if (p != null) counts[p] = (counts[p] ?? 0) + 1;
+    }
+    return RescueServers(
+      servers: [
+        for (final s in servers)
+          if (protocols[s.tag] case final p?) s.withProtocol(p, shared: counts[p]! > 1) else s,
+      ],
+      selected: selected,
+      group: group,
+      live: live,
+    );
+  }
 
   /// Есть из чего выбирать: подменю «Через VPN ▸», режимы «Авто / Всегда».
   bool get several => servers.length >= 2;
@@ -152,10 +185,13 @@ class RescueServers {
             index: i,
             type: e['type'] as String? ?? '',
             remark: e['remark'] as String? ?? '',
-            protocol: e['protocol'] as String? ?? '',
           ),
       ];
-      return servers.isEmpty ? null : RescueServers(servers: servers, live: false);
+      final protocols = {
+        for (final e in list.cast<Map<String, dynamic>>())
+          if (e['protocol'] case final String p when p.isNotEmpty) e['tag'] as String: p,
+      };
+      return servers.isEmpty ? null : RescueServers(servers: servers, live: false).withProtocols(protocols);
     } catch (_) {
       return null;
     }

@@ -622,7 +622,10 @@ class _ModeCard extends ConsumerWidget {
     final auto = ref.watch(FailoverPreferences.auto);
     final live = servers.live;
     final current = servers.current;
-    final chain = ['основной', for (final s in servers.servers.skip(1)) s.lowerName].join(' → ');
+    final chain = [
+      if (servers.main.protocol.isEmpty) 'основной' else servers.main.name,
+      for (final s in servers.servers.skip(1)) s.lowerName,
+    ].join(' → ');
     final autoNote = live
         ? [
             if (current != null) 'сейчас: ${current.lowerName}',
@@ -655,8 +658,8 @@ class _ModeCard extends ConsumerWidget {
             _ModeRow(
               key: ValueKey('failover-mode-${s.tag}'),
               selected: !auto && live && servers.selected == s.tag,
-              title: ['Всегда ${s.lowerName}', if (s.protocol.isNotEmpty) s.protocol].join(' · '),
-              subtitle: [?s.hint, s.title].join(' · '),
+              title: 'Всегда ${s.lowerName}',
+              subtitle: [if (s.protocol.isNotEmpty) s.roleLower, ?s.hint, s.title].join(' · '),
               ping: live ? s.delay : null,
               // Выбрать сервер в `select` можно только у работающего ядра.
               onTap: !live || (!auto && servers.selected == s.tag) ? null : () => always(s),
@@ -967,7 +970,7 @@ class _ServerCard extends StatelessWidget {
     final delay = item.urlTestDelay;
     final sub = server == null
         ? _subtitle(item)
-        : [if (server.protocol.isNotEmpty) server.protocol, server.title, ?server.hint].join(' · ');
+        : [if (server.protocol.isNotEmpty) server.roleLower, server.title, ?server.hint].join(' · ');
     final timedOut = pingTimedOut(delay);
     final health = this.health;
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));

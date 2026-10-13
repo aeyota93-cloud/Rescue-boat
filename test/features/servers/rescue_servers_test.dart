@@ -59,13 +59,18 @@ void main() {
         'старый': 'VMess WebSocket',
       });
       final s = rescueServersOf(threeServers(), order)!.withProtocols(protocols);
-      expect(
-        [for (final x in s.servers) x.fullName],
-        ['Основной · VLESS Reality', 'Запасной 1 · XHTTP', 'Запасной 2 · Hysteria2'],
-      );
-      // Короткое имя (плашки, «через запасной 2») не меняется; протокол переживает перезапуск.
-      expect(s.servers.last.name, 'Запасной 2');
-      expect(RescueServers.decode(s.encode())!.servers.last.protocol, 'Hysteria2');
+      // Имя — протокол, роль — отдельно; в середине фразы регистр протокола не меняется.
+      expect([for (final x in s.servers) x.name], ['VLESS Reality', 'XHTTP', 'Hysteria2']);
+      expect([for (final x in s.servers) x.role], ['Основной', 'Запасной 1', 'Запасной 2']);
+      expect(serverPlaceLabel('NL игры', s), 'через Hysteria2');
+      expect(s.servers[1].nameWithRole, 'XHTTP (запасной 1)');
+      // Протокол переживает перезапуск.
+      expect(RescueServers.decode(s.encode())!.servers.last.name, 'Hysteria2');
+
+      // Два сервера с одним протоколом — к имени добавляется роль; без протокола — роль.
+      final same = rescueServersOf(threeServers(), order)!.withProtocols({'NL': 'XHTTP', 'NL запасной': 'XHTTP'});
+      expect([for (final x in same.servers) x.name], ['XHTTP · основной', 'XHTTP · запасной 1', 'Запасной 2']);
+      expect(same.servers.last.lowerName, 'запасной 2');
     });
 
     test('по порядку подписки, а не по пингу; группы не считаются; подсказки по типу', () {

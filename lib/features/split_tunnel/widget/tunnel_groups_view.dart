@@ -287,7 +287,7 @@ class _GroupCard extends ConsumerWidget {
                 menuChildren: [
                   for (final (p, label) in <(SplitPlace, String)>[
                     (viaPlace, 'Любой — выберет Шлюпка'),
-                    for (final s in servers.servers) ((target: SplitTarget.via, server: s.tag), s.fullName),
+                    for (final s in servers.servers) ((target: SplitTarget.via, server: s.tag), s.name),
                   ])
                     MenuItemButton(
                       leadingIcon: place == p

@@ -78,7 +78,7 @@ List<Widget> placeMenuItems({
           key: ValueKey('place-server-${s.tag}'),
           leadingIcon: _Check(current?.server == s.tag),
           onPressed: () => set((target: SplitTarget.via, server: s.tag)),
-          child: _TwoLines(s.fullName, [?s.hint, s.title].join(' · ')),
+          child: _TwoLines(s.name, [if (s.protocol.isNotEmpty) s.roleLower, ?s.hint, s.title].join(' · ')),
         ),
     if (lost)
       MenuItemButton(

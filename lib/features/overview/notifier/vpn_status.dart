@@ -2,6 +2,7 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/rescue_ui/widgets/power_button.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -59,9 +60,15 @@ class VpnStatus {
 int? validDelay(int? delay) => delay != null && delay > 0 && delay < 65000 ? delay : null;
 
 /// [withServer] — добавить имя сервера в подпись (на Главной); в трее только пинг.
-VpnStatus vpnStatusOf(AsyncValue<ConnectionStatus> connection, OutboundInfo? proxy, {bool withServer = true}) {
+/// [serverName] — имя сервера в интерфейсе («XHTTP»); null — имя из подписки («NL»).
+VpnStatus vpnStatusOf(
+  AsyncValue<ConnectionStatus> connection,
+  OutboundInfo? proxy, {
+  bool withServer = true,
+  String? serverName,
+}) {
   final delay = validDelay(proxy?.urlTestDelay);
-  final server = (proxy?.tagDisplay ?? '').trim();
+  final server = (serverName ?? proxy?.tagDisplay ?? '').trim();
   final shown = withServer ? server : '';
   return switch (connection) {
     // Подключено, но сервер ещё ни разу не ответил — для людей это всё ещё «Подключение…».
@@ -103,9 +110,16 @@ VpnStatus vpnStatusOf(AsyncValue<ConnectionStatus> connection, OutboundInfo? pro
   };
 }
 
-final vpnStatusProvider = Provider.autoDispose<VpnStatus>(
-  (ref) => vpnStatusOf(ref.watch(connectionNotifierProvider), ref.watch(activeProxyNotifierProvider).valueOrNull),
-);
+final vpnStatusProvider = Provider.autoDispose<VpnStatus>((ref) {
+  final proxy = ref.watch(activeProxyNotifierProvider).valueOrNull;
+  // Сервер называем так же, как все экраны: протоколом («XHTTP»), если он известен.
+  final server = proxy == null ? null : ref.watch(rescueServersProvider)?.byTag(proxy.tag);
+  return vpnStatusOf(
+    ref.watch(connectionNotifierProvider),
+    proxy,
+    serverName: server != null && server.protocol.isNotEmpty ? server.name : null,
+  );
+});
 
 /// Когда приложение увидело, что VPN подключился; null — сейчас не подключено.
 ///

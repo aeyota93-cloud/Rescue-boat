@@ -85,7 +85,7 @@ final failoverNoteProvider = Provider.autoDispose<String?>((ref) {
   if (!ref.watch(FailoverPreferences.auto)) return null;
   final servers = ref.watch(rescueServersProvider);
   final current = servers == null || !servers.live ? null : servers.current;
-  return current == null || current.index == 0 ? null : 'работаем через ${current.lowerName}';
+  return current == null || current.index == 0 ? null : 'работаем через ${current.nameWithRole}';
 });
 
 /// Где хранится последний известный список серверов (теги, типы, имена из подписки).
