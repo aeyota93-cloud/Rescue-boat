@@ -605,8 +605,16 @@ Future<void> _delete(BuildContext context, WidgetRef ref, ProfileEntity profile)
 /// карточку сервера — иначе выбор через карточку при «Авто» нигде не был виден, а сторож его
 /// не трогал (пользователь видел подсвеченную группу `lowest` вместо основного).
 Future<void> _alwaysServer(WidgetRef ref, RescueServers servers, String tag) async {
+  // Сначала запоминаем выбор: выключение сторожа перезапускает ядро, и оно стартует с основным —
+  // выбранный сервер вернёт fixedServerProvider.
+  await ref.read(FailoverPreferences.server.notifier).update(tag);
   await ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(servers.group, tag);
   if (ref.read(FailoverPreferences.auto)) await ref.read(FailoverPreferences.auto.notifier).update(false);
+}
+
+Future<void> _autoServer(WidgetRef ref) async {
+  await ref.read(FailoverPreferences.server.notifier).update('');
+  await ref.read(FailoverPreferences.auto.notifier).update(true);
 }
 
 /// Режим «для всего остального» (docs/redesign/servers-v2.md): радио-список «Авто: основной →
@@ -652,7 +660,7 @@ class _ModeCard extends ConsumerWidget {
             selected: auto,
             title: 'Авто: $chain',
             subtitle: autoNote,
-            onTap: auto ? null : () => ref.read(FailoverPreferences.auto.notifier).update(true),
+            onTap: auto ? null : () => _autoServer(ref),
           ),
           for (final s in servers.servers)
             _ModeRow(

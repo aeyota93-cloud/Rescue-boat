@@ -224,7 +224,16 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
+  /// Шлюпка: перезапуск — это остановка и обычный запуск. Прежний `bgClient.restart` не
+  /// переподписывался на состояние ядра: после смены настройки (например, «Всегда запасной 1»
+  /// выключает сторожа) окно оставалось в «отключении», и подключиться обратно было нечем.
   TaskEither<String, Unit> restart(String path, String name, bool disableMemoryLimit) {
+    loggy.debug("restarting: stop + start");
+    return stop().flatMap((_) => start(path, name, disableMemoryLimit).mapLeft((failure) => failure.toString()));
+  }
+
+  /// Прежний перезапуск одним вызовом фонового ядра (см. [restart]).
+  TaskEither<String, Unit> restartInPlace(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
       loggy.debug("restarting");
       // if (!await core.restart(path, name)) {

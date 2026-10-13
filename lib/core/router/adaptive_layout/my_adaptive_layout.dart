@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/overview/widget/vpn_power.dart';
@@ -53,6 +54,8 @@ class RescueAppShell extends ConsumerWidget {
     final vpn = ref.watch(vpnStatusProvider);
     // Время подключения считается, пока жив каркас, — даже если Главная не открыта.
     ref.watch(vpnConnectedSinceProvider);
+    // «Всегда <сервер>» переживает перезапуск ядра и новое подключение.
+    ref.watch(fixedServerProvider);
     final version = ref.watch(appInfoProvider.select((info) => info.valueOrNull?.presentVersion));
 
     final navItems = [

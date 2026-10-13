@@ -475,6 +475,29 @@ void main() {
       await closePage(tester, container);
     });
 
+    testWidgets('«Всегда запасной 1» переживает перезапуск ядра: выбор запомнен и возвращается', (tester) async {
+      final proxies = _FakeProxies(servers());
+      final container = await start(tester, profiles: _FakeProfiles([main]), proxies: proxies);
+      await tapText(tester, find.byKey(const ValueKey('failover-mode-de')));
+      expect(container.read(FailoverPreferences.server), 'de');
+
+      // Ядро перезапустилось с основным («nl» — фальшивое ядро выбор не меняет): наблюдатель
+      // каркаса возвращает «de», но не чаще раза в 10 с.
+      proxies.changed.clear();
+      final sub = container.listen(fixedServerProvider, (_, _) {});
+      await tester.pump();
+      expect(proxies.changed, ['select/de']);
+      container.invalidate(fixedServerProvider);
+      await tester.pump();
+      expect(proxies.changed, ['select/de'], reason: 'повтор не раньше чем через 10 с');
+
+      // «Авто» забывает выбор — наблюдатель молчит.
+      await tapText(tester, find.byKey(const ValueKey('failover-mode-auto')));
+      expect(container.read(FailoverPreferences.server), isEmpty);
+      sub.close();
+      await closePage(tester, container);
+    });
+
     testWidgets('карточки по порядку подписки, без групп, даже если ядро отдало их по пингу', (tester) async {
       final g = onBackup();
       final byPing = OutboundGroup(tag: g.tag, type: g.type, selected: 'balance', items: g.items.reversed);

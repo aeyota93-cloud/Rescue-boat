@@ -15,6 +15,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 abstract class FailoverPreferences {
   /// «Переключаться на запасной автоматически». По умолчанию включено.
   static final auto = PreferencesNotifier.create<bool, bool>("rescue-failover", true);
+
+  /// «Всегда <сервер>»: тег выбранного сервера; пусто — не выбран. Ядро после перезапуска (и
+  /// при каждом подключении) стартует с основным, поэтому выбор храним здесь и возвращаем сами
+  /// ([fixedServerProvider]). Действует, только когда [auto] выключен.
+  static final server = PreferencesNotifier.create<String, String>("rescue-fixed-server", "");
 }
 
 /// Значение HiddifyOptions.rescue-failover: true — сторож ядра работает, null — ключа нет.
@@ -74,6 +79,31 @@ final failoverServersProvider = Provider.autoDispose<FailoverServers?>((ref) {
   final group = ref.watch(proxiesOverviewNotifierProvider).valueOrNull;
   return failoverServersOf(group, ref.read(proxiesOverviewNotifierProvider.notifier).subscriptionOrder);
 });
+
+/// «Всегда <сервер>»: если автопереключение выключено, а ядро смотрит не туда (подключились
+/// заново или перезапустили ядро), выбрать сохранённый сервер в `select`. Держит каркас.
+/// Не чаще раза в 10 с на сервер: если ядро выбор не принимает, не долбим его.
+final fixedServerProvider = Provider.autoDispose<void>((ref) {
+  if (ref.watch(FailoverPreferences.auto)) return;
+  final tag = ref.watch(FailoverPreferences.server);
+  if (tag.isEmpty) return;
+  final group = ref.watch(proxiesOverviewNotifierProvider).valueOrNull;
+  if (group == null || group.selected == tag || !group.items.any((e) => e.tag == tag)) return;
+  final now = DateTime.now();
+  final last = _fixedServerTries[tag];
+  if (last != null && now.difference(last) < const Duration(seconds: 10)) return;
+  _fixedServerTries[tag] = now;
+  final notifier = ref.read(proxiesOverviewNotifierProvider.notifier);
+  Future.microtask(() async {
+    try {
+      await notifier.changeProxy(group.tag, tag);
+    } catch (_) {
+      // Ядро ещё не готово — попробуем при следующем обновлении списка серверов.
+    }
+  });
+});
+
+final _fixedServerTries = <String, DateTime>{};
 
 /// Пометка «работаем через запасной» на Главной: автопереключение включено и выбран не основной.
 final failoverOnBackupProvider = Provider.autoDispose<bool>(
