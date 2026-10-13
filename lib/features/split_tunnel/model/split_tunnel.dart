@@ -149,7 +149,9 @@ class SplitTunnel {
   /// (тогда [target] — «через VPN»). Из остальных мест запись убирается.
   SplitTunnel placed(SplitKind kind, String value, SplitTarget target, {String? server}) {
     final rest = without(kind, value);
-    if (server != null) return rest.withServer(server, (rest.servers[server] ?? const SplitList()).withItem(kind, value));
+    if (server != null) {
+      return rest.withServer(server, (rest.servers[server] ?? const SplitList()).withItem(kind, value));
+    }
     return rest.withList(target, rest.list(target).withItem(kind, value));
   }
 
@@ -174,8 +176,10 @@ class SplitTunnel {
     );
   }
 
-  static Map<String, SplitList> _clean(Map<String, SplitList> map) =>
-      Map.unmodifiable({for (final e in map.entries) if (!e.value.isEmpty) e.key: e.value});
+  static Map<String, SplitList> _clean(Map<String, SplitList> map) => Map.unmodifiable({
+    for (final e in map.entries)
+      if (!e.value.isEmpty) e.key: e.value,
+  });
 
   /// Первый запуск: игры и лаунчеры мимо VPN (ниже пинг, загрузки не идут через сервер).
   static SplitTunnel get defaults => const SplitTunnel(bypass: SplitList(apps: defaultBypassApps));

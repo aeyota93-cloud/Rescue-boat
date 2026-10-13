@@ -316,7 +316,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           : null,
       letter: e.kind == SplitKind.ip ? '#' : title.characters.first.toUpperCase(),
       title: title,
-      subtitle: [_detail(e), if (e.server case final tag?) serverPlaceLabel(tag, ref.watch(rescueServersProvider))].join(' · '),
+      subtitle: [
+        _detail(e),
+        if (e.server case final tag?) serverPlaceLabel(tag, ref.watch(rescueServersProvider)),
+      ].join(' · '),
       kind: switch (e.kind) {
         SplitKind.app => 'Программа',
         SplitKind.domain => 'Сайт',
@@ -744,7 +747,10 @@ class _TunnelRow extends StatelessWidget {
               width: _compareWidth,
               child: compareButton == null ? null : Center(child: compareButton),
             ),
-            SizedBox(width: _menuWidth, child: menuButton == null ? null : Center(child: menuButton)),
+            SizedBox(
+              width: _menuWidth,
+              child: menuButton == null ? null : Center(child: menuButton),
+            ),
           ],
         ),
       );

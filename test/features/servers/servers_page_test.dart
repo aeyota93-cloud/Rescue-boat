@@ -224,10 +224,7 @@ void main() {
       expect(find.text('Всегда основной'), findsOneWidget);
       expect(find.text('Всегда запасной 1'), findsOneWidget);
       expect(find.text('нет ответа'), findsOneWidget, reason: 'пинг запасного в строке режима');
-      expect(
-        find.bySemanticsLabel('Авто: основной → запасной 1, сейчас: основной · отвечают 1 из 2'),
-        findsOneWidget,
-      );
+      expect(find.bySemanticsLabel('Авто: основной → запасной 1, сейчас: основной · отвечают 1 из 2'), findsOneWidget);
       expect(find.text('Добавить подписку'), findsNothing);
       expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);

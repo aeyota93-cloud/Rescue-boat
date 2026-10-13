@@ -140,10 +140,7 @@ class _ServerItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(server.name),
-        Text(
-          [?hint, server.title].join(' · '),
-          style: const TextStyle(fontSize: 12, color: RescueColors.muted),
-        ),
+        Text([?hint, server.title].join(' · '), style: const TextStyle(fontSize: 12, color: RescueColors.muted)),
       ],
     );
   }

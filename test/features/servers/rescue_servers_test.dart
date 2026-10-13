@@ -72,8 +72,16 @@ void main() {
       expect(back.via.domains, ['youtube.com']);
 
       final old = SplitTunnel.fromJson({
-        'bypass': {'apps': ['steam.exe'], 'domains': <String>[], 'ips': <String>[]},
-        'via': {'apps': <String>[], 'domains': ['x.com'], 'ips': <String>[]},
+        'bypass': {
+          'apps': ['steam.exe'],
+          'domains': <String>[],
+          'ips': <String>[],
+        },
+        'via': {
+          'apps': <String>[],
+          'domains': ['x.com'],
+          'ips': <String>[],
+        },
       });
       expect(old.servers, isEmpty);
       expect(old.via.domains, ['x.com']);
@@ -136,22 +144,30 @@ void main() {
       final backup = viaServerFile(serverKey('NL запасной'));
       expect(backup, 'via-server-b286f8a79b8f.json');
       expect(read(games)['rules'], [
-        {'process_path_regex': [processPathRegex('cs2.exe')]},
+        {
+          'process_path_regex': [processPathRegex('cs2.exe')],
+        },
       ]);
       expect(read(backup)['rules'], [
-        {'domain_suffix': ['youtube.com']},
+        {
+          'domain_suffix': ['youtube.com'],
+        },
       ]);
       final vpn = read('via-vpn.json')['rules'] as List;
       expect(vpn, hasLength(2));
       expect(read('via-domains.json')['rules'], [
-        {'domain_suffix': ['x.com', 'youtube.com']},
+        {
+          'domain_suffix': ['x.com', 'youtube.com'],
+        },
       ]);
 
       // Пункт ушёл с сервера — файл остаётся, но пустой (ядро перечитает и снимет правило).
       notifier.add(SplitTarget.bypass, SplitKind.app, 'cs2.exe');
       expect(read(games), {'version': 3, 'rules': <Object>[]});
       expect(read('via-vpn.json')['rules'], [
-        {'domain_suffix': ['x.com', 'youtube.com']},
+        {
+          'domain_suffix': ['x.com', 'youtube.com'],
+        },
       ]);
       expect(container.read(splitTunnelProvider).servers.keys, ['NL запасной']);
 
