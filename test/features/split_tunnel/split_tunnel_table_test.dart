@@ -591,6 +591,60 @@ void main() {
       await closePage(tester, container);
     });
 
+    testWidgets('группа игр: не пропадает после «VPN», меню ставит все игры за сервер', (tester) async {
+      writeState(const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)));
+      final container = await start(
+        tester,
+        connections: const [],
+        extra: [rescueServersProvider.overrideWith((ref) => three)],
+      );
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+      SplitTunnel state() => container.read(splitTunnelProvider);
+      final games = find.byKey(const ValueKey('tunnel-games'));
+      RouteChoice? groupChoice() =>
+          tester.widget<RouteSwitch>(find.descendant(of: games, matching: find.byType(RouteSwitch))).value;
+
+      // «VPN» у группы: все игры через VPN, строка группы на месте.
+      await tester.ensureVisible(games);
+      await tester.tap(find.descendant(of: games, matching: find.text('VPN')));
+      await tester.pumpAndSettle();
+      expect(state().via.apps, unorderedEquals(defaultBypassApps));
+      expect(games, findsOneWidget);
+      expect(groupChoice(), RouteChoice.vpn);
+
+      // «⋯ → Через VPN ▸ Запасной 2»: все игры за сервером, в подписи группы — сервер.
+      await openMenu(tester, 'все игры и лаунчеры');
+      expect(find.text('Убрать из списков'), findsNothing);
+      await tester.tap(find.text('Через VPN').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Запасной 2').last);
+      await tester.pumpAndSettle();
+      expect(state().servers['NL игры']?.apps, unorderedEquals(defaultBypassApps));
+      expect(state().via.apps, isEmpty);
+      expect(
+        find.descendant(of: games, matching: find.text('список по умолчанию · через запасной 2 · раскрыть')),
+        findsOneWidget,
+      );
+
+      // Одну игру — мимо: у группы разные пути, переключатель без выбора, группа на месте.
+      container.read(splitTunnelProvider.notifier).add(SplitTarget.bypass, SplitKind.app, defaultBypassApps.first);
+      await tester.pumpAndSettle();
+      expect(games, findsOneWidget);
+      expect(groupChoice(), isNull);
+      expect(
+        find.descendant(of: games, matching: find.text('список по умолчанию · разные пути · раскрыть')),
+        findsOneWidget,
+      );
+
+      // «Мимо» у группы — все снова мимо VPN.
+      await tester.tap(find.descendant(of: games, matching: find.text('Мимо')));
+      await tester.pumpAndSettle();
+      expect(state().bypass.apps, unorderedEquals(defaultBypassApps));
+      expect(state().servers, isEmpty);
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
     testWidgets('«Сейчас в сети»: путь — сервер соединения именем из интерфейса', (tester) async {
       writeState(const SplitTunnel());
       NetConnection withChain(String host, List<String> chains) => NetConnection.fromJson({

@@ -51,6 +51,15 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
   void addToServer(String tag, SplitKind kind, String value) =>
       commit(state.placed(kind, value, SplitTarget.via, server: tag));
 
+  /// Много записей одного вида за сервер [tag] одним сохранением (меню группы «Игры и лаунчеры»).
+  void addAllToServer(String tag, SplitKind kind, Iterable<String> values) {
+    var updated = state;
+    for (final v in values) {
+      updated = updated.placed(kind, v, SplitTarget.via, server: tag);
+    }
+    commit(updated);
+  }
+
   void remove(SplitTarget target, SplitKind kind, String value) =>
       commit(state.withList(target, state.list(target).without(kind, value)));
 

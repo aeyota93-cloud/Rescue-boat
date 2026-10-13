@@ -20,7 +20,8 @@ class RouteSwitch extends StatelessWidget {
     this.onAccent = false,
   });
 
-  final RouteChoice value;
+  /// null — ни один сегмент не выбран (у группы записей разные пути).
+  final RouteChoice? value;
 
   /// null — переключатель неактивен.
   final ValueChanged<RouteChoice>? onChanged;
@@ -44,12 +45,13 @@ class RouteSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: PillSegmented<RouteChoice>(
+      child: PillSegmented<RouteChoice?>(
         segments: [
-          for (final s in segments) PillSegment(value: s.value, label: s.label, semanticLabel: s.semanticLabel),
+          for (final s in segments)
+            PillSegment<RouteChoice?>(value: s.value, label: s.label, semanticLabel: s.semanticLabel),
         ],
         value: value,
-        onChanged: onChanged,
+        onChanged: onChanged == null ? null : (c) => onChanged!(c!),
         semanticLabel: semanticLabel,
         expand: true,
         style: onAccent ? PillSegmentedStyle.onAccent : PillSegmentedStyle.dark,

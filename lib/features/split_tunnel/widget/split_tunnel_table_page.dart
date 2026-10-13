@@ -190,9 +190,8 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     }).toList();
 
     // Игры по умолчанию, которые не в сети, сворачиваем в одну строку внизу (при поиске — не сворачиваем).
-    final games = query.isEmpty
-        ? entries.where((e) => e.isDefaultGame && e.target == SplitTarget.bypass && !e.online).toList()
-        : const <TunnelEntry>[];
+    // Куда бы они ни шли: иначе после «VPN» у группы игры рассыпались бы по списку, а строка пропала.
+    final games = query.isEmpty ? entries.where((e) => e.isDefaultGame && !e.online).toList() : const <TunnelEntry>[];
     final collapse = games.length >= 2;
     final plain = collapse ? entries.where((e) => !games.contains(e)).toList() : entries;
 
@@ -249,20 +248,37 @@ class SplitTunnelTablePage extends HookConsumerWidget {
   Widget _gamesRow(WidgetRef ref, List<TunnelEntry> games, ValueNotifier<bool> open, {required bool wide}) {
     final errors = games.fold(0, (sum, g) => sum + g.errors);
     final values = [for (final g in games) g.value];
+    // Общее место всех игр; разные — переключатель без выбора, в подписи «разные пути».
+    final choices = {for (final g in games) _choiceOf(g)};
+    final servers = {for (final g in games) g.server};
+    final place = switch ((choices.length, servers.length)) {
+      (1, 1) when servers.single != null => serverPlaceLabel(servers.single!, ref.watch(rescueServersProvider)),
+      (1, 1) => null,
+      _ => 'разные пути',
+    };
+    final title = 'Игры и лаунчеры · ${games.length}';
     return _TunnelRow(
+      key: const ValueKey('tunnel-games'),
       dashed: true,
       wide: wide,
       onTap: () => open.value = !open.value,
       semanticLabel: 'Игры и лаунчеры, ${games.length}, ${open.value ? 'свернуть' : 'раскрыть'}',
       icon: Icons.sports_esports_rounded,
-      title: 'Игры и лаунчеры · ${games.length}',
-      subtitle: open.value ? 'список по умолчанию · свернуть' : 'список по умолчанию · раскрыть',
+      title: title,
+      subtitle: ['список по умолчанию', ?place, if (open.value) 'свернуть' else 'раскрыть'].join(' · '),
       trailingIcon: open.value ? Icons.expand_less_rounded : Icons.expand_more_rounded,
       kind: 'Программы',
       connections: 0,
       errors: errors,
+      menu: (onAccent) => RouteMenuButton(
+        kind: SplitKind.app,
+        value: values.first,
+        values: values,
+        label: 'все игры и лаунчеры',
+        color: DeepTileColors.of(highlighted: onAccent).foreground,
+      ),
       route: (highlighted) => RouteSwitch(
-        value: RouteChoice.bypass,
+        value: choices.length == 1 ? choices.single : null,
         semanticLabel: 'Куда идут игры и лаунчеры',
         width: wide ? _routeWidth : null,
         onAccent: highlighted,
@@ -274,12 +290,18 @@ class SplitTunnelTablePage extends HookConsumerWidget {
             case RouteChoice.vpn:
               notifier.addAll(SplitTarget.via, SplitKind.app, values);
             case RouteChoice.bypass:
-              break;
+              notifier.addAll(SplitTarget.bypass, SplitKind.app, values);
           }
         },
       ),
     );
   }
+
+  static RouteChoice _choiceOf(TunnelEntry e) => switch (e.target) {
+    null => RouteChoice.auto,
+    SplitTarget.bypass => RouteChoice.bypass,
+    SplitTarget.via => RouteChoice.vpn,
+  };
 
   Widget _entryRow(
     BuildContext context,
@@ -290,11 +312,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     bool indent = false,
   }) {
     final title = _title(e);
-    final choice = switch (e.target) {
-      null => RouteChoice.auto,
-      SplitTarget.bypass => RouteChoice.bypass,
-      SplitTarget.via => RouteChoice.vpn,
-    };
+    final choice = _choiceOf(e);
     final compare = _compareAction(context, ref, e, title);
     final row = _TunnelRow(
       wide: wide,
@@ -584,6 +602,7 @@ class _HeaderRow extends StatelessWidget {
 /// [highlighted] — жёлтая строка, [dashed] — пунктирная рамка (свёрнутая группа игр).
 class _TunnelRow extends StatelessWidget {
   const _TunnelRow({
+    super.key,
     required this.wide,
     required this.title,
     required this.subtitle,
@@ -1078,7 +1097,7 @@ class _AppConnectionsDialog extends ConsumerWidget {
                                 split: split,
                                 servers: servers,
                                 kind: SplitKind.domain,
-                                value: siteOf(c.host),
+                                values: [siteOf(c.host)],
                               ),
                               child: Text('Сайт ${siteOf(c.host)}'),
                             ),
@@ -1089,7 +1108,7 @@ class _AppConnectionsDialog extends ConsumerWidget {
                                 split: split,
                                 servers: servers,
                                 kind: SplitKind.ip,
-                                value: cidrOf(c.ip),
+                                values: [cidrOf(c.ip)],
                               ),
                               child: Text('IP ${c.ip}'),
                             ),
