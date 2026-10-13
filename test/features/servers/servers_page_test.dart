@@ -44,7 +44,9 @@ class _FakeProfiles extends ProfilesNotifier {
 }
 
 class _FakeProxies extends ProxiesOverviewNotifier {
-  _FakeProxies(this.group, {this.error});
+  _FakeProxies(this.group, {this.error, List<String> order = const []}) {
+    subscriptionOrder = order;
+  }
 
   final OutboundGroup? group;
   final Object? error;
@@ -235,7 +237,7 @@ void main() {
       expect(find.text('VLESS'), findsNothing);
       expect(find.text('ПОДРОБНЕЕ'), findsNWidgets(2));
       expect(find.byTooltip('VLESS · first.example'), findsOneWidget);
-      expect(find.text('АВТОВЫБОР'), findsOneWidget, reason: 'у групп — как раньше');
+      expect(find.text('АВТОВЫБОР'), findsNothing, reason: 'служебные группы при своих серверах не показываем');
       expect(find.text('120 МС'), findsOneWidget);
       expect(find.text('НЕТ ОТВЕТА'), findsOneWidget);
       // Здоровье — только у выбранного сервера.
@@ -473,6 +475,22 @@ void main() {
       await closePage(tester, container);
     });
 
+    testWidgets('карточки по порядку подписки, без групп, даже если ядро отдало их по пингу', (tester) async {
+      final g = onBackup();
+      final byPing = OutboundGroup(tag: g.tag, type: g.type, selected: 'balance', items: g.items.reversed);
+      final container = await start(
+        tester,
+        profiles: _FakeProfiles([main]),
+        proxies: _FakeProxies(byPing, order: const ['balance', 'nl', 'nl-b']),
+        size: const Size(1440, 900),
+      );
+      expect(find.byKey(const ValueKey('server-card-balance')), findsNothing);
+      final mainCard = tester.getTopLeft(find.byKey(const ValueKey('server-card-nl')));
+      final backupCard = tester.getTopLeft(find.byKey(const ValueKey('server-card-nl-b')));
+      expect(mainCard.dy < backupCard.dy || (mainCard.dy == backupCard.dy && mainCard.dx < backupCard.dx), isTrue);
+      await closePage(tester, container);
+    });
+
     testWidgets('VPN выключен: имена из прошлого раза, выбрать сервер нельзя', (tester) async {
       final proxies = _FakeProxies(null, error: const ServiceNotRunning());
       final container = await start(
@@ -500,8 +518,11 @@ void main() {
     final proxies = _FakeProxies(servers());
     final container = await start(tester, profiles: profiles, proxies: proxies);
 
-    await tapText(tester, find.text('Автовыбор'));
-    expect(proxies.changed, ['select/auto']);
+    // Два своих сервера: служебной группы на экране нет, карточка = «Всегда этот сервер».
+    expect(find.text('Автовыбор'), findsNothing);
+    await tapText(tester, find.byKey(const ValueKey('server-card-de')));
+    expect(proxies.changed, ['select/de']);
+    expect(container.read(FailoverPreferences.auto), isFalse);
 
     await tapText(tester, find.text('Проверить пинг'));
     expect(proxies.tested, ['select']);

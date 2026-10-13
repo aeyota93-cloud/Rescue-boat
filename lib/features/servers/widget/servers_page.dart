@@ -601,6 +601,14 @@ Future<void> _delete(BuildContext context, WidgetRef ref, ProfileEntity profile)
   if (ok ?? false) await ref.read(profilesNotifierProvider.notifier).deleteProfile(profile);
 }
 
+/// «Всегда <сервер>»: выбрать его в `select` и выключить сторож. Так же работает нажатие на
+/// карточку сервера — иначе выбор через карточку при «Авто» нигде не был виден, а сторож его
+/// не трогал (пользователь видел подсвеченную группу `lowest` вместо основного).
+Future<void> _alwaysServer(WidgetRef ref, RescueServers servers, String tag) async {
+  await ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(servers.group, tag);
+  if (ref.read(FailoverPreferences.auto)) await ref.read(FailoverPreferences.auto.notifier).update(false);
+}
+
 /// Режим «для всего остального» (docs/redesign/servers-v2.md): радио-список «Авто: основной →
 /// запасной 1 → …» (сторож ядра включён) или «Всегда <сервер>» (сторож выключен, сервер выбран в
 /// `select` тем же путём, что нажатие на карточку). Показывается при двух и больше серверах.
@@ -622,10 +630,7 @@ class _ModeCard extends ConsumerWidget {
           ].join(' · ')
         : 'что работает сейчас — видно, когда VPN подключён';
 
-    Future<void> always(RescueServer s) async {
-      await ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(servers.group, s.tag);
-      if (auto) await ref.read(FailoverPreferences.auto.notifier).update(false);
-    }
+    Future<void> always(RescueServer s) => _alwaysServer(ref, servers, s.tag);
 
     return RescueCard(
       semanticLabel: 'Через какой сервер',
@@ -814,16 +819,21 @@ class _ServersSection extends HookConsumerWidget {
               spacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Text('Нажмите карточку, чтобы выбрать', style: RescueText.caption),
-                PopupMenuButton<ProxiesSort>(
-                  tooltip: 'Порядок',
-                  initialValue: sortBy,
-                  onSelected: ref.read(proxiesSortNotifierProvider.notifier).update,
-                  icon: const Icon(Icons.sort_rounded),
-                  itemBuilder: (_) => [
-                    for (final s in ProxiesSort.values) PopupMenuItem(value: s, child: Text(_sortTitle(s))),
-                  ],
+                Text(
+                  several ? 'Нажмите карточку — «всегда этот сервер»' : 'Нажмите карточку, чтобы выбрать',
+                  style: RescueText.caption,
                 ),
+                // Несколько своих серверов идут по порядку: основной, запасной 1, 2 — не по пингу.
+                if (!several)
+                  PopupMenuButton<ProxiesSort>(
+                    tooltip: 'Порядок',
+                    initialValue: sortBy,
+                    onSelected: ref.read(proxiesSortNotifierProvider.notifier).update,
+                    icon: const Icon(Icons.sort_rounded),
+                    itemBuilder: (_) => [
+                      for (final s in ProxiesSort.values) PopupMenuItem(value: s, child: Text(_sortTitle(s))),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -859,15 +869,30 @@ class _ServersSection extends HookConsumerWidget {
 
   static List<Widget> _cards(WidgetRef ref, OutboundGroup group, RescueServers? servers) {
     final health = ref.watch(healthProvider).valueOrNull;
+    final several = servers != null && servers.several;
+    // Несколько серверов: служебные группы Hiddify (lowest, balance) прячем — их работу делает
+    // «Авто» сверху; карточки — по порядку подписки.
+    final items = several ? _inServerOrder(group.items, servers) : group.items;
     return [
-      for (final item in group.items)
+      for (final item in items)
         _ServerCard(
+          key: ValueKey('server-card-${item.tag}'),
           item: item,
           server: servers != null && servers.live ? servers.byTag(item.tag) : null,
           selected: group.selected == item.tag,
           health: group.selected == item.tag && health != null && !health.isEmpty ? health.overall.score : null,
-          onTap: () => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, item.tag),
+          onTap: several
+              ? () => _alwaysServer(ref, servers, item.tag)
+              : () => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, item.tag),
         ),
+    ];
+  }
+
+  static List<OutboundInfo> _inServerOrder(List<OutboundInfo> items, RescueServers servers) {
+    final byTag = {for (final i in items) i.tag: i};
+    return [
+      for (final s in servers.servers)
+        if (byTag[s.tag] case final item? when !item.isGroup) item,
     ];
   }
 
@@ -910,7 +935,14 @@ class _FillGrid extends StatelessWidget {
 /// подписки и подсказка, полоска отклика и пинг. Протокол — только во всплывающей подсказке
 /// «подробнее». Группы («Автовыбор») — как раньше. Выбранный — тёмная (deep) с жёлтым названием.
 class _ServerCard extends StatelessWidget {
-  const _ServerCard({required this.item, required this.selected, required this.onTap, this.health, this.server});
+  const _ServerCard({
+    super.key,
+    required this.item,
+    required this.selected,
+    required this.onTap,
+    this.health,
+    this.server,
+  });
 
   final OutboundInfo item;
 
