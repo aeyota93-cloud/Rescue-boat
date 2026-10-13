@@ -84,10 +84,15 @@ String protocolOfOutbound(Map<String, dynamic> outbound) {
 }
 
 /// Протоколы серверов из конфига подписки: тег выхода → «VLESS Reality». Без групп и служебных.
+/// Нестандартный порт дописывается: «VLESS Reality (порт 8443)» — так различаются два входа
+/// одного протокола (второй вход Reality мимо 443, vpn-server/docs/backup-routes.md).
 Map<String, String> protocolsOfConfig(Map<String, dynamic> config) => {
   for (final o in (config['outbounds'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>())
     if (o['tag'] is String && !const {'selector', 'urltest', 'direct', 'block', 'dns'}.contains(o['type']))
-      o['tag'] as String: protocolOfOutbound(o),
+      o['tag'] as String: switch (o['server_port']) {
+        final int port when port != 443 && o['server_ports'] == null => '${protocolOfOutbound(o)} (порт $port)',
+        _ => protocolOfOutbound(o),
+      },
 };
 
 String protocolName(String type) => switch (type.toLowerCase()) {

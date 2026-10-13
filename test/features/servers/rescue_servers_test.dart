@@ -44,7 +44,20 @@ void main() {
               'reality': {'enabled': true},
             },
           },
-          {'tag': 'NL игры', 'type': 'hysteria2'},
+          {
+            'tag': 'NL игры',
+            'type': 'hysteria2',
+            'server_port': 443,
+            'server_ports': ['20000:20999'],
+          },
+          {
+            'tag': 'NL 8443',
+            'type': 'vless',
+            'server_port': 8443,
+            'tls': {
+              'reality': {'enabled': true},
+            },
+          },
           {
             'tag': 'старый',
             'type': 'vmess',
@@ -56,6 +69,7 @@ void main() {
         'NL': 'VLESS Reality',
         'NL запасной': 'XHTTP',
         'NL игры': 'Hysteria2',
+        'NL 8443': 'VLESS Reality (порт 8443)',
         'старый': 'VMess WebSocket',
       });
       final s = rescueServersOf(threeServers(), order)!.withProtocols(protocols);
