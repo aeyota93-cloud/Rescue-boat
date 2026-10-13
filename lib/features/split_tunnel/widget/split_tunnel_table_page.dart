@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/pinned_scroll.dart';
@@ -8,46 +7,24 @@ import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
-import 'package:hiddify/features/servers/model/rescue_servers.dart';
-import 'package:hiddify/features/servers/notifier/failover.dart';
-import 'package:hiddify/features/split_tunnel/data/connections.dart';
-import 'package:hiddify/features/split_tunnel/data/running_apps.dart';
-import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
-import 'package:hiddify/features/split_tunnel/widget/route_menu.dart';
+import 'package:hiddify/features/split_tunnel/widget/tunnel_dialogs.dart';
+import 'package:hiddify/features/split_tunnel/widget/tunnel_groups_view.dart';
+import 'package:hiddify/features/split_tunnel/widget/tunnel_live_view.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Закладки над списком: все записи, только «мимо VPN», только «через VPN».
-enum _Tab { all, bypass, via }
+/// Вкладки экрана.
+enum _View { live, groups }
 
-/// Ширина, с которой список показывается таблицей с колонками; уже — строки в две строчки.
-const _wideFrom = 780.0;
-
-/// Ширина колонки «Куда идёт» (переключатель «Авто / Мимо / VPN»).
-const _routeWidth = 236.0;
-
-/// Ширина места под кнопку «Сравнить пути» в конце строки таблицы.
-const _compareWidth = 52.0;
-
-/// Ширина места под меню «⋯» строки (куда направить, сервер).
-const _menuWidth = 44.0;
-
-/// Сколько строк показываем сразу, когда прокручивается вся страница; дальше — «Показать ещё».
-const _compactRows = 30;
-
-/// Шлюпка: «Раздельный туннель» в стиле «Д». Три положения у каждой записи: «Авто» (нет ни в
-/// одном списке), «Мимо» и «VPN». Изменения действуют сразу, без переподключения.
+/// Шлюпка: «Раздельный туннель» (docs/redesign/tunnel-v3.md). Две вкладки:
+/// «Сейчас в сети» — что идёт прямо сейчас, через что и почему ([TunnelLiveView]);
+/// «Группы» — карточки групп с путём для всех записей сразу и записи по одной ([TunnelGroupsView]).
+/// Изменения действуют сразу, без переподключения.
 ///
-/// Сверху закладки-«папки» «Все / Мимо / Через VPN» с поиском, ниже — тёмный список (deep):
-/// первая строка жёлтая, группы записей (docs/redesign/groups.md) свёрнуты в строки с пунктирной
-/// рамкой под остальными записями: у группы свой переключатель и меню — для всех записей сразу.
-/// Трафика по программам нет — только число соединений сейчас и ошибки за сутки.
-///
-/// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка с кнопками, закладки
-/// с поиском и заголовки колонок закреплены, а строки прокручиваются внутри тёмного списка.
-/// Меньше — прокручивается вся страница, показаны первые [_compactRows] строк.
+/// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка, вкладки и поиск
+/// закреплены, а списки прокручиваются внутри; меньше — прокручивается вся страница.
 class SplitTunnelTablePage extends HookConsumerWidget {
   const SplitTunnelTablePage({super.key});
 
@@ -57,20 +34,40 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     // Соединения опрашиваем, только пока страница видна (скрытая ветка навигации — TickerMode выключен).
     final visible = TickerMode.of(context);
     final connections = visible ? ref.watch(liveConnectionsProvider).valueOrNull : null;
-    final groups = ref.watch(errorGroupsProvider(InsightsPeriod.day)).valueOrNull ?? const <ErrorGroup>[];
+    final errors = ref.watch(errorGroupsProvider(InsightsPeriod.day)).valueOrNull ?? const <ErrorGroup>[];
+    final titles = visible ? ref.watch(runningTitlesProvider).valueOrNull ?? const {} : const <String, String>{};
+    final view = useState(_View.live);
+    final search = useTextEditingController();
     final query = useState('');
-    final tab = useState(_Tab.all);
-    final openGroups = useState(const <String>{});
-    final limit = useState(_compactRows);
+    final openGroup = useState<String?>(null);
 
-    final data = buildTunnelRows(split, connections, groups);
-    final summary = data.summary;
+    final data = buildTunnelRows(split, connections, errors);
+    final listed = data.entries.where((e) => e.target != null || e.group != null).toList();
+
+    void openGroupTab(String name) {
+      view.value = _View.groups;
+      openGroup.value = name;
+      search.clear();
+      query.value = '';
+    }
+
+    String? addGroup() => view.value == _View.groups && (openGroup.value?.isNotEmpty ?? false) ? openGroup.value : null;
 
     final header = RescuePageHeader(
       title: 'Раздельный туннель',
       actions: [
-        OutlinedButton(onPressed: () => _pickRunning(context, ref), child: const Text('Из запущенных')),
-        FilledButton(onPressed: () => _add(context, ref), child: const Text('+ Добавить сайт, IP или программу')),
+        OutlinedButton(
+          onPressed: () => showNewGroupDialog(context, entries: listed, titles: titles),
+          child: const Text('Новая группа'),
+        ),
+        OutlinedButton(
+          onPressed: () => showAddDialog(context, tab: AddTab.running, group: addGroup()),
+          child: const Text('Из запущенных'),
+        ),
+        FilledButton(
+          onPressed: () => showAddDialog(context, group: addGroup()),
+          child: const Text('+ Добавить'),
+        ),
         PopupMenuButton<void>(
           tooltip: 'Ещё',
           icon: const Icon(Icons.more_horiz_rounded),
@@ -84,37 +81,30 @@ class SplitTunnelTablePage extends HookConsumerWidget {
         ),
       ],
     );
-    final tabs = FolderTabs<_Tab>(
-      semanticLabel: 'Списки',
+    final open = connections?.where((c) => !c.closed).length;
+    // На узком окне «В сети»: две вкладки крупным шрифтом иначе не помещаются.
+    Widget tabs(bool narrow) => FolderTabs<_View>(
+      semanticLabel: 'Вид',
       tabs: [
-        FolderTab(value: _Tab.all, title: 'Все', badge: '${data.entries.length}'),
-        FolderTab(value: _Tab.bypass, title: 'Мимо', badge: '${summary.bypass}'),
-        FolderTab(value: _Tab.via, title: 'Через VPN', badge: '${summary.via}'),
+        FolderTab(
+          value: _View.live,
+          title: narrow ? 'В сети' : 'Сейчас в сети',
+          semanticLabel: 'Сейчас в сети',
+          badge: open == null ? null : '$open',
+        ),
+        FolderTab(value: _View.groups, title: 'Группы', badge: '${split.groups.length}'),
       ],
-      value: tab.value,
-      onChanged: (t) => tab.value = t,
+      value: view.value,
+      onChanged: (v) => view.value = v,
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       child: _SearchRow(
-        onChanged: (v) => query.value = v.trim().toLowerCase(),
-        hint: switch (tab.value) {
-          _Tab.all => 'Списки важнее общих правил и действуют сразу',
-          _Tab.bypass => 'Идут напрямую, с домашнего IP',
-          _Tab.via => 'Всегда через сервер, даже российские сайты',
+        controller: search,
+        onChanged: (v) => query.value = v.trim(),
+        hint: switch (view.value) {
+          _View.live => 'Что идёт прямо сейчас: группа, реальный сервер и почему',
+          _View.groups => 'Путь у группы — всем её записям сразу; у записи — только ей',
         },
       ),
-    );
-    final notes = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          '«Авто» — решают общие правила: российские сайты напрямую, остальное через VPN.',
-          style: RescueText.caption,
-        ),
-        if (connections == null) ...[
-          const SizedBox(height: 4),
-          const Text('«Сейчас» появится, когда VPN подключён.', style: RescueText.caption),
-        ],
-      ],
     );
 
     return Scaffold(
@@ -122,368 +112,49 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final pinned = isPinnedLayout(constraints);
-          final list = _list(
-            context,
-            ref,
-            data.entries,
-            split.groups,
-            tab.value,
-            query.value,
-            openGroups,
-            limit,
-            wide: constraints.maxWidth >= _wideFrom,
-            pinned: pinned,
-          );
+          final body = switch (view.value) {
+            _View.live => TunnelLiveView(
+              connections: connections,
+              errors: errors,
+              titles: titles,
+              query: query.value,
+              pinned: pinned,
+              onOpenGroup: openGroupTab,
+              onShowGroups: () => view.value = _View.groups,
+            ),
+            _View.groups => TunnelGroupsView(
+              entries: data.entries,
+              titles: titles,
+              query: query.value,
+              pinned: pinned,
+              openGroup: openGroup,
+            ),
+          };
+          final children = [
+            header,
+            const SizedBox(height: 20),
+            tabs(constraints.maxWidth < 560),
+            const SizedBox(height: 20),
+          ];
           if (pinned) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  header,
-                  const SizedBox(height: 20),
-                  tabs,
-                  const SizedBox(height: 20),
-                  Expanded(child: list),
-                  const SizedBox(height: 12),
-                  notes,
+                  ...children,
+                  Expanded(child: body),
                 ],
               ),
             );
           }
           return SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                header,
-                const SizedBox(height: 20),
-                tabs,
-                const SizedBox(height: 20),
-                list,
-                const SizedBox(height: 12),
-                notes,
-              ],
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...children, body]),
           );
         },
       ),
     );
-  }
-
-  Widget _list(
-    BuildContext context,
-    WidgetRef ref,
-    List<TunnelEntry> all,
-    List<SplitGroup> groups,
-    _Tab tab,
-    String query,
-    ValueNotifier<Set<String>> openGroups,
-    ValueNotifier<int> limit, {
-    required bool wide,
-    required bool pinned,
-  }) {
-    final entries = all.where((e) {
-      final byTab = switch (tab) {
-        _Tab.all => true,
-        _Tab.bypass => e.target == SplitTarget.bypass,
-        _Tab.via => e.target == SplitTarget.via,
-      };
-      return byTab && (query.isEmpty || e.value.toLowerCase().contains(query));
-    }).toList();
-
-    // Записи групп — в свёрнутых строках групп под остальными, куда бы они ни шли (при поиске — без
-    // групп, всё одним списком). Группа без записей на этой закладке не показывается.
-    final members = <String, List<TunnelEntry>>{
-      if (query.isEmpty)
-        for (final g in groups) g.name: entries.where((e) => e.group == g.name).toList(),
-    }..removeWhere((_, list) => list.isEmpty);
-    final plain = entries.where((e) => !members.containsKey(e.group)).toList();
-
-    // Прокручивается вся страница — длинный список обрезаем; в закреплённом режиме строит лениво.
-    final shownPlain = pinned ? plain : plain.take(limit.value).toList();
-    final rows = <Widget>[
-      for (final (i, e) in shownPlain.indexed) _entryRow(context, ref, e, highlighted: i == 0, wide: wide),
-      if (shownPlain.length < plain.length)
-        _MoreRows(
-          key: const ValueKey('tunnel-more'),
-          shown: shownPlain.length,
-          total: plain.length,
-          onPressed: () => limit.value += _compactRows,
-        ),
-      for (final MapEntry(key: name, value: list) in members.entries) ...[
-        _groupRow(ref, name, list, openGroups, wide: wide),
-        if (openGroups.value.contains(name))
-          for (final e in list) _entryRow(context, ref, e, highlighted: false, wide: wide, indent: true),
-      ],
-    ];
-
-    final empty = plain.isEmpty && members.isEmpty;
-    final emptyNote = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Text(
-        all.isEmpty ? 'Списки пусты. Добавьте программу, сайт или IP.' : 'Ничего не нашлось.',
-        style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
-        textAlign: TextAlign.center,
-      ),
-    );
-
-    return DeepList(
-      radius: 36,
-      semanticLabel: 'Записи',
-      children: [
-        if (wide && !empty) const _HeaderRow(),
-        if (empty)
-          emptyNote
-        else if (pinned)
-          Expanded(
-            child: PinnedList(
-              key: const ValueKey('tunnel-rows'),
-              itemCount: rows.length,
-              spacing: 10,
-              itemBuilder: (_, i) => rows[i],
-            ),
-          )
-        else
-          ...rows,
-      ],
-    );
-  }
-
-  Widget _groupRow(
-    WidgetRef ref,
-    String name,
-    List<TunnelEntry> list,
-    ValueNotifier<Set<String>> open, {
-    required bool wide,
-  }) {
-    final errors = list.fold(0, (sum, e) => sum + e.errors);
-    final known = list.where((e) => e.connections != null);
-    final connections = known.isEmpty ? null : known.fold(0, (sum, e) => sum + e.connections!);
-    final items = [for (final e in list) (kind: e.kind, value: e.value)];
-    final isOpen = open.value.contains(name);
-    // Общее место всех записей; разные — переключатель без выбора, в подписи «разные пути».
-    final choices = {for (final e in list) _choiceOf(e)};
-    final servers = {for (final e in list) e.server};
-    final place = switch ((choices.length, servers.length)) {
-      (1, 1) when servers.single != null => serverPlaceLabel(servers.single!, ref.watch(rescueServersProvider)),
-      (1, 1) => null,
-      // Все через VPN, но кто через «Авто», кто за сервером.
-      (1, _) => 'разные серверы',
-      _ => 'разные пути',
-    };
-    return _TunnelRow(
-      key: ValueKey('tunnel-group-$name'),
-      dashed: true,
-      wide: wide,
-      onTap: () => open.value = isOpen ? ({...open.value}..remove(name)) : {...open.value, name},
-      semanticLabel: 'Группа $name, ${list.length}, ${isOpen ? 'свернуть' : 'раскрыть'}',
-      icon: Icons.folder_rounded,
-      title: '$name · ${list.length}',
-      subtitle: ['группа', ?place, if (isOpen) 'свернуть' else 'раскрыть'].join(' · '),
-      trailingIcon: isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-      kind: 'Группа',
-      connections: connections,
-      errors: errors,
-      menu: (onAccent) => RouteMenuButton(
-        items: items,
-        group: name,
-        label: 'группа $name',
-        color: DeepTileColors.of(highlighted: onAccent).foreground,
-      ),
-      route: (highlighted) => RouteSwitch(
-        value: choices.length == 1 ? choices.single : null,
-        semanticLabel: 'Куда идёт группа $name',
-        width: wide ? _routeWidth : null,
-        onAccent: highlighted,
-        onChanged: (choice) {
-          final notifier = ref.read(splitTunnelProvider.notifier);
-          switch (choice) {
-            case RouteChoice.auto:
-              notifier.resetAllToDefault(items);
-            case RouteChoice.vpn:
-              notifier.placeAll(items, SplitTarget.via);
-            case RouteChoice.bypass:
-              notifier.placeAll(items, SplitTarget.bypass);
-          }
-        },
-      ),
-    );
-  }
-
-  static RouteChoice _choiceOf(TunnelEntry e) => switch (e.target) {
-    null => RouteChoice.auto,
-    SplitTarget.bypass => RouteChoice.bypass,
-    SplitTarget.via => RouteChoice.vpn,
-  };
-
-  Widget _entryRow(
-    BuildContext context,
-    WidgetRef ref,
-    TunnelEntry e, {
-    required bool highlighted,
-    required bool wide,
-    bool indent = false,
-  }) {
-    final title = _title(e);
-    final choice = _choiceOf(e);
-    final compare = _compareAction(context, ref, e, title);
-    final row = _TunnelRow(
-      wide: wide,
-      highlighted: highlighted,
-      compare: compare,
-      menu: (onAccent) => RouteMenuButton(
-        items: [(kind: e.kind, value: e.value)],
-        label: title,
-        onCompare: compare?.onPressed,
-        color: DeepTileColors.of(highlighted: onAccent).foreground,
-      ),
-      // Программа в сети: по нажатию — куда она ходит, с переносом сайта или IP в списки.
-      onTap: e.kind == SplitKind.app && e.online
-          ? () => showDialog<void>(
-              context: context,
-              builder: (_) => _AppConnectionsDialog(exe: e.value),
-            )
-          : null,
-      letter: e.kind == SplitKind.ip ? '#' : title.characters.first.toUpperCase(),
-      title: title,
-      subtitle: [
-        _detail(e),
-        if (e.server case final tag?) serverPlaceLabel(tag, ref.watch(rescueServersProvider)),
-      ].join(' · '),
-      kind: switch (e.kind) {
-        SplitKind.app => 'Программа',
-        SplitKind.domain => 'Сайт',
-        SplitKind.ip => 'IP и сеть',
-      },
-      connections: e.connections,
-      errors: e.errors,
-      route: (onAccent) => RouteSwitch(
-        value: choice,
-        semanticLabel: 'Куда идёт $title',
-        width: wide ? _routeWidth : null,
-        onAccent: onAccent,
-        onChanged: (c) => _setRoute(ref, e.kind, e.value, c),
-      ),
-    );
-    return indent ? Padding(padding: const EdgeInsets.only(left: 24), child: row) : row;
-  }
-
-  /// «Сравнить пути» у строки: сайт и IP — сразу; программа — если она в сети (цели берём из её соединений);
-  /// сеть целиком (не один адрес) сравнить нельзя — действия нет.
-  static _CompareAction? _compareAction(BuildContext context, WidgetRef ref, TunnelEntry e, String title) {
-    switch (e.kind) {
-      case SplitKind.domain:
-        return _CompareAction(
-          tooltip: 'Сравнить пути: $title',
-          onPressed: () => showComparePathsDialog(context, CompareSubject(endpoints: [CompareEndpoint(e.value)])),
-        );
-      case SplitKind.ip:
-        final single = e.value.endsWith('/32') || e.value.endsWith('/128');
-        final host = e.value.split('/').first;
-        if (!single || isHomeNetwork(e.value)) return null;
-        return _CompareAction(
-          tooltip: 'Сравнить пути: $title',
-          onPressed: () => showComparePathsDialog(context, CompareSubject(endpoints: [CompareEndpoint(host)])),
-        );
-      case SplitKind.app:
-        if (!e.online) return const _CompareAction(tooltip: 'Запустите программу, чтобы сравнить пути');
-        return _CompareAction(
-          tooltip: 'Сравнить пути: $title',
-          onPressed: () {
-            final all = ref.read(liveConnectionsProvider).valueOrNull ?? const <NetConnection>[];
-            showComparePathsDialog(context, CompareSubject(endpoints: endpointsForApp(e.value, all), appExe: e.value));
-          },
-        );
-    }
-  }
-
-  static void _setRoute(WidgetRef ref, SplitKind kind, String value, RouteChoice choice) {
-    final notifier = ref.read(splitTunnelProvider.notifier);
-    switch (choice) {
-      case RouteChoice.auto:
-        notifier.resetToDefault(kind, [value]);
-      case RouteChoice.bypass:
-        notifier.add(SplitTarget.bypass, kind, value);
-      case RouteChoice.vpn:
-        notifier.add(SplitTarget.via, kind, value);
-    }
-  }
-
-  static String _title(TunnelEntry e) =>
-      e.kind == SplitKind.app ? e.value.replaceFirst(RegExp(r'\.exe$', caseSensitive: false), '') : e.value;
-
-  static String _detail(TunnelEntry e) => switch (e.kind) {
-    SplitKind.app => e.isDefaultGame ? '${e.value} · из списка игр' : e.value,
-    SplitKind.domain => 'и все поддомены',
-    SplitKind.ip when isHomeNetwork(e.value) => 'домашняя сеть',
-    SplitKind.ip when e.value.endsWith('/32') || e.value.endsWith('/128') => 'один адрес',
-    SplitKind.ip => 'сеть',
-  };
-
-  // ---------- добавление ----------
-
-  Future<void> _add(BuildContext context, WidgetRef ref) async {
-    final result = await showDialog<_AddResult>(context: context, builder: (_) => const _AddDialog());
-    if (result == null || !context.mounted) return;
-    final notifier = ref.read(splitTunnelProvider.notifier);
-    switch (result.action) {
-      case _AddAction.item:
-        final item = result.item!;
-        notifier.add(result.target, item.kind, item.value);
-      case _AddAction.exe:
-        final picked = await FilePicker.platform.pickFiles(
-          dialogTitle: 'Программа для списка «${result.target.title}»',
-          type: FileType.custom,
-          allowedExtensions: ['exe'],
-          allowMultiple: true,
-        );
-        final names = [for (final f in picked?.files ?? const <PlatformFile>[]) f.name];
-        if (names.isNotEmpty) notifier.addAll(result.target, SplitKind.app, names);
-      case _AddAction.list:
-        if (context.mounted) await _pasteMany(context, ref, result.target);
-    }
-  }
-
-  Future<void> _pasteMany(BuildContext context, WidgetRef ref, SplitTarget target) async {
-    final controller = TextEditingController();
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Добавить в «${target.title}»'),
-        content: SizedBox(
-          width: 480,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 6,
-            maxLines: 12,
-            decoration: const InputDecoration(
-              hintText: 'По одному на строку:\nyoutube.com\nhttps://example.com/page\n8.8.8.8\n10.0.0.0/8\ngame.exe',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Добавить')),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (text == null || text.trim().isEmpty) return;
-    final result = ref.read(splitTunnelProvider.notifier).addMany(target, text);
-    if (!context.mounted) return;
-    final skipped = result.skipped.isEmpty ? '' : '. Не понял: ${result.skipped.take(5).join(', ')}';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Добавлено: ${result.added}$skipped')));
-  }
-
-  Future<void> _pickRunning(BuildContext context, WidgetRef ref) async {
-    final picked = await showDialog<({SplitTarget target, List<String> exes})>(
-      context: context,
-      builder: (_) => const _RunningAppsDialog(),
-    );
-    if (picked == null || picked.exes.isEmpty) return;
-    ref.read(splitTunnelProvider.notifier).addAll(picked.target, SplitKind.app, picked.exes);
   }
 
   Future<void> _confirmReset(BuildContext context, WidgetRef ref) async {
@@ -502,12 +173,11 @@ class SplitTunnelTablePage extends HookConsumerWidget {
   }
 }
 
-// ---------- поиск и строки ----------
-
-/// Поиск (таблетка цвета panel, высота 48) и подсказка к закладке справа.
+/// Поиск (таблетка цвета panel, высота 48) и подсказка к вкладке справа.
 class _SearchRow extends StatelessWidget {
-  const _SearchRow({required this.onChanged, required this.hint});
+  const _SearchRow({required this.controller, required this.onChanged, required this.hint});
 
+  final TextEditingController controller;
   final ValueChanged<String> onChanged;
   final String hint;
 
@@ -515,6 +185,7 @@ class _SearchRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const pill = OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(999)), borderSide: BorderSide.none);
     final field = TextField(
+      controller: controller,
       onChanged: onChanged,
       style: RescueText.body,
       decoration: const InputDecoration(
@@ -551,602 +222,4 @@ class _SearchRow extends StatelessWidget {
       },
     );
   }
-}
-
-/// «Показать ещё» под обрезанным списком (прокрутка всей страницы).
-class _MoreRows extends StatelessWidget {
-  const _MoreRows({super.key, required this.shown, required this.total, required this.onPressed});
-
-  final int shown;
-  final int total;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: TextButton(
-      style: TextButton.styleFrom(foregroundColor: RescueColors.textOnDeep),
-      onPressed: onPressed,
-      child: Text('Показать ещё · $shown из $total'),
-    ),
-  );
-}
-
-/// Заголовки колонок тёмного списка (как в макете: 11 / 700 / 0.1em, subOnDeep).
-class _HeaderRow extends StatelessWidget {
-  const _HeaderRow();
-
-  @override
-  Widget build(BuildContext context) {
-    const style = TextStyle(
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.1,
-      color: RescueColors.subOnDeep,
-    );
-    return const ExcludeSemantics(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Row(
-          children: [
-            Expanded(flex: 22, child: Text('НАЗВАНИЕ', style: style)),
-            SizedBox(width: 12),
-            Expanded(flex: 10, child: Text('ТИП', style: style)),
-            SizedBox(width: 12),
-            Expanded(flex: 10, child: Text('СЕЙЧАС', style: style)),
-            SizedBox(width: 12),
-            Expanded(flex: 8, child: Text('ОШИБКИ', style: style)),
-            SizedBox(width: 12),
-            SizedBox(
-              width: _routeWidth,
-              child: Text('КУДА ИДЁТ', style: style),
-            ),
-            SizedBox(width: _compareWidth),
-            SizedBox(width: _menuWidth),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Строка тёмного списка: на широком окне — колонки «Название · Тип · Сейчас · Ошибки · Куда идёт»,
-/// на узком — название, под ним факты и переключатель во всю ширину.
-/// [highlighted] — жёлтая строка, [dashed] — пунктирная рамка (свёрнутая группа игр).
-class _TunnelRow extends StatelessWidget {
-  const _TunnelRow({
-    super.key,
-    required this.wide,
-    required this.title,
-    required this.subtitle,
-    required this.kind,
-    required this.connections,
-    required this.errors,
-    required this.route,
-    this.highlighted = false,
-    this.dashed = false,
-    this.onTap,
-    this.compare,
-    this.menu,
-    this.letter,
-    this.icon,
-    this.trailingIcon,
-    this.semanticLabel,
-  });
-
-  final bool wide;
-  final String title;
-  final String subtitle;
-  final String kind;
-
-  /// Соединений сейчас; null — неизвестно (VPN не подключён).
-  final int? connections;
-
-  /// Ошибок за сутки.
-  final int errors;
-
-  /// Переключатель «Авто / Мимо / VPN»; аргумент — стоит ли он на жёлтом.
-  final Widget Function(bool onAccent) route;
-  final bool highlighted;
-  final bool dashed;
-  final VoidCallback? onTap;
-
-  /// Кнопка «Сравнить пути» в конце строки; null — у строки её нет.
-  final _CompareAction? compare;
-
-  /// Меню «⋯» в конце строки; аргумент — стоит ли оно на жёлтом. null — меню нет.
-  final Widget Function(bool onAccent)? menu;
-  final String? letter;
-  final IconData? icon;
-  final IconData? trailingIcon;
-  final String? semanticLabel;
-
-  String get _liveText => switch (connections) {
-    null => '—',
-    0 => 'не в сети',
-    final n => '$n ${pluralRu(n, 'соединение', 'соединения', 'соединений')}',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DeepTileColors.of(highlighted: highlighted);
-    final online = (connections ?? 0) > 0;
-    final trailingIcon = this.trailingIcon;
-
-    final tile = Container(
-      width: 38,
-      height: 38,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(color: c.tile, borderRadius: BorderRadius.circular(12)),
-      child: icon != null
-          ? Icon(icon, size: 18, color: c.foreground)
-          : Text(
-              letter ?? '',
-              maxLines: 1,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
-            ),
-    );
-    final name = Row(
-      children: [
-        tile,
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.title),
-              ),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: c.subtitle),
-              ),
-            ],
-          ),
-        ),
-        if (trailingIcon != null) ...[const SizedBox(width: 6), Icon(trailingIcon, size: 20, color: c.subtitle)],
-      ],
-    );
-    final live = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: online ? (highlighted ? RescueColors.onAccent : RescueColors.accent) : RescueColors.off,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            _liveText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 13, color: c.foreground),
-          ),
-        ),
-      ],
-    );
-    final compare = this.compare;
-    final compareButton = compare == null
-        ? null
-        : IconButton(
-            tooltip: compare.tooltip,
-            onPressed: compare.onPressed,
-            style: IconButton.styleFrom(
-              minimumSize: const Size(44, 44),
-              foregroundColor: c.foreground,
-              disabledForegroundColor: c.subtitle.withValues(alpha: 0.5),
-            ),
-            icon: const Icon(Icons.compare_arrows_rounded, size: 22),
-          );
-    final menuButton = menu?.call(highlighted);
-    final kindText = Text(kind, maxLines: 1, style: TextStyle(fontSize: 13, color: c.subtitle));
-    final errorsText = errors == 0 ? 'нет' : '$errors';
-
-    final Widget content;
-    if (wide) {
-      content = Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Row(
-          children: [
-            Expanded(flex: 22, child: ExcludeSemantics(child: name)),
-            const SizedBox(width: 12),
-            Expanded(flex: 10, child: ExcludeSemantics(child: kindText)),
-            const SizedBox(width: 12),
-            Expanded(flex: 10, child: ExcludeSemantics(child: live)),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 8,
-              child: ExcludeSemantics(
-                child: Text(
-                  errorsText,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            route(highlighted),
-            SizedBox(
-              width: _compareWidth,
-              child: compareButton == null ? null : Center(child: compareButton),
-            ),
-            SizedBox(
-              width: _menuWidth,
-              child: menuButton == null ? null : Center(child: menuButton),
-            ),
-          ],
-        ),
-      );
-    } else {
-      content = Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (compareButton == null && menuButton == null)
-              ExcludeSemantics(child: name)
-            else
-              Row(
-                children: [
-                  Expanded(child: ExcludeSemantics(child: name)),
-                  ?compareButton,
-                  ?menuButton,
-                ],
-              ),
-            const SizedBox(height: 6),
-            ExcludeSemantics(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 50),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    kindText,
-                    live,
-                    Text(
-                      errors == 0 ? 'ошибок нет' : 'ошибок за сутки: $errors',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.foreground),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            route(highlighted),
-          ],
-        ),
-      );
-    }
-
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(22),
-      side: dashed ? BorderSide.none : BorderSide(color: c.border),
-    );
-    final onTap = this.onTap;
-    Widget row = Material(
-      color: dashed ? Colors.transparent : c.background,
-      shape: shape,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
-        child: onTap == null
-            ? content
-            : InkWell(onTap: onTap, customBorder: shape, excludeFromSemantics: true, child: content),
-      ),
-    );
-    if (dashed) row = RescueCard.dashed(padding: EdgeInsets.zero, radius: 22, child: row);
-
-    final spoken =
-        semanticLabel ??
-        [
-          title,
-          subtitle,
-          kind,
-          if (connections == null) 'сейчас неизвестно' else _liveText,
-          if (errors == 0) 'ошибок нет' else '$errors ${pluralRu(errors, 'ошибка', 'ошибки', 'ошибок')} за сутки',
-        ].join(', ');
-    return Semantics(
-      container: true,
-      explicitChildNodes: true,
-      button: onTap != null,
-      label: spoken,
-      hint: onTap != null && !dashed ? 'Показать, куда ходит программа' : null,
-      onTap: onTap,
-      child: row,
-    );
-  }
-}
-
-/// Действие «Сравнить пути» у строки: [onPressed] null — кнопка есть, но нажать нельзя (подсказка объясняет почему).
-class _CompareAction {
-  const _CompareAction({required this.tooltip, this.onPressed});
-
-  final String tooltip;
-  final VoidCallback? onPressed;
-}
-
-// ---------- диалоги ----------
-
-enum _AddAction { item, exe, list }
-
-class _AddResult {
-  const _AddResult(this.action, this.target, [this.item]);
-
-  final _AddAction action;
-  final SplitTarget target;
-  final ({SplitKind kind, String value})? item;
-}
-
-/// Сегменты «Мимо VPN / Через VPN» для диалогов добавления.
-const _targetSegments = [
-  RescueSegment(value: SplitTarget.bypass, label: 'Мимо VPN'),
-  RescueSegment(value: SplitTarget.via, label: 'Через VPN'),
-];
-
-class _AddDialog extends HookWidget {
-  const _AddDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final text = useState('');
-    final target = useState(SplitTarget.bypass);
-    final item = parseSplitItem(text.value);
-    final hint = switch (item) {
-      _ when text.value.trim().isEmpty => 'Можно вставить ссылку, домен, IP, сеть или путь к .exe',
-      null => 'Не понял. Примеры: youtube.com, 10.0.0.0/8, steam.exe',
-      (kind: SplitKind.domain, :final value) => 'Сайт $value и все поддомены',
-      (kind: SplitKind.ip, :final value) => 'IP / сеть $value',
-      (kind: SplitKind.app, :final value) => 'Программа $value',
-    };
-    void submit() {
-      if (item != null) Navigator.pop(context, _AddResult(_AddAction.item, target.value, item));
-    }
-
-    return AlertDialog(
-      title: const Text('Добавить правило'),
-      content: SizedBox(
-        width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              autofocus: true,
-              onChanged: (v) => text.value = v,
-              onSubmitted: (_) => submit(),
-              decoration: const InputDecoration(hintText: 'Сайт, IP или программа'),
-            ),
-            const SizedBox(height: 6),
-            Text(hint, style: RescueText.caption),
-            const SizedBox(height: 16),
-            const Text('Куда направить', style: RescueText.smallSecondary),
-            const SizedBox(height: 6),
-            RescueSegmented<SplitTarget>(
-              segments: _targetSegments,
-              value: target.value,
-              onChanged: (t) => target.value = t,
-              semanticLabel: 'Куда направить',
-              expand: true,
-              background: RescueColors.panel,
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context, _AddResult(_AddAction.exe, target.value)),
-                  child: const Text('Файл .exe…'),
-                ),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context, _AddResult(_AddAction.list, target.value)),
-                  child: const Text('Вставить списком…'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-        FilledButton(onPressed: item == null ? null : submit, child: const Text('Добавить')),
-      ],
-    );
-  }
-}
-
-class _RunningAppsDialog extends HookConsumerWidget {
-  const _RunningAppsDialog();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final apps = useFuture(useMemoized(listRunningApps));
-    final split = ref.watch(splitTunnelProvider);
-    final query = useState('');
-    final target = useState(SplitTarget.bypass);
-    final selected = useState(<String>{});
-    final q = query.value.toLowerCase();
-    final filtered = (apps.data ?? const <RunningApp>[])
-        .where((a) => q.isEmpty || a.title.toLowerCase().contains(q) || a.exe.toLowerCase().contains(q))
-        .toList();
-    return AlertDialog(
-      title: const Text('Из запущенных программ'),
-      content: SizedBox(
-        width: 520,
-        height: 520,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              autofocus: true,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Поиск'),
-              onChanged: (v) => query.value = v,
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: switch (apps.connectionState) {
-                ConnectionState.done when filtered.isEmpty => const Center(child: Text('Ничего не нашлось')),
-                ConnectionState.done => ListView.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (_, i) {
-                    final app = filtered[i];
-                    final key = app.exe.toLowerCase();
-                    final inList = split.targetOf(SplitKind.app, app.exe);
-                    return CheckboxListTile(
-                      dense: true,
-                      value: selected.value.contains(key),
-                      title: Text(app.title),
-                      subtitle: Text(inList == null ? app.exe : '${app.exe} · сейчас «${inList.title}»'),
-                      onChanged: (v) =>
-                          selected.value = v ?? false ? {...selected.value, key} : ({...selected.value}..remove(key)),
-                    );
-                  },
-                ),
-                _ => const Center(child: CircularProgressIndicator()),
-              },
-            ),
-            const SizedBox(height: 8),
-            RescueSegmented<SplitTarget>(
-              segments: _targetSegments,
-              value: target.value,
-              onChanged: (t) => target.value = t,
-              semanticLabel: 'Куда направить',
-              expand: true,
-              background: RescueColors.panel,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-        FilledButton(
-          onPressed: selected.value.isEmpty
-              ? null
-              : () => Navigator.pop(context, (
-                  target: target.value,
-                  exes: [
-                    for (final a in apps.data ?? const <RunningApp>[])
-                      if (selected.value.contains(a.exe.toLowerCase())) a.exe,
-                  ],
-                )),
-          child: Text('Добавить (${selected.value.length})'),
-        ),
-      ],
-    );
-  }
-}
-
-/// «Сейчас в сети»: куда ходит программа и по какой дороге («Путь» — сервер, через который реально
-/// идёт соединение, именем из интерфейса). Сайт или IP можно сразу направить: мимо VPN, через VPN
-/// («Авто» или конкретный сервер).
-class _AppConnectionsDialog extends ConsumerWidget {
-  const _AppConnectionsDialog({required this.exe});
-
-  final String exe;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final all = ref.watch(liveConnectionsProvider).valueOrNull ?? const <NetConnection>[];
-    final split = ref.watch(splitTunnelProvider);
-    final servers = ref.watch(rescueServersProvider);
-    final hosts = <String, NetConnection>{};
-    for (final c in all.where((c) => c.exe.toLowerCase() == exe.toLowerCase())) {
-      hosts.putIfAbsent(c.host.isNotEmpty ? c.host : c.ip, () => c);
-    }
-    return AlertDialog(
-      title: Text('Куда ходит $exe'),
-      content: SizedBox(
-        width: 560,
-        height: 420,
-        child: hosts.isEmpty
-            ? const Center(child: Text('Сейчас соединений нет', style: RescueText.smallSecondary))
-            : ListView(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text('АДРЕС', style: RescueText.microLabel)),
-                        SizedBox(width: 12),
-                        SizedBox(width: 150, child: Text('ПУТЬ', style: RescueText.microLabel)),
-                        SizedBox(width: 48),
-                      ],
-                    ),
-                  ),
-                  for (final MapEntry(key: name, value: c) in hosts.entries)
-                    ListTile(
-                      dense: true,
-                      title: Row(
-                        children: [
-                          Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          const SizedBox(width: 12),
-                          SizedBox(
-                            width: 150,
-                            child: Text(
-                              connectionPathLabel(c, servers),
-                              key: ValueKey('conn-path-$name'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      subtitle: Text('${c.network}:${c.port}'),
-                      trailing: MenuAnchor(
-                        menuChildren: [
-                          if (c.host.isNotEmpty)
-                            SubmenuButton(
-                              menuChildren: routeMenuItems(
-                                context: context,
-                                ref: ref,
-                                split: split,
-                                servers: servers,
-                                items: [(kind: SplitKind.domain, value: siteOf(c.host))],
-                                withGroups: false,
-                              ),
-                              child: Text('Сайт ${siteOf(c.host)}'),
-                            ),
-                          if (c.ip.isNotEmpty)
-                            SubmenuButton(
-                              menuChildren: routeMenuItems(
-                                context: context,
-                                ref: ref,
-                                split: split,
-                                servers: servers,
-                                items: [(kind: SplitKind.ip, value: cidrOf(c.ip))],
-                                withGroups: false,
-                              ),
-                              child: Text('IP ${c.ip}'),
-                            ),
-                        ],
-                        builder: (context, controller, _) => IconButton(
-                          tooltip: 'В список: $name',
-                          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
-                          icon: const Icon(Icons.more_vert_rounded),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
-    );
-  }
-}
-
-/// «Путь» соединения: «напрямую», «через запасной 1» (сервер из цепочки clash API) или «через VPN»,
-/// если сервер не узнали.
-String connectionPathLabel(NetConnection c, RescueServers? servers) {
-  if (!c.viaVpn) return 'напрямую';
-  final s = servers?.serverOfChain(c.chains);
-  return s == null ? 'через VPN' : 'через ${s.lowerName}';
 }

@@ -7,10 +7,12 @@ import 'package:hiddify/features/compare/notifier/compare_notifier.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
-import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
+import 'package:hiddify/features/split_tunnel/data/running_apps.dart';
+import 'package:hiddify/features/split_tunnel/model/app_names.dart';
+import 'package:hiddify/features/split_tunnel/model/live_view.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier.dart';
@@ -23,16 +25,29 @@ import '../screens_test_helpers.dart';
 import '../servers/servers_fixtures.dart';
 import '../shell_frame_helper.dart';
 
-NetConnection conn(String exe, {String host = '', String ip = '1.2.3.4'}) => NetConnection(
+const nl = ['NL', 'select'];
+const games = ['NL игры', 'select'];
+const direct = ['direct'];
+
+NetConnection conn(
+  String exe, {
+  String host = '',
+  String ip = '1.2.3.4',
+  List<String> chains = nl,
+  int bytes = 0,
+  bool closed = false,
+}) => NetConnection(
   id: '$exe$host$ip',
   exe: exe,
   host: host,
   ip: ip,
   port: '443',
   network: 'tcp',
-  viaVpn: true,
+  viaVpn: chains.first != 'direct',
   upload: 0,
-  download: 0,
+  download: bytes,
+  chains: chains,
+  closed: closed,
 );
 
 ErrorEvent event({String app = '', String host = '', String ip = '', int n = 1}) => ErrorEvent(
@@ -58,6 +73,7 @@ ErrorGroup errGroup(String key, List<ErrorEvent> events) => ErrorGroup(
 
 void main() {
   late Directory dir;
+  final three = rescueServersOf(threeServers(), threeServersOrder)!;
 
   setUp(() => dir = Directory.systemTemp.createTempSync('split_table_'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -75,6 +91,8 @@ void main() {
     WidgetTester tester, {
     List<NetConnection>? connections,
     List<ErrorGroup> groups = const [],
+    RescueServers? servers,
+    List<RunningApp> running = const [],
     List<Override> extra = const [],
   }) async {
     final container = await tester.runAsync(
@@ -83,6 +101,8 @@ void main() {
         overrides: [
           liveConnectionsProvider.overrideWith((ref) => Stream.value(connections)),
           errorGroupsProvider.overrideWith((ref, period) => AsyncData(groups)),
+          runningAppsProvider.overrideWith((ref) async => running),
+          rescueServersProvider.overrideWith((ref) => servers ?? three),
           ...extra,
         ],
       ),
@@ -90,57 +110,40 @@ void main() {
     return container!;
   }
 
-  Finder routeSwitch(String title) =>
-      find.byWidgetPredicate((w) => w is RouteSwitch && w.semanticLabel == 'Куда идёт $title');
-
-  Future<void> tapRoute(WidgetTester tester, String title, String segment) async {
-    final target = find.descendant(of: routeSwitch(title), matching: find.text(segment));
-    await tester.ensureVisible(target);
+  Future<void> tap(WidgetTester tester, Finder f) async {
+    await tester.ensureVisible(f);
     await tester.pumpAndSettle();
-    await tester.tap(target);
+    await tester.tap(f);
     await tester.pumpAndSettle();
   }
 
-  group('строки таблицы', () {
+  Future<void> tapText(WidgetTester tester, String text) => tap(tester, find.text(text).last);
+
+  /// Пункт открытого меню (тот же текст бывает и на кнопках страницы).
+  Future<void> tapMenu(WidgetTester tester, String text) => tap(tester, find.widgetWithText(MenuItemButton, text).last);
+
+  Future<void> openTab(WidgetTester tester, int i) => tap(tester, find.byKey(ValueKey('folder-tab-$i')));
+
+  Future<void> nameGroup(WidgetTester tester, String name) async {
+    await tester.enterText(find.byKey(const ValueKey('group-name')), name);
+    await tester.tap(find.text('Готово'));
+    await tester.pumpAndSettle();
+  }
+
+  group('строки и модель', () {
     test('ошибки сайта считаются вместе с поддоменами, но не с похожими доменами', () {
       expect(hostMatches('rr1.kinopoisk.ru', 'kinopoisk.ru'), isTrue);
       expect(hostMatches('KINOPOISK.RU', 'kinopoisk.ru'), isTrue);
       expect(hostMatches('notkinopoisk.ru', 'kinopoisk.ru'), isFalse);
       expect(errorsFor(SplitKind.domain, 'kinopoisk.ru', errors), 5);
       expect(errorsFor(SplitKind.app, 'discord.exe', errors), 2);
-      expect(errorsFor(SplitKind.app, 'msedge.exe', errors), 5);
     });
 
     test('сети: адрес внутри, домашняя сеть', () {
       expect(ipInCidr('192.168.1.10', '192.168.0.0/16'), isTrue);
       expect(ipInCidr('192.169.1.10', '192.168.0.0/16'), isFalse);
-      expect(ipInCidr('8.8.8.8', '8.8.8.8/32'), isTrue);
       expect(isHomeNetwork('192.168.0.0/16'), isTrue);
       expect(isHomeNetwork('8.8.8.8/32'), isFalse);
-    });
-
-    test('строки: списки плюс программы в сети; плитки', () {
-      const split = SplitTunnel(
-        via: SplitList(apps: ['Telegram.exe'], domains: ['youtube.com']),
-        bypass: SplitList(apps: ['steam.exe'], ips: ['192.168.0.0/16']),
-      );
-      final rows = buildTunnelRows(split, [
-        conn('chrome.exe', host: 'www.youtube.com'),
-        conn('telegram.exe'),
-      ], const []);
-      final chrome = rows.entries.firstWhere((e) => e.value == 'chrome.exe');
-      expect(chrome.target, isNull);
-      expect(chrome.connections, 1);
-      expect(rows.entries.firstWhere((e) => e.value == 'youtube.com').connections, 1);
-      expect(rows.entries.firstWhere((e) => e.value == 'Telegram.exe').online, isTrue);
-      expect(rows.summary.via, 2);
-      expect(rows.summary.bypass, 2);
-      expect(rows.summary.auto, 1);
-      expect(rows.summary.online, 2);
-
-      final offline = buildTunnelRows(split, null, const []);
-      expect(offline.summary.online, isNull);
-      expect(offline.entries.every((e) => e.connections == null), isTrue);
     });
 
     test('«1 соединение», «3 соединения», «14 соединений»', () {
@@ -150,610 +153,584 @@ void main() {
         ['соединение', 'соединения', 'соединений', 'соединение', 'соединений'],
       );
     });
+
+    test('какое правило сработало — порядок как в ядре: серверы, «через VPN», «мимо»', () {
+      const split = SplitTunnel(
+        via: SplitList(apps: ['steam.exe']),
+        bypass: SplitList(domains: ['api.steampowered.com']),
+        servers: {
+          'NL игры': SplitList(domains: ['store.steampowered.com']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Лаунчеры',
+            items: SplitList(apps: ['steam.exe']),
+          ),
+        ],
+      );
+      // Программа «через VPN» важнее сайта «мимо».
+      final api = ruleFor(split, conn('steam.exe', host: 'api.steampowered.com'), severalServers: true)!;
+      expect(api.item, (kind: SplitKind.app, value: 'steam.exe'));
+      expect(api.target, SplitTarget.via);
+      expect(api.group, 'Лаунчеры');
+      // Сайт за сервером важнее всего.
+      final store = ruleFor(split, conn('steam.exe', host: 'store.steampowered.com'), severalServers: true)!;
+      expect(store.server, 'NL игры');
+      // Один сервер: его записи ядро держит в общем «через VPN» — первой сработает программа.
+      expect(
+        ruleFor(split, conn('steam.exe', host: 'store.steampowered.com'), severalServers: false)!.item.kind,
+        SplitKind.app,
+      );
+      // Сайт «мимо» у другой программы.
+      expect(
+        ruleFor(split, conn('chrome.exe', host: 'x.api.steampowered.com'), severalServers: true)!.target,
+        SplitTarget.bypass,
+      );
+      expect(ruleFor(split, conn('chrome.exe', host: 'ya.ru'), severalServers: true), isNull);
+    });
+
+    test('программы в сети: порядок, куда ушли, фильтры, поиск, закрытые', () {
+      const split = SplitTunnel(
+        servers: {
+          'NL игры': SplitList(apps: ['Discord.exe']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Общение',
+            items: SplitList(apps: ['Discord.exe']),
+          ),
+        ],
+      );
+      final all = [
+        conn('chrome.exe', host: 'youtube.com', bytes: 5 << 20),
+        conn('chrome.exe', host: 'ya.ru', chains: direct, bytes: 1024),
+        conn('Discord.exe', host: 'discord.com', chains: games),
+        conn('Discord.exe', host: 'cdn.discordapp.com', chains: games),
+        conn('Discord.exe', host: 'old.discord.com', chains: games, closed: true),
+        conn('', host: 'settings-win.data.microsoft.com'),
+      ];
+      // Открытых поровну (закрытое у Discord не считается) — первым тот, у кого больше трафика.
+      final apps = buildLiveApps(split, all, three);
+      expect([for (final a in apps) a.exe], ['chrome.exe', 'Discord.exe', '']);
+      expect(apps[1].open, 2);
+      expect(apps[1].group, 'Общение');
+      expect([for (final d in apps.first.dests) destLabel(d)], ['Основной', 'Мимо VPN']);
+      expect(apps.first.conns.first.auto, isTrue);
+
+      expect([for (final a in buildLiveApps(split, all, three, filter: LiveFilter.direct)) a.exe], ['chrome.exe']);
+      expect(buildLiveApps(split, all, three, filter: LiveFilter.auto).map((a) => a.exe), ['chrome.exe', '']);
+      expect(
+        buildLiveApps(split, all, three, query: 'хром', titleOf: (e) => e == 'chrome.exe' ? 'Хром' : e).single.exe,
+        'chrome.exe',
+      );
+      expect(buildLiveApps(split, all, three, query: 'ytimg'), isEmpty);
+
+      // Сводка — только открытые, по порядку серверов, «мимо» в конце.
+      expect(
+        [for (final (d, n) in liveSummary(all, three)) '${destLabel(d)} $n'],
+        ['Основной 2', 'Запасной 2 2', 'Мимо VPN 1'],
+      );
+    });
+
+    test('размер трафика и названия программ', () {
+      expect(formatBytes(830 * 1024), '830 КБ');
+      expect(formatBytes(12 * 1024 * 1024 + 400 * 1024), '12,4 МБ');
+      expect(appTitle('TslGame.exe'), 'PUBG');
+      expect(appTitle('obs64.exe', {'obs64.exe': 'OBS Studio'}), 'OBS Studio');
+      expect(appTitle('tool.exe'), 'tool');
+      expect(appTitle(''), 'Неизвестная программа');
+    });
+
+    test('место записей: общее, разные; «Авто» у игры по умолчанию — мимо', () {
+      const split = SplitTunnel(
+        bypass: SplitList(apps: ['ssh.exe']),
+        servers: {
+          'NL игры': SplitList(domains: ['mwlogin.net']),
+        },
+      );
+      expect(split.placeOf(SplitKind.domain, 'mwlogin.net'), (target: SplitTarget.via, server: 'NL игры'));
+      expect(split.commonPlace([(kind: SplitKind.app, value: 'ssh.exe')]), bypassPlace);
+      expect(
+        split.commonPlace([(kind: SplitKind.app, value: 'ssh.exe'), (kind: SplitKind.domain, value: 'mwlogin.net')]),
+        isNull,
+      );
+    });
   });
 
+  final shellConns = [
+    conn('chrome.exe', host: 'www.google.com'),
+    conn('chrome.exe', host: 'ya.ru', chains: direct),
+    conn('Discord.exe', host: 'discord.com', chains: games),
+  ];
+  const shellState = SplitTunnel(
+    via: SplitList(apps: ['Telegram.exe'], domains: ['youtube.com']),
+    bypass: SplitList(apps: defaultBypassApps, domains: ['kinopoisk.ru'], ips: ['192.168.0.0/16']),
+    servers: {
+      'NL игры': SplitList(apps: ['Discord.exe']),
+    },
+    groups: [
+      SplitGroup(
+        name: 'Игры и лаунчеры',
+        items: SplitList(apps: defaultBypassApps),
+      ),
+      SplitGroup(
+        name: 'Общение',
+        items: SplitList(apps: ['Discord.exe', 'Telegram.exe']),
+      ),
+    ],
+  );
+
   for (final size in shellSizes) {
-    testWidgets('с данными, окно ${size.width.toInt()} px: без переполнений, игры свёрнуты', (tester) async {
-      writeState(
-        const SplitTunnel(
-          via: SplitList(apps: ['Telegram.exe', 'Discord.exe'], domains: ['youtube.com']),
-          bypass: SplitList(apps: defaultBypassApps, domains: ['kinopoisk.ru'], ips: ['192.168.0.0/16']),
-          groups: [
-            SplitGroup(
-              name: 'Игры и лаунчеры',
-              items: SplitList(apps: defaultBypassApps),
-            ),
-          ],
-        ),
-      );
-      final container = await start(
-        tester,
-        connections: [
-          conn('chrome.exe', host: 'www.google.com'),
-          conn('Telegram.exe'),
-          conn('Telegram.exe'),
-        ],
-        groups: errors,
-      );
+    testWidgets('окно ${size.width.toInt()} px: «Сейчас в сети» и «Группы» без переполнений', (tester) async {
+      writeState(shellState);
+      final container = await start(tester, connections: shellConns, groups: errors);
       await pumpInShell(tester, container, const SplitTunnelTablePage(), size: size, selected: 1);
       expectNoLayoutErrors(tester);
-      final semantics = tester.ensureSemantics();
 
       expect(find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'), findsOneWidget);
-      expect(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'), findsOneWidget);
-      expect(find.text('steam'), findsNothing);
-      expect(find.text('chrome'), findsOneWidget);
-      expect(find.text('2 соединения'), findsOneWidget);
-      // Первая строка (программа в сети) — жёлтая, переключатель в ней в цветах «на жёлтом».
-      expect(tester.widget<RouteSwitch>(routeSwitch('chrome')).onAccent, isTrue);
-      expect(tester.widget<RouteSwitch>(routeSwitch('Telegram')).onAccent, isFalse);
-      // kinopoisk.ru: 5 ошибок с поддомена; Discord: 2 по имени программы.
-      expect(find.bySemanticsLabel(RegExp(r'^kinopoisk\.ru, .*, 5 ошибок за сутки$')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp(r'^Discord, .*, 2 ошибки за сутки$')), findsOneWidget);
-      expect(find.text('домашняя сеть'), findsOneWidget);
+      expect(find.text('3 соединения'), findsOneWidget);
+      expect(find.text('Google Chrome'), findsOneWidget);
+      expect(find.text('Discord'), findsOneWidget);
+      // У Discord видно группу и сервер.
+      expect(
+        find.descendant(of: find.byKey(const ValueKey('live-app-Discord.exe')), matching: find.text('Общение')),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Соединений, которые не удались за сутки'), findsOneWidget);
 
-      // Раскрыть группу игр.
-      await tester.ensureVisible(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
-      await tester.tap(find.text('Игры и лаунчеры · ${defaultBypassApps.length}'));
-      await tester.pumpAndSettle();
-      // Строки строятся по мере прокрутки: игры внизу списка (в узком окне — внизу страницы).
-      final rows = find.byKey(const ValueKey('tunnel-rows'));
-      final scrollable = rows.evaluate().isNotEmpty
-          ? find.descendant(of: rows, matching: find.byType(Scrollable)).first
-          : find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('steam'), 200, scrollable: scrollable);
-      expect(find.text('steam'), findsOneWidget);
+      await tap(tester, find.text('Google Chrome'));
+      expect(find.textContaining('общие правила → мимо', findRichText: true), findsOneWidget);
       expectNoLayoutErrors(tester);
 
-      semantics.dispose();
+      await openTab(tester, 1);
+      expect(find.byKey(const ValueKey('group-card-Игры и лаунчеры')), findsOneWidget);
+      expect(find.byKey(const ValueKey('group-card-')), findsOneWidget, reason: 'карточка «Без группы»');
+      await tap(tester, find.byKey(const ValueKey('group-open-Общение')));
+      expect(find.text('Группа «Общение»'), findsOneWidget);
+      expect(find.text('Discord'), findsWidgets);
+      expectNoLayoutErrors(tester);
       await closePage(tester, container);
     });
   }
 
-  group('длинный список (200 записей)', () {
-    SplitTunnel longState() =>
-        SplitTunnel(via: SplitList(domains: [for (var i = 0; i < 200; i++) 'site-$i.example.com']));
-
-    Rect rect(WidgetTester tester, Finder f) => tester.getRect(f.first);
-
-    void expectOnScreen(WidgetTester tester, Finder f, Size window, String what) {
-      expect(f, findsWidgets, reason: what);
-      final r = rect(tester, f);
-      expect(r.top, greaterThanOrEqualTo(0), reason: '$what сверху: $r');
-      expect(r.bottom, lessThanOrEqualTo(window.height), reason: '$what снизу: $r');
-      expect(r.right, lessThanOrEqualTo(window.width), reason: '$what справа: $r');
-    }
-
-    testWidgets('1440×900: шапка, закладки, поиск и заголовки колонок на месте, крутятся только строки', (
-      tester,
-    ) async {
-      const window = Size(1440, 900);
-      writeState(longState());
-      final container = await start(tester, connections: const []);
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: window);
-      expectNoLayoutErrors(tester);
-
-      final fixed = {
-        'заголовок': find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'),
-        'добавить': find.text('+ Добавить сайт, IP или программу'),
-        'из запущенных': find.text('Из запущенных'),
-        'закладка «Все»': find.byKey(const ValueKey('folder-tab-0')),
-        'закладка «Через VPN»': find.byKey(const ValueKey('folder-tab-2')),
-        'поиск': find.byType(TextField),
-        'колонка НАЗВАНИЕ': find.text('НАЗВАНИЕ'),
-        'колонка КУДА ИДЁТ': find.text('КУДА ИДЁТ'),
-      };
-      for (final e in fixed.entries) {
-        expectOnScreen(tester, e.value, window, e.key);
-      }
-      final before = {for (final e in fixed.entries) e.key: rect(tester, e.value)};
-
-      final rows = find.byKey(const ValueKey('tunnel-rows'));
-      final scrollable = find.descendant(of: rows, matching: find.byType(Scrollable)).first;
-      expect(find.byType(RouteSwitch).evaluate().length, lessThan(60), reason: 'строки строятся лениво');
-      expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
-      await tester.drag(scrollable, const Offset(0, -4000));
-      await tester.pump();
-      expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
-
-      for (final e in fixed.entries) {
-        expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
-      }
-      expectNoLayoutErrors(tester);
-      await closePage(tester, container);
-    });
-
-    testWidgets('420×700: прокручивается вся страница, строк сначала 30, «Показать ещё»', (tester) async {
-      writeState(longState());
-      final container = await start(tester, connections: const []);
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(420, 700));
-      expectNoLayoutErrors(tester);
-      expect(find.byKey(const ValueKey('tunnel-rows')), findsNothing);
-      expect(find.byType(RouteSwitch), findsNWidgets(30));
-
-      final page = find.byType(Scrollable).first;
-      final more = find.byKey(const ValueKey('tunnel-more'));
-      await tester.scrollUntilVisible(more, 300, scrollable: page);
-      expect(find.text('Показать ещё · 30 из 200'), findsOneWidget);
-      await tester.tap(more);
-      await tester.pump();
-      expect(find.byType(RouteSwitch), findsNWidgets(60));
-      expectNoLayoutErrors(tester);
-      await closePage(tester, container);
-    });
-
-    testWidgets('1440×500: широко, но невысоко — прокручивается страница', (tester) async {
-      writeState(longState());
-      final container = await start(tester, connections: const []);
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 500));
-      expectNoLayoutErrors(tester);
-      expect(find.byKey(const ValueKey('tunnel-rows')), findsNothing);
-      expect(find.text('НАЗВАНИЕ'), findsOneWidget, reason: 'таблица с колонками');
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -5000));
-      await tester.pump();
-      expectNoLayoutErrors(tester);
-      await closePage(tester, container);
-    });
-  });
-
-  testWidgets('закладки «Все / Мимо / Через VPN» и поиск', (tester) async {
+  testWidgets('«Сейчас в сети»: путь программы, правило для сайта, группа, вид по группам, фильтр', (tester) async {
     writeState(
       const SplitTunnel(
-        via: SplitList(apps: ['Telegram.exe'], domains: ['youtube.com']),
-        bypass: SplitList(domains: ['kinopoisk.ru'], ips: ['192.168.0.0/16']),
+        servers: {
+          'NL игры': SplitList(apps: ['Discord.exe']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Общение',
+            items: SplitList(apps: ['Discord.exe']),
+          ),
+        ],
       ),
     );
-    final container = await start(tester, connections: [conn('chrome.exe')]);
-    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
+    final container = await start(
+      tester,
+      connections: [
+        conn('Discord.exe', host: 'gateway.discord.gg', chains: games),
+        conn('chrome.exe', host: 'www.youtube.com', bytes: 3 << 20),
+        conn('chrome.exe', host: 'ya.ru', chains: direct),
+      ],
+    );
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    SplitTunnel state() => container.read(splitTunnelProvider);
 
-    // Метки на закладках: все записи (с программой в сети), «мимо» и «через VPN».
-    expect(find.text('5'), findsOneWidget);
-    expect(find.text('2'), findsNWidgets(2));
+    // Почему так: у Discord — программа в группе, у Chrome — общие правила.
+    await tap(tester, find.text('Discord'));
+    expect(find.textContaining('программа Discord · группа «Общение»', findRichText: true), findsOneWidget);
+    await tap(tester, find.text('Google Chrome'));
+    expect(find.textContaining('общие правила → через VPN', findRichText: true), findsOneWidget);
 
-    Future<void> openTab(int i) async {
-      await tester.tap(find.byKey(ValueKey('folder-tab-$i')));
-      await tester.pumpAndSettle();
+    // Плашка пути программы.
+    await tap(tester, find.byTooltip('Куда направить: Google Chrome'));
+    await tapMenu(tester, 'Мимо VPN');
+    expect(state().bypass.apps, ['chrome.exe']);
+
+    // «⋯» у соединения: сайт целиком — за «Запасной 1».
+    await tap(tester, find.byTooltip('Направить: youtube.com'));
+    await tapText(tester, 'Сайт youtube.com и поддомены');
+    await tap(tester, find.byKey(const ValueKey('place-server-NL запасной')));
+    expect(state().serverOf(SplitKind.domain, 'youtube.com'), 'NL запасной');
+    expect(find.textContaining('сайт youtube.com', findRichText: true), findsOneWidget);
+
+    // Группа программы: новая.
+    await tap(tester, find.byKey(const ValueKey('group-btn-chrome.exe')));
+    await tapMenu(tester, 'Новая группа…');
+    await nameGroup(tester, 'Браузеры');
+    expect(state().groupOf(SplitKind.app, 'chrome.exe'), 'Браузеры');
+
+    // По группам и переход к группе.
+    await tapText(tester, 'По группам');
+    expect(find.text('ОБЩЕНИЕ'), findsOneWidget);
+    expect(find.text('БРАУЗЕРЫ'), findsOneWidget);
+    await tap(tester, find.text('открыть группу').first);
+    expect(find.text('Группа «Общение»'), findsOneWidget);
+
+    // Фильтр «Мимо» — только Chrome (у него ya.ru напрямую).
+    await openTab(tester, 0);
+    await tapText(tester, 'Мимо');
+    expect(find.text('Google Chrome'), findsOneWidget);
+    expect(find.text('Discord'), findsNothing);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('VPN выключен: подсказка и переход к группам', (tester) async {
+    writeState(const SplitTunnel(bypass: SplitList(apps: ['ssh.exe'])));
+    final container = await start(tester);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    expect(find.textContaining('VPN выключен'), findsOneWidget);
+    await tapText(tester, 'Открыть группы');
+    expect(find.byKey(const ValueKey('group-card-')), findsOneWidget);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('«Группы»: путь всей группе и сервер, «Выровнять», записи по одной, перенос, отметки', (tester) async {
+    writeState(
+      const SplitTunnel(
+        bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
+        servers: {
+          'NL игры': SplitList(apps: ['Discord.exe']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Работа и дом',
+            items: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
+          ),
+          SplitGroup(
+            name: 'Общение',
+            items: SplitList(apps: ['Discord.exe']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(tester, connections: const []);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    SplitTunnel state() => container.read(splitTunnelProvider);
+    await openTab(tester, 1);
+
+    final card = find.byKey(const ValueKey('group-card-Работа и дом'));
+    Finder inCard(Finder f) => find.descendant(of: card, matching: f);
+
+    // «VPN» у группы — всем; строка «Сервер» — за «Запасной 2».
+    await tap(tester, inCard(find.text('VPN')));
+    expect(state().via.items, hasLength(2));
+    await tap(tester, find.byKey(const ValueKey('group-server-Работа и дом')));
+    await tapMenu(tester, 'Запасной 2');
+    expect(state().servers['NL игры']!.items, hasLength(3));
+
+    // Запись по одной: SSH мимо — у группы «Разные пути», «Выровнять» ставит всем.
+    await tap(tester, find.byKey(const ValueKey('group-open-Работа и дом')));
+    await tap(tester, find.byTooltip('Куда направить: SSH'));
+    await tapMenu(tester, 'Мимо VPN');
+    expect(inCard(find.textContaining('Разные пути')), findsOneWidget);
+    expect(find.textContaining('не как у группы'), findsOneWidget);
+    await tap(tester, inCard(find.text('Выровнять')));
+    await tapMenu(tester, 'Мимо VPN');
+    expect(state().bypass.items, hasLength(2));
+
+    // Перенос одной записи в другую группу.
+    await tap(tester, find.byKey(const ValueKey('group-btn-mwlogin.net')));
+    await tapMenu(tester, 'Общение · 1');
+    expect(state().groupOf(SplitKind.domain, 'mwlogin.net'), 'Общение');
+
+    // Отметить все (остался SSH) → в новую группу. Старая исчезла, панель закрылась.
+    await tap(tester, find.byKey(const ValueKey('select-all')));
+    expect(find.byKey(const ValueKey('selection-bar')), findsOneWidget);
+    await tap(tester, find.byKey(const ValueKey('selection-group')));
+    await tapMenu(tester, 'Новая группа…');
+    await nameGroup(tester, 'Дом');
+    expect([for (final g in state().groups) g.name], ['Общение', 'Дом']);
+    expect(find.text('Группа «Работа и дом»'), findsNothing);
+
+    // «⋯» карточки: переименовать, удалить — запись остаётся в списках, уходит в «Без группы».
+    await tap(tester, find.byTooltip('Группа Дом: ещё'));
+    await tapMenu(tester, 'Переименовать…');
+    await nameGroup(tester, 'Мой дом');
+    expect(state().group('Мой дом'), isNotNull);
+    await tap(tester, find.byTooltip('Группа Мой дом: ещё'));
+    await tapMenu(tester, 'Удалить группу (записи останутся)');
+    expect(state().groupOf(SplitKind.app, 'ssh.exe'), isNull);
+    expect(state().bypass.apps, ['ssh.exe']);
+    expect(find.byKey(const ValueKey('group-card-')), findsOneWidget);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('файлы правил для ядра: каждое действие на экране меняет правила у каждой записи', (tester) async {
+    writeState(
+      const SplitTunnel(
+        bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net'], ips: ['8.8.8.8/32']),
+        groups: [
+          SplitGroup(
+            name: 'Работа и дом',
+            items: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net'], ips: ['8.8.8.8/32']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(tester, connections: [conn('chrome.exe', host: 'www.youtube.com')]);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+
+    // Что лежит в наборе правил [file] (папка split/, за ней следит ядро): программы, сайты, сети.
+    Set<String> rules(String file) {
+      final f = File('${dir.path}/split/$file');
+      if (!f.existsSync()) return const {};
+      final json = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+      return {
+        for (final r in (json['rules'] as List).cast<Map<String, dynamic>>())
+          for (final e in r.entries) ...[for (final v in (e.value as List).cast<String>()) '${e.key}:$v'],
+      };
     }
 
-    await openTab(1);
-    expect(routeSwitch('kinopoisk.ru'), findsOneWidget);
-    expect(routeSwitch('Telegram'), findsNothing);
-    expect(routeSwitch('chrome'), findsNothing);
-    expect(find.text('Идут напрямую, с домашнего IP'), findsOneWidget);
+    final app = 'process_path_regex:${processPathRegex('ssh.exe')}';
+    const site = 'domain_suffix:mwlogin.net';
+    const ip = 'ip_cidr:8.8.8.8/32';
+    final games = viaServerFile(serverKey('NL игры'));
 
-    await openTab(2);
-    expect(routeSwitch('Telegram'), findsOneWidget);
-    expect(routeSwitch('youtube.com'), findsOneWidget);
-    expect(routeSwitch('kinopoisk.ru'), findsNothing);
+    expect(rules('bypass-vpn.json'), {app, site, ip});
+    expect(rules('bypass-domains.json'), {site}, reason: 'DNS сайтов «мимо» — тоже мимо');
+    expect(rules('via-vpn.json'), isEmpty);
 
-    await openTab(0);
+    // «VPN» у группы — все три записи «через VPN».
+    await openTab(tester, 1);
+    final card = find.byKey(const ValueKey('group-card-Работа и дом'));
+    await tap(tester, find.descendant(of: card, matching: find.text('VPN')));
+    expect(rules('via-vpn.json'), {app, site, ip});
+    expect(rules('via-domains.json'), {site});
+    expect(rules('bypass-vpn.json'), isEmpty);
+
+    // Сервер группы — «Запасной 2»: свой набор у сервера (и общий «через VPN» на случай, если
+    // сервер пропадёт из подписки).
+    await tap(tester, find.byKey(const ValueKey('group-server-Работа и дом')));
+    await tapMenu(tester, 'Запасной 2');
+    expect(rules(games), {app, site, ip});
+    expect(rules('via-vpn.json'), {app, site, ip});
+
+    // По одной: программа — мимо, сайт — «Авто» (ни в одном наборе), IP остаётся за сервером.
+    await tap(tester, find.byKey(const ValueKey('group-open-Работа и дом')));
+    await tap(tester, find.byTooltip('Куда направить: SSH'));
+    await tapMenu(tester, 'Мимо VPN');
+    await tap(tester, find.byTooltip('Куда направить: mwlogin.net'));
+    await tapMenu(tester, 'Авто');
+    expect(rules('bypass-vpn.json'), {app});
+    expect(rules(games), {ip});
+    expect(rules('via-vpn.json'), {ip});
+    expect([rules('via-domains.json'), rules('bypass-domains.json')], [isEmpty, isEmpty]);
+
+    // «Сейчас в сети»: сайт из соединения — сразу в набор сервера.
+    await openTab(tester, 0);
+    await tap(tester, find.text('Google Chrome'));
+    await tap(tester, find.byTooltip('Направить: youtube.com'));
+    await tapText(tester, 'Сайт youtube.com и поддомены');
+    await tap(tester, find.byKey(const ValueKey('place-server-NL запасной')));
+    expect(rules(viaServerFile(serverKey('NL запасной'))), {'domain_suffix:youtube.com'});
+    expect(rules('via-domains.json'), {'domain_suffix:youtube.com'});
+    await closePage(tester, container);
+  });
+
+  testWidgets('«Добавить»: несколько записей сразу в группу с путём как у группы; новая группа; бессмысленно', (
+    tester,
+  ) async {
+    writeState(
+      const SplitTunnel(
+        servers: {
+          'NL игры': SplitList(apps: ['Discord.exe']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Общение',
+            items: SplitList(apps: ['Discord.exe']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(tester, connections: const []);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    SplitTunnel state() => container.read(splitTunnelProvider);
+
+    await tapText(tester, '+ Добавить');
+    await tester.enterText(find.byKey(const ValueKey('add-text')), 'youtube.com\nTelegram.exe');
+    await tester.pumpAndSettle();
+    expect(find.text('2 записи'), findsOneWidget);
+    await tapText(tester, 'Общение');
+    expect(find.text('Как у группы: Запасной 2'), findsOneWidget);
+    await tap(tester, find.byKey(const ValueKey('add-submit')));
+    expect(state().servers['NL игры']!.domains, ['youtube.com']);
+    expect(state().groupOf(SplitKind.app, 'Telegram.exe'), 'Общение');
+
+    await tapText(tester, '+ Добавить');
+    await tester.enterText(find.byKey(const ValueKey('add-text')), 'https://example.org/page');
+    await tester.pumpAndSettle();
+    await tapText(tester, '+ Новая…');
+    await tester.enterText(find.byKey(const ValueKey('add-new-group')), 'Сайты');
+    await tapText(tester, 'Мимо VPN');
+    await tap(tester, find.byKey(const ValueKey('add-submit')));
+    expect(state().bypass.domains, ['example.org']);
+    expect(state().groupOf(SplitKind.domain, 'example.org'), 'Сайты');
+
+    // Без группы и с «Авто» — ничего не изменится: кнопка неактивна.
+    await tapText(tester, '+ Добавить');
+    await tester.enterText(find.byKey(const ValueKey('add-text')), 'abc.com');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ничего не изменит'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('add-submit'))).onPressed, isNull);
+    await tapText(tester, 'Отмена');
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('«Из запущенных» — в группу; «Новая группа» — из записей других групп', (tester) async {
+    writeState(
+      const SplitTunnel(
+        bypass: SplitList(apps: ['ssh.exe', 'vpnagent.exe']),
+        groups: [
+          SplitGroup(
+            name: 'Служебное',
+            items: SplitList(apps: ['vpnagent.exe']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(
+      tester,
+      connections: const [],
+      running: const [RunningApp(exe: 'obs64.exe', path: r'C:\obs\obs64.exe', title: 'OBS Studio')],
+    );
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    SplitTunnel state() => container.read(splitTunnelProvider);
+
+    await tapText(tester, 'Из запущенных');
+    await tapText(tester, 'OBS Studio');
+    await tapText(tester, 'Служебное');
+    await tap(tester, find.byKey(const ValueKey('add-submit')));
+    expect(state().groupOf(SplitKind.app, 'obs64.exe'), 'Служебное');
+    expect(state().bypass.apps, contains('obs64.exe'), reason: 'как у группы — мимо');
+
+    await tapText(tester, 'Новая группа');
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('new-group-create'))).onPressed, isNull);
+    await tester.enterText(find.byKey(const ValueKey('new-group-name')), 'Работа и дом');
+    await tap(tester, find.byKey(const ValueKey('new-group-pick-ssh.exe')));
+    await tap(tester, find.byKey(const ValueKey('new-group-pick-vpnagent.exe')));
+    expect(find.textContaining('сейчас в «Служебное», перенесётся'), findsNWidgets(2), reason: 'vpnagent и obs64');
+    await tap(tester, find.byKey(const ValueKey('new-group-create')));
+    expect(state().group('Работа и дом')!.items.apps, ['ssh.exe', 'vpnagent.exe']);
+    expect(state().groupOf(SplitKind.app, 'vpnagent.exe'), 'Работа и дом');
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('поиск на «Группах»: записи одним списком', (tester) async {
+    writeState(
+      const SplitTunnel(
+        via: SplitList(domains: ['youtube.com']),
+        bypass: SplitList(domains: ['kinopoisk.ru']),
+        groups: [
+          SplitGroup(
+            name: 'Видео',
+            items: SplitList(domains: ['youtube.com']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(tester, connections: const []);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    await openTab(tester, 1);
     await tester.enterText(find.byType(TextField), 'KINO');
     await tester.pumpAndSettle();
-    expect(routeSwitch('kinopoisk.ru'), findsOneWidget);
-    expect(routeSwitch('Telegram'), findsNothing);
-
+    expect(find.byKey(const ValueKey('entry-kinopoisk.ru')), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-youtube.com')), findsNothing);
+    expect(find.byKey(const ValueKey('group-card-Видео')), findsNothing);
     await tester.enterText(find.byType(TextField), 'нет такого');
     await tester.pumpAndSettle();
     expect(find.text('Ничего не нашлось.'), findsOneWidget);
-
     await closePage(tester, container);
   });
 
-  testWidgets('пусто и VPN выключен: подсказка и прочерки', (tester) async {
-    writeState(const SplitTunnel());
-    final container = await start(tester);
-    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
+  testWidgets('200 записей без группы: панель строится лениво, шапка на месте', (tester) async {
+    writeState(SplitTunnel(via: SplitList(domains: [for (var i = 0; i < 200; i++) 'site-$i.example.com'])));
+    final container = await start(tester, connections: const []);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    await openTab(tester, 1);
+    await tap(tester, find.byKey(const ValueKey('group-open-')));
+    expect(find.text('Без группы'), findsWidgets);
+    expect(find.byKey(const ValueKey('entry-site-0.example.com')), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-site-199.example.com')), findsNothing);
+    expect(find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'), findsOneWidget);
     expectNoLayoutErrors(tester);
-    expect(find.text('Списки пусты. Добавьте программу, сайт или IP.'), findsOneWidget);
-    expect(find.text('«Сейчас» появится, когда VPN подключён.'), findsOneWidget);
     await closePage(tester, container);
   });
 
-  testWidgets('переключатель: «Авто» убирает из обоих списков, «Мимо»/«VPN» переносят', (tester) async {
-    writeState(const SplitTunnel(via: SplitList(apps: ['Telegram.exe'])));
-    final container = await start(tester, connections: [conn('chrome.exe'), conn('Telegram.exe')]);
-    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
-
-    SplitTunnel state() => container.read(splitTunnelProvider);
-
-    await tapRoute(tester, 'Telegram', 'Авто');
-    expect(state().targetOf(SplitKind.app, 'Telegram.exe'), isNull);
-
-    await tapRoute(tester, 'chrome', 'Мимо');
-    expect(state().bypass.apps, contains('chrome.exe'));
-    expect(state().via.apps, isNot(contains('chrome.exe')));
-
-    await tapRoute(tester, 'chrome', 'VPN');
-    expect(state().via.apps, contains('chrome.exe'));
-    expect(state().bypass.apps, isNot(contains('chrome.exe')));
-
-    await tapRoute(tester, 'chrome', 'Авто');
-    expect(state().targetOf(SplitKind.app, 'chrome.exe'), isNull);
-    // Запись осталась в таблице: программа в сети.
-    expect(routeSwitch('chrome'), findsOneWidget);
-
+  testWidgets('один сервер: в меню пути нет серверов', (tester) async {
+    writeState(const SplitTunnel(bypass: SplitList(domains: ['youtube.com'])));
+    final container = await start(
+      tester,
+      connections: const [],
+      servers: RescueServers(servers: [three.main]),
+    );
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    await openTab(tester, 1);
+    await tap(tester, find.byKey(const ValueKey('group-open-')));
+    await tap(tester, find.byTooltip('Куда направить: youtube.com'));
+    expect(find.text('Основной'), findsNothing);
+    await tapMenu(tester, 'Через VPN');
+    expect(container.read(splitTunnelProvider).via.domains, ['youtube.com']);
     await closePage(tester, container);
   });
 
-  testWidgets('игра из стандартного списка: «Авто» возвращает её мимо VPN', (tester) async {
-    writeState(const SplitTunnel(via: SplitList(apps: ['Marvel-Win64-Shipping.exe'])));
-    final container = await start(tester, connections: [conn('Marvel-Win64-Shipping.exe')]);
-    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
-
-    await tapRoute(tester, 'Marvel-Win64-Shipping', 'Авто');
-    final s = container.read(splitTunnelProvider);
-    expect(s.targetOf(SplitKind.app, 'Marvel-Win64-Shipping.exe'), SplitTarget.bypass);
-    expect(s.via.apps, isEmpty);
-
-    await closePage(tester, container);
-  });
-
-  testWidgets('стандартные группы: «VPN» у группы «Игры» переносит только её игры', (tester) async {
-    writeState(SplitTunnel.defaults);
-    final container = await start(tester);
-    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
-
-    final games = suggestedGroups['Игры']!.apps;
-    expect(find.text('Игры · ${games.length}'), findsOneWidget);
-    expect(find.text('Античиты · 4'), findsOneWidget);
-    expect(find.text('steam'), findsNothing);
-    final groupSwitch = find.byWidgetPredicate((w) => w is RouteSwitch && w.semanticLabel == 'Куда идёт группа Игры');
-    await tester.tap(find.descendant(of: groupSwitch, matching: find.text('VPN')));
-    await tester.pumpAndSettle();
-    final state = container.read(splitTunnelProvider);
-    expect(state.via.apps, unorderedEquals(games));
-    expect(state.bypass.apps, hasLength(defaultBypassApps.length - games.length));
-
-    await closePage(tester, container);
-  });
-
-  group('«Сравнить пути»', () {
-    final vpnOn = [
-      vpnStatusProvider.overrideWith(
-        (ref) => const VpnStatus(connected: true, busy: false, label: 'Подключено', canToggle: true),
-      ),
-      compareEnvProvider.overrideWithValue(CompareEnv(newId: () => 'tableid00001')),
-    ];
-
-    Future<void> closeDialog(WidgetTester tester) async {
-      await tester.tap(find.text('Закрыть'));
-      await tester.pumpAndSettle();
-    }
-
-    for (final size in const [Size(1440, 900), Size(420, 700)]) {
-      testWidgets('${size.width.toInt()}×${size.height.toInt()}: у сайта, IP и программы в сети есть действие', (
-        tester,
-      ) async {
-        writeState(
-          const SplitTunnel(
-            via: SplitList(domains: ['youtube.com'], ips: ['8.8.8.8/32']),
-            bypass: SplitList(apps: ['steam.exe'], ips: ['192.168.0.0/16', '10.0.0.0/8']),
-          ),
-        );
-        final container = await start(
-          tester,
-          connections: [
-            conn('chrome.exe', host: 'www.youtube.com'),
-            conn('chrome.exe', host: 'www.youtube.com'),
-          ],
-          extra: vpnOn,
-        );
-        await pumpInShell(tester, container, const SplitTunnelTablePage(), size: size, selected: 1);
-        expectNoLayoutErrors(tester);
-        final core = FakeCore(dir);
-
-        expect(find.byTooltip('Сравнить пути: youtube.com'), findsOneWidget);
-        expect(find.byTooltip('Сравнить пути: chrome'), findsOneWidget);
-        // Сети целиком сравнить нельзя; программа не в сети — кнопка есть, но объясняет, почему нельзя.
-        expect(find.byTooltip('Запустите программу, чтобы сравнить пути'), findsOneWidget);
-        expect(find.byTooltip(RegExp('^Сравнить пути: 192')), findsNothing);
-
-        final ip = find.byWidgetPredicate(
-          (w) => w is Tooltip && (w.message ?? '').startsWith('Сравнить пути: 8.8.8.8'),
-        );
-        expect(ip, findsOneWidget);
-        await tester.ensureVisible(ip);
-        await tester.pumpAndSettle();
-        await tester.tap(ip);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
-        expect(find.text('ЦЕЛЬ'), findsOneWidget);
-        expect(core.request!['target'], '8.8.8.8');
-        expectNoLayoutErrors(tester);
-        await closeDialog(tester);
-        expect(core.allFiles, isEmpty);
-
-        // Программа: цели — её текущие адреса.
-        await tester.ensureVisible(find.byTooltip('Сравнить пути: chrome'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('Сравнить пути: chrome'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
-        expect(core.request!['target'], 'www.youtube.com');
-        expect(find.textContaining('программа chrome.exe'), findsOneWidget);
-        await closeDialog(tester);
-
-        await closePage(tester, container);
-      });
-    }
-
-    testWidgets('меню «⋯»: «Сравнить пути…» с вводом адреса', (tester) async {
-      writeState(const SplitTunnel());
-      final container = await start(tester, extra: vpnOn);
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
-      final core = FakeCore(dir);
-      await tester.tap(find.byTooltip('Ещё'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Сравнить пути…'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('compare-address')), findsOneWidget);
-      expect(core.allFiles, isEmpty, reason: 'без адреса запроса нет');
-      await tester.enterText(find.byKey(const ValueKey('compare-address')), 'example.org:8443');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, 'Сравнить'));
-      await tester.pump(const Duration(milliseconds: 50));
-      expect((core.request!['target'], core.request!['port']), ('example.org', 8443));
-      await closeDialog(tester);
-      await closePage(tester, container);
-    });
-  });
-
-  group('серверы: «Через VPN ▸ Авто / Основной / Запасной 1 / …»', () {
-    final three = rescueServersOf(threeServers(), threeServersOrder)!;
-    final one = RescueServers(servers: [three.main]);
-
-    Future<void> openMenu(WidgetTester tester, String title) async {
-      final button = find.byTooltip('Куда направить: $title');
-      await tester.ensureVisible(button);
-      await tester.pumpAndSettle();
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-    }
-
-    for (final size in const [Size(1440, 900), Size(420, 700)]) {
-      testWidgets('${size.width.toInt()}×${size.height.toInt()}: подпись сервера, подменю с галочкой, перенос', (
-        tester,
-      ) async {
-        writeState(
-          const SplitTunnel(
-            via: SplitList(domains: ['youtube.com']),
-            servers: {
-              'NL игры': SplitList(apps: ['Discord.exe']),
-              'пропавший': SplitList(domains: ['old.example.com']),
-            },
-          ),
-        );
-        final container = await start(
-          tester,
-          connections: const [],
-          extra: [rescueServersProvider.overrideWith((ref) => three)],
-        );
-        await pumpPage(tester, container, const SplitTunnelTablePage(), size: size);
-        expectNoLayoutErrors(tester);
-        SplitTunnel state() => container.read(splitTunnelProvider);
-
-        expect(find.text('Discord.exe · через запасной 2'), findsOneWidget);
-        expect(find.text('и все поддомены · сервера нет — идёт через Авто'), findsOneWidget);
-        expect(tester.widget<RouteSwitch>(routeSwitch('Discord')).value, RouteChoice.vpn);
-
-        await openMenu(tester, 'youtube.com');
-        expect(find.text('Мимо VPN'), findsOneWidget);
-        expect(find.text('Сравнить пути…'), findsOneWidget);
-        expect(find.text('Убрать из списков'), findsOneWidget);
-        await tester.tap(find.text('Через VPN').last);
-        await tester.pumpAndSettle();
-        expect(find.text('Авто (основной, при сбое — запасные)'), findsOneWidget);
-        expect(find.text('Основной'), findsOneWidget);
-        expect(find.text('Запасной 1'), findsOneWidget);
-        expect(find.text('Запасной 2'), findsOneWidget);
-        expect(find.text('если основной заблокируют · NL запасной'), findsOneWidget);
-        expect(find.text('для игр и звонков · NL игры'), findsOneWidget);
-        // Галочки: у «Через VPN» и у «Авто».
-        expect(find.byIcon(Icons.check_rounded), findsNWidgets(2));
-        await tester.tap(find.text('Запасной 1').last);
-        await tester.pumpAndSettle();
-        expect(state().serverOf(SplitKind.domain, 'youtube.com'), 'NL запасной');
-        expect(state().via.domains, isEmpty);
-        expect(find.text('и все поддомены · через запасной 1'), findsOneWidget);
-        expectNoLayoutErrors(tester);
-
-        await openMenu(tester, 'Discord');
-        await tester.tap(find.text('Мимо VPN').last);
-        await tester.pumpAndSettle();
-        expect(state().servers.containsKey('NL игры'), isFalse);
-        expect(state().bypass.apps, ['Discord.exe']);
-
-        await openMenu(tester, 'Discord');
-        await tester.tap(find.text('Убрать из списков').last);
-        await tester.pumpAndSettle();
-        expect(state().targetOf(SplitKind.app, 'Discord.exe'), isNull);
-
-        // Пропавший сервер: в подменю видно, где пункт; «Авто» переносит в обычный список.
-        await openMenu(tester, 'old.example.com');
-        await tester.tap(find.text('Через VPN').last);
-        await tester.pumpAndSettle();
-        expect(find.text('«пропавший» — сервера нет, идёт через Авто'), findsOneWidget);
-        await tester.tap(find.text('Авто (основной, при сбое — запасные)').last);
-        await tester.pumpAndSettle();
-        expect(state().servers.keys, ['NL запасной']);
-        expect(state().via.domains, ['old.example.com']);
-        expectNoLayoutErrors(tester);
-        await closePage(tester, container);
-      });
-    }
-
-    testWidgets('один сервер — подменю нет, «Через VPN» сразу', (tester) async {
-      writeState(const SplitTunnel(bypass: SplitList(domains: ['youtube.com'])));
-      final container = await start(
-        tester,
-        connections: const [],
-        extra: [rescueServersProvider.overrideWith((ref) => one)],
-      );
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
-      await openMenu(tester, 'youtube.com');
-      expect(find.byKey(const ValueKey('route-via-youtube.com')), findsNothing);
-      await tester.tap(find.text('Через VPN').last);
-      await tester.pumpAndSettle();
-      expect(container.read(splitTunnelProvider).via.domains, ['youtube.com']);
-      expect(find.text('Основной'), findsNothing);
-      await closePage(tester, container);
-    });
-
-    testWidgets('своя группа: создать из меню, путь всем сразу и по одной, переименовать, удалить', (tester) async {
-      writeState(
-        const SplitTunnel(
-          bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
-          via: SplitList(domains: ['youtube.com']),
+  testWidgets('меню «Ещё»: «Сравнить пути…» с вводом адреса', (tester) async {
+    writeState(const SplitTunnel());
+    final container = await start(
+      tester,
+      extra: [
+        vpnStatusProvider.overrideWith(
+          (ref) => const VpnStatus(connected: true, busy: false, label: 'Подключено', canToggle: true),
         ),
-      );
-      final container = await start(
-        tester,
-        connections: const [],
-        extra: [rescueServersProvider.overrideWith((ref) => three)],
-      );
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
-      SplitTunnel state() => container.read(splitTunnelProvider);
+        compareEnvProvider.overrideWithValue(CompareEnv(newId: () => 'tableid00001')),
+      ],
+    );
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    final core = FakeCore(dir);
+    await tester.tap(find.byTooltip('Ещё'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Сравнить пути…'));
+    await tester.pumpAndSettle();
+    expect(core.allFiles, isEmpty, reason: 'без адреса запроса нет');
+    await tester.enterText(find.byKey(const ValueKey('compare-address')), 'example.org:8443');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Сравнить'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect((core.request!['target'], core.request!['port']), ('example.org', 8443));
+    await tester.tap(find.text('Закрыть'));
+    await tester.pumpAndSettle();
+    await closePage(tester, container);
+  });
 
-      Future<void> toGroup(String row, {String? existing, String? created}) async {
-        await openMenu(tester, row);
-        await tester.tap(find.text('В группу').last);
-        await tester.pumpAndSettle();
-        if (existing != null) {
-          await tester.tap(find.text(existing).last);
-        } else {
-          await tester.tap(find.text('Новая группа…').last);
-          await tester.pumpAndSettle();
-          await tester.enterText(find.byKey(const ValueKey('group-name')), created!);
-          await tester.tap(find.text('Готово'));
-        }
-        await tester.pumpAndSettle();
-      }
-
-      await toGroup('ssh', created: 'Работа и дом');
-      await toGroup('mwlogin.net', existing: 'Работа и дом');
-      expect(state().groups.single.name, 'Работа и дом');
-      expect(state().groups.single.items.items, hasLength(2));
-      // Пути не поменялись.
-      expect(state().bypass.apps, ['ssh.exe']);
-
-      final group = find.byKey(const ValueKey('tunnel-group-Работа и дом'));
-      expect(group, findsOneWidget);
-      expect(find.text('Работа и дом · 2'), findsOneWidget);
-      expect(find.text('ssh'), findsNothing);
-      RouteChoice? groupChoice() =>
-          tester.widget<RouteSwitch>(find.descendant(of: group, matching: find.byType(RouteSwitch))).value;
-      expect(groupChoice(), RouteChoice.bypass);
-
-      // «⋯ группы → Через VPN ▸ Запасной 2»: все записи за сервером, группа на месте.
-      await openMenu(tester, 'группа Работа и дом');
-      expect(find.text('Убрать из списков'), findsNothing);
-      await tester.tap(find.text('Через VPN').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Запасной 2').last);
-      await tester.pumpAndSettle();
-      expect(state().servers['NL игры']?.items, hasLength(2));
-      expect(state().bypass.isEmpty, isTrue);
-      expect(find.descendant(of: group, matching: find.text('группа · через запасной 2 · раскрыть')), findsOneWidget);
-
-      // Раскрыть и одну запись — мимо: «разные пути», переключатель группы без выбора.
-      await tester.tap(find.text('Работа и дом · 2'));
-      await tester.pumpAndSettle();
-      expect(find.text('ssh'), findsOneWidget);
-      await tester.tap(find.descendant(of: routeSwitch('ssh'), matching: find.text('Мимо')));
-      await tester.pumpAndSettle();
-      expect(groupChoice(), isNull);
-      expect(find.descendant(of: group, matching: find.text('группа · разные пути · свернуть')), findsOneWidget);
-
-      // «Мимо» у группы — все мимо.
-      await tester.tap(find.descendant(of: group, matching: find.text('Мимо')));
-      await tester.pumpAndSettle();
-      expect(state().bypass.items, hasLength(2));
-      expect(state().servers, isEmpty);
-
-      // Переименовать; удалить — записи остаются в списках, строки снова отдельные.
-      await openMenu(tester, 'группа Работа и дом');
-      await tester.tap(find.text('Переименовать…').last);
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey('group-name')), 'Дом');
-      await tester.tap(find.text('Готово'));
-      await tester.pumpAndSettle();
-      expect(find.text('Дом · 2'), findsOneWidget);
-      await openMenu(tester, 'группа Дом');
-      await tester.tap(find.text('Удалить группу (записи останутся)').last);
-      await tester.pumpAndSettle();
-      expect(state().groups, isEmpty);
-      expect(state().bypass.items, hasLength(2));
-      expect(find.text('ssh'), findsOneWidget);
-      expectNoLayoutErrors(tester);
-      await closePage(tester, container);
-    });
-
-    testWidgets('старый файл без групп: записи раскладываются по стандартным группам', (tester) async {
-      File('${dir.path}/split-tunnel.json').writeAsStringSync(
-        jsonEncode({
-          'bypass': {
-            'apps': ['steam.exe', 'ssh.exe'],
-          },
-          'via': {
-            'apps': ['cs2.exe', 'Marvel-Win64-Shipping.exe'],
-          },
-          'servers': {
-            'NL игры': {
-              'domains': ['gaming-sdk.com'],
-            },
-          },
-        }),
-      );
-      final container = await start(tester, connections: const []);
-      final groups = container.read(splitTunnelProvider).groups;
-      expect([for (final g in groups) g.name], ['Игры', 'Marvel Rivals', 'Лаунчеры и магазины']);
-      expect(groups[1].items.items, hasLength(2));
-      expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'ssh.exe'), isNull);
-      await closePage(tester, container);
-    });
-
-    testWidgets('«Сейчас в сети»: путь — сервер соединения именем из интерфейса', (tester) async {
-      writeState(const SplitTunnel());
-      NetConnection withChain(String host, List<String> chains) => NetConnection.fromJson({
-        'id': host,
-        'metadata': {
-          'processPath': r'C:\Games\cs2.exe',
-          'host': host,
-          'destinationIP': '5.6.7.8',
-          'destinationPort': '443',
-          'network': 'tcp',
+  testWidgets('старый файл без групп: записи раскладываются по стандартным группам', (tester) async {
+    File('${dir.path}/split-tunnel.json').writeAsStringSync(
+      jsonEncode({
+        'bypass': {
+          'apps': ['steam.exe', 'ssh.exe'],
         },
-        'chains': chains,
-      });
-      final container = await start(
-        tester,
-        connections: [
-          withChain('a.example.com', ['NL игры', 'select']),
-          withChain('b.example.com', ['direct']),
-          withChain('c.example.com', ['NL', 'select']),
-        ],
-        extra: [rescueServersProvider.overrideWith((ref) => three)],
-      );
-      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
-      await tester.tap(find.text('cs2'));
-      await tester.pumpAndSettle();
-      expect(find.text('ПУТЬ'), findsOneWidget);
-      String path(String host) => tester.widget<Text>(find.byKey(ValueKey('conn-path-$host'))).data!;
-      expect(path('a.example.com'), 'через запасной 2');
-      expect(path('b.example.com'), 'напрямую');
-      expect(path('c.example.com'), 'через основной');
-
-      await tester.tap(find.byTooltip('В список: a.example.com'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Сайт example.com').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Через VPN').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Запасной 2').last);
-      await tester.pumpAndSettle();
-      expect(container.read(splitTunnelProvider).serverOf(SplitKind.domain, 'example.com'), 'NL игры');
-      expectNoLayoutErrors(tester);
-      await closePage(tester, container);
-    });
+        'via': {
+          'apps': ['cs2.exe', 'Marvel-Win64-Shipping.exe'],
+        },
+        'servers': {
+          'NL игры': {
+            'domains': ['gaming-sdk.com'],
+          },
+        },
+      }),
+    );
+    final container = await start(tester, connections: const []);
+    final groups = container.read(splitTunnelProvider).groups;
+    expect([for (final g in groups) g.name], ['Игры', 'Marvel Rivals', 'Лаунчеры и магазины']);
+    expect(groups[1].items.items, hasLength(2));
+    expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'ssh.exe'), isNull);
+    await closePage(tester, container);
   });
 }

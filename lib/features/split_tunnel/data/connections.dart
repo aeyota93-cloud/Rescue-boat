@@ -24,6 +24,7 @@ class NetConnection {
     required this.upload,
     required this.download,
     this.chains = const [],
+    this.closed = false,
   });
 
   final String id;
@@ -42,6 +43,24 @@ class NetConnection {
 
   /// Цепочка выходов из clash API: первый — настоящий выход (сервер или direct), дальше группы.
   final List<String> chains;
+
+  /// Уже закрылось: ядро его больше не отдаёт, но мы держим его ещё минуту, чтобы короткие
+  /// запросы было видно (liveConnectionsProvider).
+  final bool closed;
+
+  NetConnection asClosed() => NetConnection(
+    id: id,
+    exe: exe,
+    host: host,
+    ip: ip,
+    port: port,
+    network: network,
+    viaVpn: viaVpn,
+    upload: upload,
+    download: download,
+    chains: chains,
+    closed: true,
+  );
 
   factory NetConnection.fromJson(Map<String, dynamic> json) {
     final meta = json['metadata'] as Map<String, dynamic>? ?? const {};

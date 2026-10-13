@@ -80,13 +80,32 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
       resetAllToDefault([for (final v in values) (kind: kind, value: v)]);
 
   /// [resetToDefault] для записей разных видов одним сохранением («Авто» у группы).
-  void resetAllToDefault(Iterable<SplitRef> items) {
-    var updated = state;
-    for (final i in items) {
-      final game = i.kind == SplitKind.app && defaultBypassApps.any((d) => sameItem(i.kind, d, i.value));
-      updated = game ? updated.placed(i.kind, i.value, SplitTarget.bypass) : updated.without(i.kind, i.value);
-    }
+  void resetAllToDefault(Iterable<SplitRef> items) => setPlace(items, autoPlace);
+
+  /// Записи [items] — в место [place] одним сохранением: «Авто» (как [resetAllToDefault]),
+  /// мимо, через VPN или за сервер.
+  void setPlace(Iterable<SplitRef> items, SplitPlace place) => commit(_placedAll(state, items, place));
+
+  /// Добавить записи: место [place] и, если задана, группа [group] (нет такой — создаётся).
+  /// Окно «Добавить»: всё одним сохранением.
+  void addItems(Iterable<SplitRef> items, SplitPlace place, {String? group}) {
+    final list = items.toList();
+    var updated = _placedAll(state, list, place);
+    if (group != null && group.trim().isNotEmpty) updated = updated.inGroup(group, list);
     commit(updated);
+  }
+
+  static SplitTunnel _placedAll(SplitTunnel from, Iterable<SplitRef> items, SplitPlace place) {
+    var updated = from;
+    for (final i in items) {
+      if (place.target case final target?) {
+        updated = updated.placed(i.kind, i.value, target, server: place.server);
+      } else {
+        final game = i.kind == SplitKind.app && defaultBypassApps.any((d) => sameItem(i.kind, d, i.value));
+        updated = game ? updated.placed(i.kind, i.value, SplitTarget.bypass) : updated.without(i.kind, i.value);
+      }
+    }
+    return updated;
   }
 
   /// Записи — в группу [name] (нет такой — создаётся). Пути не меняются.

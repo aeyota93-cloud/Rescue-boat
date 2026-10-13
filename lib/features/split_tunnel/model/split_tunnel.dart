@@ -29,6 +29,14 @@ enum SplitKind {
 /// Одна запись списка: что это и как хранится.
 typedef SplitRef = ({SplitKind kind, String value});
 
+/// Куда идёт запись: [target] null — «Авто» (ни в одном списке), иначе список; [server] — тег
+/// сервера, за которым она закреплена (тогда [target] — «через VPN»).
+typedef SplitPlace = ({SplitTarget? target, String? server});
+
+const SplitPlace autoPlace = (target: null, server: null);
+const SplitPlace bypassPlace = (target: SplitTarget.bypass, server: null);
+const SplitPlace viaPlace = (target: SplitTarget.via, server: null);
+
 class SplitList {
   const SplitList({this.apps = const [], this.domains = const [], this.ips = const []});
 
@@ -149,6 +157,20 @@ class SplitTunnel {
     if (via.contains(kind, value)) return SplitTarget.via;
     if (bypass.contains(kind, value)) return SplitTarget.bypass;
     return null;
+  }
+
+  /// Где запись сейчас: «Авто», список или сервер.
+  SplitPlace placeOf(SplitKind kind, String value) => (target: targetOf(kind, value), server: serverOf(kind, value));
+
+  /// Общее место записей [items]; null — у них разные места (или записей нет).
+  SplitPlace? commonPlace(Iterable<SplitRef> items) {
+    SplitPlace? place;
+    for (final i in items) {
+      final p = placeOf(i.kind, i.value);
+      if (place != null && place != p) return null;
+      place = p;
+    }
+    return place;
   }
 
   /// Тег сервера, за которым закреплена запись; null — не закреплена.
