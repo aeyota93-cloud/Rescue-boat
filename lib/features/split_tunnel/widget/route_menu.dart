@@ -7,24 +7,27 @@ import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Шлюпка: пункты меню «куда направить» для одной записи (docs/redesign/servers-v2.md):
+/// Шлюпка: пункты меню «куда направить» (docs/redesign/servers-v2.md, docs/redesign/groups.md):
 /// «Через VPN ▸ Авто / Основной / Запасной 1 / …» с галочкой у текущего, «Мимо VPN»,
-/// «Сравнить пути…», «Убрать из списков». Если в профиле один сервер — подменю нет.
+/// «Сравнить пути…», «Убрать из списков», «В группу ▸ …». Если в профиле один сервер — подменю нет.
 ///
-/// [values] — несколько записей сразу (группа «Игры и лаунчеры»): выбор ставит все в одно место,
-/// галочка — только если там все. «Убрать из списков» у группы нет: у игр по умолчанию это «мимо».
+/// [items] — одна запись или все записи группы [group]: выбор ставит все в одно место, галочка —
+/// только если там все. У группы вместо «Убрать из списков» и «В группу» — «Переименовать» и
+/// «Удалить группу». [withGroups] = false — без пунктов про группы (окно «Сейчас в сети»).
 List<Widget> routeMenuItems({
+  required BuildContext context,
   required WidgetRef ref,
   required SplitTunnel split,
   required RescueServers? servers,
-  required SplitKind kind,
-  required List<String> values,
+  required List<SplitRef> items,
+  String? group,
+  bool withGroups = true,
   VoidCallback? onCompare,
 }) {
   final notifier = ref.read(splitTunnelProvider.notifier);
-  final single = values.length == 1;
-  final targets = {for (final v in values) split.targetOf(kind, v)};
-  final places = {for (final v in values) split.serverOf(kind, v)};
+  final first = items.first;
+  final targets = {for (final i in items) split.targetOf(i.kind, i.value)};
+  final places = {for (final i in items) split.serverOf(i.kind, i.value)};
   final target = targets.length == 1 ? targets.single : null;
   // Сервер, общий для всех; null — «Авто» у всех или места разные.
   final server = places.length == 1 ? places.single : null;
@@ -32,13 +35,14 @@ List<Widget> routeMenuItems({
   final several = servers != null && servers.several;
   // Закреплён за сервером, которого нет в подписке: показываем, чтобы было видно, где он сейчас.
   final lost = server != null && servers != null && servers.byTag(server) == null;
+  final inGroup = group == null ? split.groupOf(first.kind, first.value) : null;
 
-  void toVia() => notifier.addAll(SplitTarget.via, kind, values);
+  void toVia() => notifier.placeAll(items, SplitTarget.via);
 
   return [
     if (several)
       SubmenuButton(
-        key: ValueKey('route-via-${values.first}${single ? '' : '+${values.length - 1}'}'),
+        key: ValueKey('route-via-${group == null ? first.value : 'group-$group'}'),
         leadingIcon: _Check(via),
         menuChildren: [
           MenuItemButton(
@@ -49,7 +53,7 @@ List<Widget> routeMenuItems({
           for (final s in servers.servers)
             MenuItemButton(
               leadingIcon: _Check(server == s.tag),
-              onPressed: () => notifier.addAllToServer(s.tag, kind, values),
+              onPressed: () => notifier.placeAll(items, SplitTarget.via, server: s.tag),
               child: _ServerItem(server: s),
             ),
           if (lost)
@@ -64,35 +68,121 @@ List<Widget> routeMenuItems({
       MenuItemButton(leadingIcon: _Check(via), onPressed: toVia, child: const Text('Через VPN')),
     MenuItemButton(
       leadingIcon: _Check(target == SplitTarget.bypass),
-      onPressed: () => notifier.addAll(SplitTarget.bypass, kind, values),
+      onPressed: () => notifier.placeAll(items, SplitTarget.bypass),
       child: const Text('Мимо VPN'),
     ),
     if (onCompare != null)
       MenuItemButton(leadingIcon: const _Check(false), onPressed: onCompare, child: const Text('Сравнить пути…')),
-    if (single)
+    if (group == null)
       MenuItemButton(
         leadingIcon: const _Check(false),
-        onPressed: target == null ? null : () => notifier.removeEverywhere(kind, values),
+        onPressed: target == null ? null : () => notifier.removeEverywhere(first.kind, [first.value]),
         child: const Text('Убрать из списков'),
       ),
+    if (withGroups && group == null) ...[
+      const Divider(height: 8),
+      SubmenuButton(
+        key: ValueKey('route-group-${first.value}'),
+        leadingIcon: _Check(inGroup != null),
+        menuChildren: [
+          for (final g in split.groups)
+            MenuItemButton(
+              leadingIcon: _Check(inGroup != null && sameGroupName(g.name, inGroup)),
+              onPressed: () => notifier.moveToGroup(g.name, items),
+              child: Text(g.name),
+            ),
+          MenuItemButton(
+            leadingIcon: const _Check(false),
+            onPressed: () async {
+              final name = await showGroupNameDialog(context, title: 'Новая группа');
+              if (name != null) notifier.moveToGroup(name, items);
+            },
+            child: const Text('Новая группа…'),
+          ),
+        ],
+        child: const Text('В группу'),
+      ),
+      if (inGroup != null)
+        MenuItemButton(
+          leadingIcon: const _Check(false),
+          onPressed: () => notifier.removeFromGroup(items),
+          child: Text('Убрать из группы «$inGroup»'),
+        ),
+    ],
+    if (group != null) ...[
+      const Divider(height: 8),
+      MenuItemButton(
+        leadingIcon: const _Check(false),
+        onPressed: () async {
+          final name = await showGroupNameDialog(context, title: 'Переименовать группу', initial: group);
+          if (name != null) notifier.renameGroup(group, name);
+        },
+        child: const Text('Переименовать…'),
+      ),
+      MenuItemButton(
+        leadingIcon: const _Check(false),
+        onPressed: () => notifier.deleteGroup(group),
+        child: const Text('Удалить группу (записи останутся)'),
+      ),
+    ],
   ];
 }
 
-/// Кнопка «⋯» строки с меню [routeMenuItems]. [values] — для группы записей, иначе [value].
-class RouteMenuButton extends ConsumerWidget {
-  const RouteMenuButton({
-    super.key,
-    required this.kind,
-    required this.value,
-    required this.label,
-    this.values,
-    this.onCompare,
-    this.color,
-  });
+/// Окно с именем группы; null — отмена или пустое имя.
+Future<String?> showGroupNameDialog(BuildContext context, {required String title, String initial = ''}) =>
+    showDialog<String>(
+      context: context,
+      builder: (_) => _GroupNameDialog(title: title, initial: initial),
+    );
 
-  final SplitKind kind;
-  final String value;
-  final List<String>? values;
+class _GroupNameDialog extends StatefulWidget {
+  const _GroupNameDialog({required this.title, required this.initial});
+
+  final String title;
+  final String initial;
+
+  @override
+  State<_GroupNameDialog> createState() => _GroupNameDialogState();
+}
+
+class _GroupNameDialogState extends State<_GroupNameDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _done() {
+    final name = _controller.text.trim();
+    Navigator.of(context).pop(name.isEmpty ? null : name);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      key: const ValueKey('group-name'),
+      controller: _controller,
+      autofocus: true,
+      maxLength: 40,
+      decoration: const InputDecoration(hintText: 'Например, «Работа и дом»'),
+      onSubmitted: (_) => _done(),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
+      FilledButton(onPressed: _done, child: const Text('Готово')),
+    ],
+  );
+}
+
+/// Кнопка «⋯» строки с меню [routeMenuItems]: одна запись или группа [group] с записями [items].
+class RouteMenuButton extends ConsumerWidget {
+  const RouteMenuButton({super.key, required this.items, required this.label, this.group, this.onCompare, this.color});
+
+  final List<SplitRef> items;
+  final String? group;
 
   /// Как запись названа в строке — для подсказки и чтеца.
   final String label;
@@ -105,11 +195,12 @@ class RouteMenuButton extends ConsumerWidget {
     final servers = ref.watch(rescueServersProvider);
     return MenuAnchor(
       menuChildren: routeMenuItems(
+        context: context,
         ref: ref,
         split: split,
         servers: servers,
-        kind: kind,
-        values: values ?? [value],
+        items: items,
+        group: group,
         onCompare: onCompare,
       ),
       builder: (context, controller, _) => IconButton(

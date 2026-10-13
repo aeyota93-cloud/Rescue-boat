@@ -15,6 +15,7 @@ class TunnelEntry {
     required this.connections,
     required this.errors,
     this.server,
+    this.group,
   });
 
   final SplitKind kind;
@@ -27,6 +28,9 @@ class TunnelEntry {
 
   /// Тег сервера, за которым закреплена запись (тогда [target] — «через VPN»); null — «Авто» или не VPN.
   final String? server;
+
+  /// Имя группы записи; null — без группы.
+  final String? group;
 
   /// Из списка игр и лаунчеров по умолчанию.
   final bool isDefaultGame;
@@ -149,6 +153,7 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
       value: value,
       target: target,
       server: server,
+      group: split.groupOf(kind, value),
       isDefaultGame: kind == SplitKind.app && isDefaultGame(value),
       connections: count(kind, value),
       errors: errorsFor(kind, value, errors),
@@ -176,6 +181,13 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
     }
   }
 
+  // Записи групп, которых нет в списках: путь «Авто», но место в группе остаётся.
+  for (final g in split.groups) {
+    for (final i in g.items.items) {
+      if (once(i.kind, i.value)) addEntry(i.kind, i.value, null);
+    }
+  }
+
   // Программы в сети, которых нет в списках.
   final onlineApps = <String, String>{};
   for (final c in connections ?? const <NetConnection>[]) {
@@ -185,7 +197,7 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
   for (final exe in onlineApps.values) {
     if (split.targetOf(SplitKind.app, exe) != null) continue;
     auto++;
-    addEntry(SplitKind.app, exe, null);
+    if (once(SplitKind.app, exe)) addEntry(SplitKind.app, exe, null);
   }
 
   entries.sort((a, b) {

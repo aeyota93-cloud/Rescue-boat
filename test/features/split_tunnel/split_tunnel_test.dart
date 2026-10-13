@@ -87,4 +87,48 @@ void main() {
     expect(vpn.exe, 'chrome.exe');
     expect(vpn.viaVpn, isTrue);
   });
+
+  group('группы', () {
+    const ssh = (kind: SplitKind.app, value: 'ssh.exe');
+    const router = (kind: SplitKind.domain, value: 'mwlogin.net');
+    const base = SplitTunnel(
+      bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
+    );
+
+    test('запись — только в одной группе; «убрать из списков» оставляет её в группе', () {
+      final s = base.inGroup('Работа', [ssh, router]).inGroup('Дом', [router]);
+      expect(s.groupOf(SplitKind.app, 'ssh.exe'), 'Работа');
+      expect(s.groupOf(SplitKind.domain, 'mwlogin.net'), 'Дом');
+      final removed = s.without(SplitKind.app, 'ssh.exe');
+      expect(removed.targetOf(SplitKind.app, 'ssh.exe'), isNull);
+      expect(removed.groupOf(SplitKind.app, 'ssh.exe'), 'Работа');
+    });
+
+    test('пустая группа исчезает; переименование в занятое имя сливает группы', () {
+      final s = base.inGroup('Работа', [ssh]).inGroup('Дом', [router]);
+      expect(s.outOfGroups([ssh]).groups.map((g) => g.name), ['Дом']);
+      final merged = s.renameGroup('Работа', ' дом ');
+      expect(merged.groups.single.name, 'Дом');
+      expect(merged.groups.single.items.items, hasLength(2));
+    });
+
+    test('сохраняются в файл и читаются обратно; файл без групп — стандартные группы', () {
+      final s = base.inGroup('Работа', [ssh, router]);
+      final back = SplitTunnel.fromJson(s.toJson());
+      expect(back.groups.single.name, 'Работа');
+      expect(back.groups.single.items.items, [ssh, router]);
+      final old = SplitTunnel.fromJson(const {
+        'bypass': {
+          'apps': ['STEAM.exe', 'ssh.exe'],
+        },
+      });
+      expect(old.groups.single.name, 'Лаунчеры и магазины');
+      expect(old.groups.single.items.apps, ['STEAM.exe']);
+    });
+
+    test('стандартные группы покрывают все игры по умолчанию', () {
+      final grouped = SplitTunnel.defaults.groups.expand((g) => g.items.apps).toSet();
+      expect(grouped, containsAll(defaultBypassApps));
+    });
+  });
 }

@@ -1,5 +1,6 @@
 /// Шлюпка: раздельный туннель — два списка, «через VPN» и «мимо VPN», плюс пункты, закреплённые
-/// за конкретным сервером подписки (docs/redesign/servers-v2.md).
+/// за конкретным сервером подписки (docs/redesign/servers-v2.md), и группы записей
+/// (docs/redesign/groups.md) — только для удобства в приложении, ядро их не видит.
 ///
 /// Списки хранятся в split-tunnel.json рядом с настройками и выгружаются в наборы правил
 /// sing-box (папка split/), за которыми следит ядро (Rescue-boat-core, split_tunnel.go):
@@ -25,6 +26,9 @@ enum SplitKind {
   final String title;
 }
 
+/// Одна запись списка: что это и как хранится.
+typedef SplitRef = ({SplitKind kind, String value});
+
 class SplitList {
   const SplitList({this.apps = const [], this.domains = const [], this.ips = const []});
 
@@ -33,6 +37,12 @@ class SplitList {
   final List<String> ips;
 
   bool get isEmpty => apps.isEmpty && domains.isEmpty && ips.isEmpty;
+
+  /// Все записи: программы, сайты, сети.
+  List<SplitRef> get items => [
+    for (final kind in SplitKind.values)
+      for (final value in of(kind)) (kind: kind, value: value),
+  ];
 
   int get length => apps.length + domains.length + ips.length;
 
@@ -98,8 +108,27 @@ class SplitList {
   };
 }
 
+/// Группа записей с именем («Игры», «Работа и дом»). Путь у каждой записи свой, группа только
+/// собирает их в одну строку и меняет путь всем сразу.
+class SplitGroup {
+  const SplitGroup({required this.name, this.items = const SplitList()});
+
+  final String name;
+  final SplitList items;
+
+  Map<String, dynamic> toJson() => {'name': name, ...items.toJson()};
+
+  factory SplitGroup.fromJson(Map<String, dynamic> json) =>
+      SplitGroup(name: json['name'] as String? ?? '', items: SplitList.fromJson(json));
+}
+
 class SplitTunnel {
-  const SplitTunnel({this.bypass = const SplitList(), this.via = const SplitList(), this.servers = const {}});
+  const SplitTunnel({
+    this.bypass = const SplitList(),
+    this.via = const SplitList(),
+    this.servers = const {},
+    this.groups = const [],
+  });
 
   final SplitList bypass;
 
@@ -108,6 +137,9 @@ class SplitTunnel {
 
   /// Закреплённые за сервером: тег выхода → пункты. Пустых списков здесь не держим.
   final Map<String, SplitList> servers;
+
+  /// Группы по порядку. Запись — не больше чем в одной; пустых групп не держим.
+  final List<SplitGroup> groups;
 
   SplitList list(SplitTarget target) => target == SplitTarget.bypass ? bypass : via;
 
@@ -132,18 +164,104 @@ class SplitTunnel {
   SplitList get viaAll => via.union(servers.values);
 
   SplitTunnel withList(SplitTarget target, SplitList list) => target == SplitTarget.bypass
-      ? SplitTunnel(bypass: list, via: via, servers: servers)
-      : SplitTunnel(bypass: bypass, via: list, servers: servers);
+      ? SplitTunnel(bypass: list, via: via, servers: servers, groups: groups)
+      : SplitTunnel(bypass: bypass, via: list, servers: servers, groups: groups);
 
   SplitTunnel withServer(String tag, SplitList list) =>
-      SplitTunnel(bypass: bypass, via: via, servers: _clean({...servers, tag: list}));
+      SplitTunnel(bypass: bypass, via: via, servers: _clean({...servers, tag: list}), groups: groups);
 
-  /// Убрать запись отовсюду: из обоих списков и со всех серверов.
+  SplitTunnel withGroups(List<SplitGroup> list) => SplitTunnel(
+    bypass: bypass,
+    via: via,
+    servers: servers,
+    groups: List.unmodifiable(list.where((g) => !g.items.isEmpty)),
+  );
+
+  /// Убрать запись отовсюду: из обоих списков и со всех серверов. Из группы она не уходит:
+  /// в группе остаётся с «Авто».
   SplitTunnel without(SplitKind kind, String value) => SplitTunnel(
     bypass: bypass.without(kind, value),
     via: via.without(kind, value),
     servers: _clean({for (final e in servers.entries) e.key: e.value.without(kind, value)}),
+    groups: groups,
   );
+
+  /// Имя группы записи; null — без группы.
+  String? groupOf(SplitKind kind, String value) {
+    for (final g in groups) {
+      if (g.items.contains(kind, value)) return g.name;
+    }
+    return null;
+  }
+
+  /// Группа с этим именем (без учёта регистра); null — нет такой.
+  SplitGroup? group(String name) {
+    for (final g in groups) {
+      if (sameGroupName(g.name, name)) return g;
+    }
+    return null;
+  }
+
+  /// Записи [items] — в группу [name] (нет такой — создаётся в конце). Из других групп уходят.
+  SplitTunnel inGroup(String name, Iterable<SplitRef> items) {
+    final out = outOfGroups(items);
+    final existing = out.group(name);
+    var list = existing?.items ?? const SplitList();
+    for (final i in items) {
+      list = list.withItem(i.kind, i.value);
+    }
+    final updated = SplitGroup(name: existing?.name ?? name.trim(), items: list);
+    return out.withGroups([
+      for (final g in out.groups) identical(g, existing) ? updated : g,
+      if (existing == null) updated,
+    ]);
+  }
+
+  /// Записи [items] — из всех групп (пути не меняются).
+  SplitTunnel outOfGroups(Iterable<SplitRef> items) => withGroups([
+    for (final g in groups) SplitGroup(name: g.name, items: items.fold(g.items, (l, i) => l.without(i.kind, i.value))),
+  ]);
+
+  /// Переименовать группу. Если имя занято другой группой — записи сливаются в неё.
+  SplitTunnel renameGroup(String from, String to) {
+    final g = group(from);
+    final name = to.trim();
+    if (g == null || name.isEmpty) return this;
+    final other = group(name);
+    if (other != null && !identical(other, g)) return withoutGroup(from).inGroup(other.name, g.items.items);
+    return withGroups([for (final x in groups) identical(x, g) ? SplitGroup(name: name, items: g.items) : x]);
+  }
+
+  /// Удалить группу; записи остаются в списках, где были.
+  SplitTunnel withoutGroup(String name) => withGroups([
+    for (final g in groups)
+      if (!sameGroupName(g.name, name)) g,
+  ]);
+
+  /// Разложить записи по стандартным группам ([suggestedGroups]): только те, что есть в списках
+  /// и ещё не в группе. Для старых файлов без групп и для первого запуска.
+  SplitTunnel withSuggestedGroups() {
+    var out = this;
+    for (final MapEntry(key: name, value: catalog) in suggestedGroups.entries) {
+      final items = [
+        for (final i in catalog.items)
+          if (out.targetOf(i.kind, i.value) != null && out.groupOf(i.kind, i.value) == null)
+            (kind: i.kind, value: _stored(i.kind, i.value)),
+      ];
+      if (items.isNotEmpty) out = out.inGroup(name, items);
+    }
+    return out;
+  }
+
+  /// Как запись записана в списках (регистр имени программы может отличаться от каталога).
+  String _stored(SplitKind kind, String value) {
+    for (final l in [via, bypass, ...servers.values]) {
+      for (final v in l.of(kind)) {
+        if (sameItem(kind, v, value)) return v;
+      }
+    }
+    return value;
+  }
 
   /// Поставить запись в одно место: [target] или, если задан [server], за этим сервером
   /// (тогда [target] — «через VPN»). Из остальных мест запись убирается.
@@ -159,12 +277,15 @@ class SplitTunnel {
     'bypass': bypass.toJson(),
     'via': via.toJson(),
     'servers': {for (final e in servers.entries) e.key: e.value.toJson()},
+    'groups': [for (final g in groups) g.toJson()],
   };
 
-  /// Старый файл без `servers` читается: серверных пунктов просто нет.
+  /// Старый файл без `servers` читается: серверных пунктов просто нет. Без `groups` — записи
+  /// раскладываются по стандартным группам (см. [withSuggestedGroups]).
   factory SplitTunnel.fromJson(Map<String, dynamic> json) {
     final raw = json['servers'];
-    return SplitTunnel(
+    final rawGroups = json['groups'];
+    final lists = SplitTunnel(
       bypass: SplitList.fromJson(json['bypass'] as Map<String, dynamic>? ?? const {}),
       via: SplitList.fromJson(json['via'] as Map<String, dynamic>? ?? const {}),
       servers: raw is Map<String, dynamic>
@@ -174,6 +295,11 @@ class SplitTunnel {
             })
           : const {},
     );
+    if (rawGroups is! List<dynamic>) return lists.withSuggestedGroups();
+    return lists.withGroups([
+      for (final g in rawGroups)
+        if (g is Map<String, dynamic>) SplitGroup.fromJson(g),
+    ]);
   }
 
   static Map<String, SplitList> _clean(Map<String, SplitList> map) => Map.unmodifiable({
@@ -181,9 +307,14 @@ class SplitTunnel {
       if (!e.value.isEmpty) e.key: e.value,
   });
 
-  /// Первый запуск: игры и лаунчеры мимо VPN (ниже пинг, загрузки не идут через сервер).
-  static SplitTunnel get defaults => const SplitTunnel(bypass: SplitList(apps: defaultBypassApps));
+  /// Первый запуск: игры и лаунчеры мимо VPN (ниже пинг, загрузки не идут через сервер),
+  /// разложены по стандартным группам.
+  static SplitTunnel get defaults =>
+      const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)).withSuggestedGroups();
 }
+
+/// Имена групп сравниваем без учёта регистра и пробелов по краям.
+bool sameGroupName(String a, String b) => a.trim().toLowerCase() == b.trim().toLowerCase();
 
 /// Совпадает с processMatchers в ядре: имя без учёта регистра, после «\» или «/» или с начала.
 String processPathRegex(String name) => r'(?i)(^|[\\/])' + RegExp.escape(name) + r'$';
@@ -294,6 +425,72 @@ String punycodeEncode(String input) {
   }
   return output.toString();
 }
+
+/// Стандартные группы: имя → что в неё попадает, если запись есть в списках. Порядок — порядок
+/// групп на экране. Все игры и лаунчеры из [defaultBypassApps] здесь разложены.
+const suggestedGroups = <String, SplitList>{
+  'Игры': SplitList(
+    apps: [
+      'cs2.exe',
+      'dota2.exe',
+      'destiny2.exe',
+      'EscapeFromTarkov.exe',
+      'FortniteClient-Win64-Shipping.exe',
+      'GTA5.exe',
+      'Minecraft.Windows.exe',
+      'Overwatch.exe',
+      'r5apex.exe',
+      'RainbowSix.exe',
+      'RustClient.exe',
+      'TslGame.exe',
+      'VALORANT-Win64-Shipping.exe',
+      'WorldOfTanks.exe',
+      'WorldOfWarships.exe',
+    ],
+  ),
+  'Marvel Rivals': SplitList(apps: ['Marvel-Win64-Shipping.exe', 'Marvel.exe'], domains: ['gaming-sdk.com']),
+  'Античиты': SplitList(apps: ['BEService.exe', 'EasyAntiCheat.exe', 'EasyAntiCheat_EOS.exe', 'vgc.exe']),
+  'Лаунчеры и магазины': SplitList(
+    apps: [
+      'steam.exe',
+      'steamservice.exe',
+      'steamwebhelper.exe',
+      'EpicGamesLauncher.exe',
+      'EpicWebHelper.exe',
+      'EADesktop.exe',
+      'EABackgroundService.exe',
+      'Battle.net.exe',
+      'GalaxyClient.exe',
+      'UbisoftConnect.exe',
+      'upc.exe',
+      'wgc.exe',
+      'lgc.exe',
+    ],
+    domains: ['store.steampowered.com', 'api.steampowered.com', 'steamcommunity.com'],
+  ),
+  'League of Legends и Riot': SplitList(
+    apps: [
+      'League of Legends.exe',
+      'LeagueClient.exe',
+      'LeagueClientUx.exe',
+      'LeagueClientUxRender.exe',
+      'Riot Client.exe',
+      'RiotClientServices.exe',
+      'RiotClientUx.exe',
+      'RiotClientCrashHandler.exe',
+    ],
+  ),
+  'Общение': SplitList(apps: ['Discord.exe', 'Telegram.exe'], domains: ['discord.com', 'discord.gg']),
+  'Служебное для игр': SplitList(
+    apps: [
+      'gamingservices.exe',
+      'GamingServicesNet.exe',
+      'GameInputRedistService.exe',
+      'gameoverlayui64.exe',
+      'NVIDIA Overlay.exe',
+    ],
+  ),
+};
 
 /// Лаунчеры, античиты и популярные сетевые игры (имена как в Диспетчере задач → «Подробности»).
 const defaultBypassApps = [

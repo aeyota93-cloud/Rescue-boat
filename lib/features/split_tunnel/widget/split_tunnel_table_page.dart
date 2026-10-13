@@ -41,7 +41,8 @@ const _compactRows = 30;
 /// одном списке), «Мимо» и «VPN». Изменения действуют сразу, без переподключения.
 ///
 /// Сверху закладки-«папки» «Все / Мимо / Через VPN» с поиском, ниже — тёмный список (deep):
-/// первая строка жёлтая, игры и лаунчеры по умолчанию свёрнуты в одну строку с пунктирной рамкой.
+/// первая строка жёлтая, группы записей (docs/redesign/groups.md) свёрнуты в строки с пунктирной
+/// рамкой под остальными записями: у группы свой переключатель и меню — для всех записей сразу.
 /// Трафика по программам нет — только число соединений сейчас и ошибки за сутки.
 ///
 /// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка с кнопками, закладки
@@ -59,7 +60,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final groups = ref.watch(errorGroupsProvider(InsightsPeriod.day)).valueOrNull ?? const <ErrorGroup>[];
     final query = useState('');
     final tab = useState(_Tab.all);
-    final gamesOpen = useState(false);
+    final openGroups = useState(const <String>{});
     final limit = useState(_compactRows);
 
     final data = buildTunnelRows(split, connections, groups);
@@ -125,9 +126,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
             context,
             ref,
             data.entries,
+            split.groups,
             tab.value,
             query.value,
-            gamesOpen,
+            openGroups,
             limit,
             wide: constraints.maxWidth >= _wideFrom,
             pinned: pinned,
@@ -173,9 +175,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     List<TunnelEntry> all,
+    List<SplitGroup> groups,
     _Tab tab,
     String query,
-    ValueNotifier<bool> gamesOpen,
+    ValueNotifier<Set<String>> openGroups,
     ValueNotifier<int> limit, {
     required bool wide,
     required bool pinned,
@@ -189,11 +192,13 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       return byTab && (query.isEmpty || e.value.toLowerCase().contains(query));
     }).toList();
 
-    // Игры по умолчанию, которые не в сети, сворачиваем в одну строку внизу (при поиске — не сворачиваем).
-    // Куда бы они ни шли: иначе после «VPN» у группы игры рассыпались бы по списку, а строка пропала.
-    final games = query.isEmpty ? entries.where((e) => e.isDefaultGame && !e.online).toList() : const <TunnelEntry>[];
-    final collapse = games.length >= 2;
-    final plain = collapse ? entries.where((e) => !games.contains(e)).toList() : entries;
+    // Записи групп — в свёрнутых строках групп под остальными, куда бы они ни шли (при поиске — без
+    // групп, всё одним списком). Группа без записей на этой закладке не показывается.
+    final members = <String, List<TunnelEntry>>{
+      if (query.isEmpty)
+        for (final g in groups) g.name: entries.where((e) => e.group == g.name).toList(),
+    }..removeWhere((_, list) => list.isEmpty);
+    final plain = entries.where((e) => !members.containsKey(e.group)).toList();
 
     // Прокручивается вся страница — длинный список обрезаем; в закреплённом режиме строит лениво.
     final shownPlain = pinned ? plain : plain.take(limit.value).toList();
@@ -206,14 +211,14 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           total: plain.length,
           onPressed: () => limit.value += _compactRows,
         ),
-      if (collapse) ...[
-        _gamesRow(ref, games, gamesOpen, wide: wide),
-        if (gamesOpen.value)
-          for (final g in games) _entryRow(context, ref, g, highlighted: false, wide: wide, indent: true),
+      for (final MapEntry(key: name, value: list) in members.entries) ...[
+        _groupRow(ref, name, list, openGroups, wide: wide),
+        if (openGroups.value.contains(name))
+          for (final e in list) _entryRow(context, ref, e, highlighted: false, wide: wide, indent: true),
       ],
     ];
 
-    final empty = plain.isEmpty && !collapse;
+    final empty = plain.isEmpty && members.isEmpty;
     final emptyNote = Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Text(
@@ -245,52 +250,61 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     );
   }
 
-  Widget _gamesRow(WidgetRef ref, List<TunnelEntry> games, ValueNotifier<bool> open, {required bool wide}) {
-    final errors = games.fold(0, (sum, g) => sum + g.errors);
-    final values = [for (final g in games) g.value];
-    // Общее место всех игр; разные — переключатель без выбора, в подписи «разные пути».
-    final choices = {for (final g in games) _choiceOf(g)};
-    final servers = {for (final g in games) g.server};
+  Widget _groupRow(
+    WidgetRef ref,
+    String name,
+    List<TunnelEntry> list,
+    ValueNotifier<Set<String>> open, {
+    required bool wide,
+  }) {
+    final errors = list.fold(0, (sum, e) => sum + e.errors);
+    final known = list.where((e) => e.connections != null);
+    final connections = known.isEmpty ? null : known.fold(0, (sum, e) => sum + e.connections!);
+    final items = [for (final e in list) (kind: e.kind, value: e.value)];
+    final isOpen = open.value.contains(name);
+    // Общее место всех записей; разные — переключатель без выбора, в подписи «разные пути».
+    final choices = {for (final e in list) _choiceOf(e)};
+    final servers = {for (final e in list) e.server};
     final place = switch ((choices.length, servers.length)) {
       (1, 1) when servers.single != null => serverPlaceLabel(servers.single!, ref.watch(rescueServersProvider)),
       (1, 1) => null,
+      // Все через VPN, но кто через «Авто», кто за сервером.
+      (1, _) => 'разные серверы',
       _ => 'разные пути',
     };
-    final title = 'Игры и лаунчеры · ${games.length}';
     return _TunnelRow(
-      key: const ValueKey('tunnel-games'),
+      key: ValueKey('tunnel-group-$name'),
       dashed: true,
       wide: wide,
-      onTap: () => open.value = !open.value,
-      semanticLabel: 'Игры и лаунчеры, ${games.length}, ${open.value ? 'свернуть' : 'раскрыть'}',
-      icon: Icons.sports_esports_rounded,
-      title: title,
-      subtitle: ['список по умолчанию', ?place, if (open.value) 'свернуть' else 'раскрыть'].join(' · '),
-      trailingIcon: open.value ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-      kind: 'Программы',
-      connections: 0,
+      onTap: () => open.value = isOpen ? ({...open.value}..remove(name)) : {...open.value, name},
+      semanticLabel: 'Группа $name, ${list.length}, ${isOpen ? 'свернуть' : 'раскрыть'}',
+      icon: Icons.folder_rounded,
+      title: '$name · ${list.length}',
+      subtitle: ['группа', ?place, if (isOpen) 'свернуть' else 'раскрыть'].join(' · '),
+      trailingIcon: isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+      kind: 'Группа',
+      connections: connections,
       errors: errors,
       menu: (onAccent) => RouteMenuButton(
-        kind: SplitKind.app,
-        value: values.first,
-        values: values,
-        label: 'все игры и лаунчеры',
+        items: items,
+        group: name,
+        label: 'группа $name',
         color: DeepTileColors.of(highlighted: onAccent).foreground,
       ),
       route: (highlighted) => RouteSwitch(
         value: choices.length == 1 ? choices.single : null,
-        semanticLabel: 'Куда идут игры и лаунчеры',
+        semanticLabel: 'Куда идёт группа $name',
         width: wide ? _routeWidth : null,
         onAccent: highlighted,
         onChanged: (choice) {
           final notifier = ref.read(splitTunnelProvider.notifier);
           switch (choice) {
             case RouteChoice.auto:
-              notifier.resetToDefault(SplitKind.app, values);
+              notifier.resetAllToDefault(items);
             case RouteChoice.vpn:
-              notifier.addAll(SplitTarget.via, SplitKind.app, values);
+              notifier.placeAll(items, SplitTarget.via);
             case RouteChoice.bypass:
-              notifier.addAll(SplitTarget.bypass, SplitKind.app, values);
+              notifier.placeAll(items, SplitTarget.bypass);
           }
         },
       ),
@@ -319,8 +333,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       highlighted: highlighted,
       compare: compare,
       menu: (onAccent) => RouteMenuButton(
-        kind: e.kind,
-        value: e.value,
+        items: [(kind: e.kind, value: e.value)],
         label: title,
         onCompare: compare?.onPressed,
         color: DeepTileColors.of(highlighted: onAccent).foreground,
@@ -478,7 +491,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Вернуть списки по умолчанию?'),
-        content: const Text('Оба списка очистятся, в «Мимо VPN» вернутся игры и лаунчеры.'),
+        content: const Text('Оба списка и группы очистятся, в «Мимо VPN» вернутся игры и лаунчеры.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Вернуть')),
@@ -1093,22 +1106,24 @@ class _AppConnectionsDialog extends ConsumerWidget {
                           if (c.host.isNotEmpty)
                             SubmenuButton(
                               menuChildren: routeMenuItems(
+                                context: context,
                                 ref: ref,
                                 split: split,
                                 servers: servers,
-                                kind: SplitKind.domain,
-                                values: [siteOf(c.host)],
+                                items: [(kind: SplitKind.domain, value: siteOf(c.host))],
+                                withGroups: false,
                               ),
                               child: Text('Сайт ${siteOf(c.host)}'),
                             ),
                           if (c.ip.isNotEmpty)
                             SubmenuButton(
                               menuChildren: routeMenuItems(
+                                context: context,
                                 ref: ref,
                                 split: split,
                                 servers: servers,
-                                kind: SplitKind.ip,
-                                values: [cidrOf(c.ip)],
+                                items: [(kind: SplitKind.ip, value: cidrOf(c.ip))],
+                                withGroups: false,
                               ),
                               child: Text('IP ${c.ip}'),
                             ),

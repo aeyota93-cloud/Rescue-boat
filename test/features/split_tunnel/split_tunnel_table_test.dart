@@ -158,6 +158,12 @@ void main() {
         const SplitTunnel(
           via: SplitList(apps: ['Telegram.exe', 'Discord.exe'], domains: ['youtube.com']),
           bypass: SplitList(apps: defaultBypassApps, domains: ['kinopoisk.ru'], ips: ['192.168.0.0/16']),
+          groups: [
+            SplitGroup(
+              name: 'Игры и лаунчеры',
+              items: SplitList(apps: defaultBypassApps),
+            ),
+          ],
         ),
       );
       final container = await start(
@@ -382,19 +388,21 @@ void main() {
     await closePage(tester, container);
   });
 
-  testWidgets('группа игр: «VPN» переносит все игры по умолчанию', (tester) async {
-    writeState(const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)));
+  testWidgets('стандартные группы: «VPN» у группы «Игры» переносит только её игры', (tester) async {
+    writeState(SplitTunnel.defaults);
     final container = await start(tester);
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
 
-    final groupSwitch = find.byWidgetPredicate(
-      (w) => w is RouteSwitch && w.semanticLabel == 'Куда идут игры и лаунчеры',
-    );
+    final games = suggestedGroups['Игры']!.apps;
+    expect(find.text('Игры · ${games.length}'), findsOneWidget);
+    expect(find.text('Античиты · 4'), findsOneWidget);
+    expect(find.text('steam'), findsNothing);
+    final groupSwitch = find.byWidgetPredicate((w) => w is RouteSwitch && w.semanticLabel == 'Куда идёт группа Игры');
     await tester.tap(find.descendant(of: groupSwitch, matching: find.text('VPN')));
     await tester.pumpAndSettle();
     final state = container.read(splitTunnelProvider);
-    expect(state.via.apps, hasLength(defaultBypassApps.length));
-    expect(state.bypass.apps, isEmpty);
+    expect(state.via.apps, unorderedEquals(games));
+    expect(state.bypass.apps, hasLength(defaultBypassApps.length - games.length));
 
     await closePage(tester, container);
   });
@@ -583,7 +591,7 @@ void main() {
       );
       await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
       await openMenu(tester, 'youtube.com');
-      expect(find.byType(SubmenuButton), findsNothing);
+      expect(find.byKey(const ValueKey('route-via-youtube.com')), findsNothing);
       await tester.tap(find.text('Через VPN').last);
       await tester.pumpAndSettle();
       expect(container.read(splitTunnelProvider).via.domains, ['youtube.com']);
@@ -591,8 +599,13 @@ void main() {
       await closePage(tester, container);
     });
 
-    testWidgets('группа игр: не пропадает после «VPN», меню ставит все игры за сервер', (tester) async {
-      writeState(const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)));
+    testWidgets('своя группа: создать из меню, путь всем сразу и по одной, переименовать, удалить', (tester) async {
+      writeState(
+        const SplitTunnel(
+          bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
+          via: SplitList(domains: ['youtube.com']),
+        ),
+      );
       final container = await start(
         tester,
         connections: const [],
@@ -600,48 +613,102 @@ void main() {
       );
       await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
       SplitTunnel state() => container.read(splitTunnelProvider);
-      final games = find.byKey(const ValueKey('tunnel-games'));
+
+      Future<void> toGroup(String row, {String? existing, String? created}) async {
+        await openMenu(tester, row);
+        await tester.tap(find.text('В группу').last);
+        await tester.pumpAndSettle();
+        if (existing != null) {
+          await tester.tap(find.text(existing).last);
+        } else {
+          await tester.tap(find.text('Новая группа…').last);
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byKey(const ValueKey('group-name')), created!);
+          await tester.tap(find.text('Готово'));
+        }
+        await tester.pumpAndSettle();
+      }
+
+      await toGroup('ssh', created: 'Работа и дом');
+      await toGroup('mwlogin.net', existing: 'Работа и дом');
+      expect(state().groups.single.name, 'Работа и дом');
+      expect(state().groups.single.items.items, hasLength(2));
+      // Пути не поменялись.
+      expect(state().bypass.apps, ['ssh.exe']);
+
+      final group = find.byKey(const ValueKey('tunnel-group-Работа и дом'));
+      expect(group, findsOneWidget);
+      expect(find.text('Работа и дом · 2'), findsOneWidget);
+      expect(find.text('ssh'), findsNothing);
       RouteChoice? groupChoice() =>
-          tester.widget<RouteSwitch>(find.descendant(of: games, matching: find.byType(RouteSwitch))).value;
+          tester.widget<RouteSwitch>(find.descendant(of: group, matching: find.byType(RouteSwitch))).value;
+      expect(groupChoice(), RouteChoice.bypass);
 
-      // «VPN» у группы: все игры через VPN, строка группы на месте.
-      await tester.ensureVisible(games);
-      await tester.tap(find.descendant(of: games, matching: find.text('VPN')));
-      await tester.pumpAndSettle();
-      expect(state().via.apps, unorderedEquals(defaultBypassApps));
-      expect(games, findsOneWidget);
-      expect(groupChoice(), RouteChoice.vpn);
-
-      // «⋯ → Через VPN ▸ Запасной 2»: все игры за сервером, в подписи группы — сервер.
-      await openMenu(tester, 'все игры и лаунчеры');
+      // «⋯ группы → Через VPN ▸ Запасной 2»: все записи за сервером, группа на месте.
+      await openMenu(tester, 'группа Работа и дом');
       expect(find.text('Убрать из списков'), findsNothing);
       await tester.tap(find.text('Через VPN').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Запасной 2').last);
       await tester.pumpAndSettle();
-      expect(state().servers['NL игры']?.apps, unorderedEquals(defaultBypassApps));
-      expect(state().via.apps, isEmpty);
-      expect(
-        find.descendant(of: games, matching: find.text('список по умолчанию · через запасной 2 · раскрыть')),
-        findsOneWidget,
-      );
+      expect(state().servers['NL игры']?.items, hasLength(2));
+      expect(state().bypass.isEmpty, isTrue);
+      expect(find.descendant(of: group, matching: find.text('группа · через запасной 2 · раскрыть')), findsOneWidget);
 
-      // Одну игру — мимо: у группы разные пути, переключатель без выбора, группа на месте.
-      container.read(splitTunnelProvider.notifier).add(SplitTarget.bypass, SplitKind.app, defaultBypassApps.first);
+      // Раскрыть и одну запись — мимо: «разные пути», переключатель группы без выбора.
+      await tester.tap(find.text('Работа и дом · 2'));
       await tester.pumpAndSettle();
-      expect(games, findsOneWidget);
+      expect(find.text('ssh'), findsOneWidget);
+      await tester.tap(find.descendant(of: routeSwitch('ssh'), matching: find.text('Мимо')));
+      await tester.pumpAndSettle();
       expect(groupChoice(), isNull);
-      expect(
-        find.descendant(of: games, matching: find.text('список по умолчанию · разные пути · раскрыть')),
-        findsOneWidget,
-      );
+      expect(find.descendant(of: group, matching: find.text('группа · разные пути · свернуть')), findsOneWidget);
 
-      // «Мимо» у группы — все снова мимо VPN.
-      await tester.tap(find.descendant(of: games, matching: find.text('Мимо')));
+      // «Мимо» у группы — все мимо.
+      await tester.tap(find.descendant(of: group, matching: find.text('Мимо')));
       await tester.pumpAndSettle();
-      expect(state().bypass.apps, unorderedEquals(defaultBypassApps));
+      expect(state().bypass.items, hasLength(2));
       expect(state().servers, isEmpty);
+
+      // Переименовать; удалить — записи остаются в списках, строки снова отдельные.
+      await openMenu(tester, 'группа Работа и дом');
+      await tester.tap(find.text('Переименовать…').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('group-name')), 'Дом');
+      await tester.tap(find.text('Готово'));
+      await tester.pumpAndSettle();
+      expect(find.text('Дом · 2'), findsOneWidget);
+      await openMenu(tester, 'группа Дом');
+      await tester.tap(find.text('Удалить группу (записи останутся)').last);
+      await tester.pumpAndSettle();
+      expect(state().groups, isEmpty);
+      expect(state().bypass.items, hasLength(2));
+      expect(find.text('ssh'), findsOneWidget);
       expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+
+    testWidgets('старый файл без групп: записи раскладываются по стандартным группам', (tester) async {
+      File('${dir.path}/split-tunnel.json').writeAsStringSync(
+        jsonEncode({
+          'bypass': {
+            'apps': ['steam.exe', 'ssh.exe'],
+          },
+          'via': {
+            'apps': ['cs2.exe', 'Marvel-Win64-Shipping.exe'],
+          },
+          'servers': {
+            'NL игры': {
+              'domains': ['gaming-sdk.com'],
+            },
+          },
+        }),
+      );
+      final container = await start(tester, connections: const []);
+      final groups = container.read(splitTunnelProvider).groups;
+      expect([for (final g in groups) g.name], ['Игры', 'Marvel Rivals', 'Лаунчеры и магазины']);
+      expect(groups[1].items.items, hasLength(2));
+      expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'ssh.exe'), isNull);
       await closePage(tester, container);
     });
 

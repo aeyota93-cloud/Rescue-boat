@@ -51,11 +51,12 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
   void addToServer(String tag, SplitKind kind, String value) =>
       commit(state.placed(kind, value, SplitTarget.via, server: tag));
 
-  /// Много записей одного вида за сервер [tag] одним сохранением (меню группы «Игры и лаунчеры»).
-  void addAllToServer(String tag, SplitKind kind, Iterable<String> values) {
+  /// Записи [items] (любых видов) в одно место: [target] или за сервером [server] — одним
+  /// сохранением. Так группа меняет путь всем своим записям.
+  void placeAll(Iterable<SplitRef> items, SplitTarget target, {String? server}) {
     var updated = state;
-    for (final v in values) {
-      updated = updated.placed(kind, v, SplitTarget.via, server: tag);
+    for (final i in items) {
+      updated = updated.placed(i.kind, i.value, target, server: server);
     }
     commit(updated);
   }
@@ -75,11 +76,29 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
   /// «Авто» в таблице туннеля: как по умолчанию. Обычные записи убираются из обоих списков
   /// (решают общие правила), а игры из стандартного списка снова идут мимо VPN — иначе их
   /// зарубежные серверы уходили бы в VPN.
-  void resetToDefault(SplitKind kind, Iterable<String> values) {
-    final games = values.where((v) => kind == SplitKind.app && defaultBypassApps.any((d) => sameItem(kind, d, v)));
-    removeEverywhere(kind, values.where((v) => !games.contains(v)).toList());
-    if (games.isNotEmpty) addAll(SplitTarget.bypass, kind, games.toList());
+  void resetToDefault(SplitKind kind, Iterable<String> values) =>
+      resetAllToDefault([for (final v in values) (kind: kind, value: v)]);
+
+  /// [resetToDefault] для записей разных видов одним сохранением («Авто» у группы).
+  void resetAllToDefault(Iterable<SplitRef> items) {
+    var updated = state;
+    for (final i in items) {
+      final game = i.kind == SplitKind.app && defaultBypassApps.any((d) => sameItem(i.kind, d, i.value));
+      updated = game ? updated.placed(i.kind, i.value, SplitTarget.bypass) : updated.without(i.kind, i.value);
+    }
+    commit(updated);
   }
+
+  /// Записи — в группу [name] (нет такой — создаётся). Пути не меняются.
+  void moveToGroup(String name, Iterable<SplitRef> items) => commit(state.inGroup(name, items));
+
+  /// Записи — из групп. Пути не меняются.
+  void removeFromGroup(Iterable<SplitRef> items) => commit(state.outOfGroups(items));
+
+  void renameGroup(String from, String to) => commit(state.renameGroup(from, to));
+
+  /// Удалить группу; записи остаются в списках, где были.
+  void deleteGroup(String name) => commit(state.withoutGroup(name));
 
   /// Убрать записи из обоих списков и с серверов.
   void removeEverywhere(SplitKind kind, Iterable<String> values) {
