@@ -170,12 +170,70 @@ class ProfileParser {
       cancelToken: cancelToken ?? CancelToken(),
       ref: _ref,
     );
+    await _addRescueLinks(url, tempFilePath, cancelToken);
     // fixing headers before return
     return rs.headers.map.map((key, value) {
       if (value.length == 1) return MapEntry(key, value.first);
       return MapEntry(key, value);
     });
   }, (err, st) => err is ProfileFailure ? err : ProfileFailure.unexpected(err, st));
+  /// Шлюпка: PasarGuard не кладёт серверы XHTTP в подписку sing-box (обычный sing-box их не
+  /// знает), а ядро Шлюпки знает. Те же серверы есть в `<подписка>/links` — передаём их ядру
+  /// полем `rescue-links`, ядро добавит недостающие (rescue_links.go в ядре). Любой сбой —
+  /// подписка остаётся как скачана.
+  Future<void> _addRescueLinks(String url, String tempFilePath, CancelToken? cancelToken) async {
+    final linksUrl = pasarGuardLinksUrl(url);
+    if (linksUrl == null) return;
+    final file = File(tempFilePath);
+    final linksFile = File('$tempFilePath.links');
+    try {
+      final content = await file.readAsString();
+      if (_singboxJson(content) == null) return;
+      await _httpClient.download(linksUrl, linksFile.path, cancelToken: cancelToken);
+      final merged = withRescueLinks(content, await linksFile.readAsString());
+      if (merged != null) await file.writeAsString(merged);
+    } catch (err) {
+      if (err is DioException && CancelToken.isCancel(err)) rethrow;
+    } finally {
+      if (linksFile.existsSync()) linksFile.deleteSync();
+    }
+  }
+
+  /// `https://host/sub/<токен>` → `https://host/sub/<токен>/links`; для прочих адресов null.
+  @visibleForTesting
+  static String? pasarGuardLinksUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !uri.isScheme('https')) return null;
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length != 2 || segments.first != 'sub') return null;
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      pathSegments: [...segments, 'links'],
+    ).toString();
+  }
+
+  /// Подписка sing-box (JSON с `outbounds`) с добавленным полем `rescue-links`; null, если
+  /// подписка не такая или в [links] нет ни одной ссылки.
+  @visibleForTesting
+  static String? withRescueLinks(String content, String links) {
+    final json = _singboxJson(content);
+    if (json == null) return null;
+    final lines = links.split('\n').map((l) => l.trim()).where((l) => l.contains('://')).toList();
+    if (lines.isEmpty) return null;
+    return jsonEncode({...json, 'rescue-links': lines.join('\n')});
+  }
+
+  static Map<String, dynamic>? _singboxJson(String content) {
+    try {
+      final json = jsonDecode(content);
+      return json is Map<String, dynamic> && json['outbounds'] is List ? json : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> expandRemoteLinesInParallel({
     required String tempFilePath,
     required DioHttpClient httpClient,
