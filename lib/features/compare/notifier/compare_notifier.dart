@@ -59,7 +59,7 @@ class CompareState {
   final CompareResult? result;
   final String error;
 
-  /// Сколько замеров всего ожидается по двум дорогам.
+  /// Сколько замеров всего ожидается: по двум дорогам, а когда ядро прислало серверы — по всем.
   final int expected;
 
   bool get running => phase == ComparePhase.running;
@@ -87,6 +87,7 @@ class CompareNotifier extends AutoDisposeNotifier<CompareState> with AppLogger {
   Timer? _timer;
   String? _id;
   String? _dir;
+  int _count = 0;
   late DateTime _startedAt;
   bool _disposed = false;
 
@@ -129,6 +130,7 @@ class CompareNotifier extends AutoDisposeNotifier<CompareState> with AppLogger {
     }
     _id = request.id;
     _dir = dir;
+    _count = count;
     _startedAt = env.now();
     state = CompareState(phase: ComparePhase.running, endpoint: endpoint, expected: count * 2);
     _timer = Timer.periodic(env.pollInterval, (_) => _poll());
@@ -153,6 +155,8 @@ class CompareNotifier extends AutoDisposeNotifier<CompareState> with AppLogger {
     final env = ref.read(compareEnvProvider);
     final result = readCompareResult(dir, id);
     if (result != null) {
+      // Ядро меряет напрямую, vpn и каждый сервер — по count замеров на дорогу.
+      final expected = result.servers.isEmpty ? state.expected : _count * (2 + result.servers.length);
       if (result.done) {
         _stop(deleteFiles: true);
         final failed = result.error.isNotEmpty;
@@ -161,16 +165,11 @@ class CompareNotifier extends AutoDisposeNotifier<CompareState> with AppLogger {
           endpoint: state.endpoint,
           result: result,
           error: result.error,
-          expected: state.expected,
+          expected: expected,
         );
         return;
       }
-      state = CompareState(
-        phase: ComparePhase.running,
-        endpoint: state.endpoint,
-        result: result,
-        expected: state.expected,
-      );
+      state = CompareState(phase: ComparePhase.running, endpoint: state.endpoint, result: result, expected: expected);
     }
     if (env.now().difference(_startedAt) >= env.timeout) {
       _stop(deleteFiles: true);

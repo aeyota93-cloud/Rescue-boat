@@ -48,6 +48,7 @@ class FakeCore {
     bool vpnEstimate = false,
     bool vpnAvailable = true,
     String vpnNote = '',
+    List<Map<String, Object?>>? servers,
   }) {
     compareDir.createSync(recursive: true);
     final body = {
@@ -70,6 +71,7 @@ class FakeCore {
             'samples': vpn,
             'note': vpnNote,
           },
+          'servers': ?servers,
         },
     };
     final target0 = File('${compareDir.path}${Platform.pathSeparator}res-$id.json');

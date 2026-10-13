@@ -5,11 +5,15 @@ import 'package:hiddify/features/compare/model/compare_target.dart';
 import 'package:hiddify/features/compare/notifier/compare_notifier.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/model/servers_format.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Шлюпка: «Сравнить пути» — окно с двумя дорогами, «Напрямую» и «Через VPN».
+/// Шлюпка: «Сравнить пути» — окно с дорогами: «Напрямую» и «Через VPN», а с ядром, которое меряет
+/// каждый сервер (docs/redesign/servers-v2.md), — «Напрямую» и все серверы по именам из интерфейса.
 Future<void> showComparePathsDialog(BuildContext context, CompareSubject subject) => showDialog<void>(
   context: context,
   builder: (_) => ComparePathsDialog(subject: subject),
@@ -64,6 +68,32 @@ class ComparePathsDialog extends HookConsumerWidget {
 
     final item = target == null ? null : compareSplitItem(subject, target);
 
+    // v2 (servers-v2.md): ядро меряет каждый сервер — таблица «Напрямую» + серверы. Пока ответа нет,
+    // а серверов в профиле несколько, таблица заранее; ответ без `servers` — две карточки, как раньше.
+    final servers = ref.watch(rescueServersProvider);
+    final split = ref.watch(splitTunnelProvider);
+    final result = state.result;
+    final List<CompareRoad>? roads;
+    if (result != null && result.servers.isNotEmpty) {
+      roads = compareRoads(result);
+    } else if (result == null && state.running && servers != null && servers.several) {
+      roads = [
+        const CompareRoad(directRoad, PathResult()),
+        for (final s in servers.servers) CompareRoad(s.tag, PathResult(tag: s.tag)),
+      ];
+    } else {
+      roads = null;
+    }
+    final current = item == null ? null : currentRoadOf(split, servers, item);
+    String serverName(String tag) => servers?.byTag(tag)?.lowerName ?? serverTitle(tag);
+    final v2 = _RoadsContext(
+      servers: servers,
+      current: current,
+      verdict: roads == null || result == null || state.phase != ComparePhase.done
+          ? null
+          : roadVerdict(result, current: current, serverName: serverName),
+    );
+
     return AlertDialog(
       scrollable: true,
       title: const Text('Сравнить пути'),
@@ -115,12 +145,15 @@ class ComparePathsDialog extends HookConsumerWidget {
             else ...[
               if (state.running) _Progress(state: state),
               if (state.running) const SizedBox(height: 16),
-              _Cards(state: state),
+              if (roads == null) _Cards(state: state) else _RoadsTable(roads: roads, ctx: v2, waiting: state.running),
               const SizedBox(height: 14),
-              _VerdictLine(state: state),
+              _VerdictLine(state: state, roadVerdict: v2.verdict),
               if (item != null) ...[
                 const SizedBox(height: 18),
-                _RouteButtons(item: item, recommended: state.verdict?.kind),
+                if (roads == null)
+                  _RouteButtons(item: item, recommended: state.verdict?.kind)
+                else
+                  _RoadButtons(item: item, ctx: v2),
                 if (subject.appExe != null) ...[
                   const SizedBox(height: 6),
                   Text('Правило для всей программы ${subject.appExe}', style: RescueText.caption),
@@ -410,14 +443,31 @@ class _PathCard extends StatelessWidget {
 // ---------- вывод и кнопки ----------
 
 class _VerdictLine extends StatelessWidget {
-  const _VerdictLine({required this.state});
+  const _VerdictLine({required this.state, this.roadVerdict});
 
   final CompareState state;
+
+  /// Вывод v2 по всем дорогам; null — v1 (две дороги) или вывода ещё нет.
+  final RoadVerdict? roadVerdict;
 
   @override
   Widget build(BuildContext context) {
     final verdict = state.verdict;
+    final road = roadVerdict;
     final (IconData, Color, String)? shown = switch (state.phase) {
+      ComparePhase.done when road != null => (
+        switch (road.kind) {
+          RoadVerdictKind.change => road.best == directRoad ? Icons.call_made_rounded : Icons.vpn_key_rounded,
+          RoadVerdictKind.keep => Icons.drag_handle_rounded,
+          RoadVerdictKind.estimate || RoadVerdictKind.noData => Icons.info_outline_rounded,
+        },
+        switch (road.kind) {
+          RoadVerdictKind.change => RescueColors.accent,
+          RoadVerdictKind.noData => RescueColors.warn,
+          _ => RescueColors.text,
+        },
+        road.text,
+      ),
       ComparePhase.idle || ComparePhase.running => null,
       ComparePhase.failed => (
         Icons.error_outline_rounded,
@@ -507,6 +557,207 @@ class _RouteButtons extends ConsumerWidget {
       spacing: 8,
       runSpacing: 8,
       children: [bypassButton(recommended == VerdictKind.direct), viaButton(recommended == VerdictKind.vpn)],
+    );
+  }
+}
+
+// ---------- v2: все дороги ----------
+
+/// Что нужно таблице и кнопкам v2: имена серверов, текущая дорога, вывод.
+class _RoadsContext {
+  const _RoadsContext({required this.servers, required this.current, required this.verdict});
+
+  final RescueServers? servers;
+
+  /// [directRoad], тег сервера или null — неизвестно.
+  final String? current;
+  final RoadVerdict? verdict;
+
+  /// «Напрямую», «Основной», «Запасной 2»; сервер, которого нет в списке, — по имени из подписки.
+  String name(String id) => id == directRoad ? 'Напрямую' : (servers?.byTag(id)?.name ?? serverTitle(id));
+
+  /// Мелко под именем: имя из подписки и подсказка.
+  String? detail(String id) {
+    final s = servers?.byTag(id);
+    if (s == null) return null;
+    return [s.title, ?s.hint].join(' · ');
+  }
+}
+
+/// Таблица дорог: «Напрямую», затем серверы по именам из интерфейса; у каждой — задержка (медиана),
+/// разброс, неудачи и первое подключение; метки «СЕЙЧАС» и «ЛУЧШЕ».
+class _RoadsTable extends StatelessWidget {
+  const _RoadsTable({required this.roads, required this.ctx, required this.waiting});
+
+  final List<CompareRoad> roads;
+  final _RoadsContext ctx;
+  final bool waiting;
+
+  @override
+  Widget build(BuildContext context) {
+    return RescueCard(
+      color: RescueColors.panel,
+      radius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, r) in roads.indexed) ...[
+            if (i > 0) const Divider(height: 1, color: RescueColors.line),
+            _RoadRow(road: r, ctx: ctx, waiting: waiting),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RoadRow extends StatelessWidget {
+  const _RoadRow({required this.road, required this.ctx, required this.waiting});
+
+  final CompareRoad road;
+  final _RoadsContext ctx;
+  final bool waiting;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = road.path;
+    final stats = path.stats;
+    final name = ctx.name(road.id);
+    final detail = ctx.detail(road.id);
+    final now = ctx.current == road.id;
+    final best = ctx.verdict?.best == road.id;
+    final median = stats.median;
+    final unavailable = !path.available && !path.estimate;
+    final big = median == null ? '—' : formatMs(median);
+    final String? bigNote = median != null
+        ? null
+        : unavailable
+        ? 'измерить нельзя'
+        : (stats.total > 0 && !waiting)
+        ? 'не ответил'
+        : (waiting ? 'ждём замеры' : null);
+    final jitter = stats.jitter;
+    final facts = [
+      if (jitter != null) '±${jitter.round()} мс',
+      if (stats.failPercent case final f?) 'неудачи $f %',
+      if (path.firstMs case final f?) 'первое подключение ${formatMs(f)}',
+    ].join(' · ');
+    final note = path.note;
+
+    final spoken = [
+      name,
+      if (now) 'сейчас',
+      if (best) 'лучше',
+      if (path.estimate) 'оценка качества туннеля',
+      if (median != null) 'задержка $big' else ?bigNote,
+      if (facts.isNotEmpty) facts,
+      if (note.isNotEmpty) note,
+    ].join(', ');
+
+    return Semantics(
+      container: true,
+      label: spoken,
+      child: ExcludeSemantics(
+        child: Padding(
+          key: ValueKey('compare-road-${road.direct ? 'direct' : road.id}'),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(name, style: RescueText.rowTitle),
+                        if (now) const RescueBadge.tag(label: 'СЕЙЧАС', kind: RescueBadgeKind.bypass),
+                        if (best) const RescueBadge(label: 'ЛУЧШЕ', kind: RescueBadgeKind.success),
+                        if (path.estimate) const RescueBadge.tag(label: 'ОЦЕНКА', kind: RescueBadgeKind.bypass),
+                      ],
+                    ),
+                    if (detail != null) Text(detail, style: RescueText.caption),
+                    if (facts.isNotEmpty) ...[const SizedBox(height: 2), Text(facts, style: RescueText.caption)],
+                    if (note.isNotEmpty) ...[const SizedBox(height: 2), Text(note, style: RescueText.caption)],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(big, style: RescueText.bigNumber.copyWith(color: best ? RescueColors.accent : null)),
+                  if (bigNote != null) Text(bigNote, style: RescueText.caption),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопки v2: «Пустить через «<сервер>»» (закрепить за лучшим сервером), «Пустить напрямую»
+/// (в «мимо VPN»), «Оставить как есть» (закрыть окно). Жёлтая — то, что советует вывод.
+class _RoadButtons extends ConsumerWidget {
+  const _RoadButtons({required this.item, required this.ctx});
+
+  final ({SplitKind kind, String value}) item;
+  final _RoadsContext ctx;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final split = ref.watch(splitTunnelProvider);
+    final notifier = ref.read(splitTunnelProvider.notifier);
+    final verdict = ctx.verdict;
+    final server = verdict?.bestServer;
+    final pinned = split.serverOf(item.kind, item.value);
+    final bypassed = split.targetOf(item.kind, item.value) == SplitTarget.bypass;
+
+    void done(String text) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text)));
+
+    final kind = verdict?.kind;
+    final recommendKeep = kind == RoadVerdictKind.keep;
+    final recommendDirect = kind == RoadVerdictKind.change && verdict?.best == directRoad;
+    final recommendServer =
+        kind == RoadVerdictKind.estimate || (kind == RoadVerdictKind.change && verdict?.best != directRoad);
+
+    Widget button(bool primary, VoidCallback? onPressed, String text) => primary
+        ? FilledButton(onPressed: onPressed, child: Text(text))
+        : OutlinedButton(onPressed: onPressed, child: Text(text));
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (server != null)
+          button(
+            recommendServer,
+            pinned == server
+                ? null
+                : () {
+                    notifier.addToServer(server, item.kind, item.value);
+                    done('${item.value}: через ${ctx.name(server).toLowerCase()}');
+                  },
+            pinned == server ? 'Уже через «${ctx.name(server)}»' : 'Пустить через «${ctx.name(server)}»',
+          ),
+        button(
+          recommendDirect,
+          bypassed
+              ? null
+              : () {
+                  notifier.add(SplitTarget.bypass, item.kind, item.value);
+                  done('Добавлено в «Мимо VPN»: ${item.value}');
+                },
+          bypassed ? 'Уже напрямую' : 'Пустить напрямую',
+        ),
+        button(recommendKeep, () => Navigator.pop(context), 'Оставить как есть'),
+      ],
     );
   }
 }
