@@ -10,7 +10,7 @@ import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
-import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/servers/widget/servers_page.dart';
@@ -128,10 +128,12 @@ void main() {
     _FakeAdd? add,
     Size size = const Size(1440, 1000),
     bool inShell = false,
+    Map<String, Object> prefs = const {},
   }) async {
     final container = await tester.runAsync(
       () => screensContainer(
         dir,
+        prefs: prefs,
         overrides: [
           profilesNotifierProvider.overrideWith(() => profiles),
           proxiesOverviewNotifierProvider.overrideWith(() => proxies),
@@ -203,7 +205,8 @@ void main() {
       final semantics = tester.ensureSemantics();
 
       expect(find.text('ПОДПИСКИ И СЕРВЕРЫ'), findsOneWidget);
-      expect(find.text('Основной'), findsOneWidget);
+      // «Основной» — и подписка, и первый сервер (имя по порядку подписки).
+      expect(find.text('Основной'), findsNWidgets(2));
       expect(find.text('АКТИВНА'), findsOneWidget);
       // Кольца: расход, срок, автообновление — числа внутри и подписи для чтеца.
       expect(find.text('ГБ\nИЗ 200'), findsOneWidget);
@@ -214,24 +217,34 @@ void main() {
       expect(find.bySemanticsLabel(RegExp(r'^Действует до .*, ещё 31 день$')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('^Обновляется сама, раз в 6 часов, обновлена ')), findsOneWidget);
       expect(find.textContaining('example.com · до '), findsOneWidget);
-      // Два сервера в подписке — запасной второй по порядку, автопереключение включено.
-      expect(find.text('Запасной: Германия'), findsOneWidget);
-      expect(find.text('готов'), findsOneWidget);
-      expect(find.text('пинг нет ответа'), findsOneWidget);
-      expect(find.text('Переключаться автоматически'), findsOneWidget);
-      expect(tester.widget<RescueToggle>(find.byKey(const ValueKey('failover-toggle'))).value, isTrue);
+      // Два сервера в подписке — режим «Авто: основной → запасной 1», автопереключение включено.
+      expect(find.text('ЧЕРЕЗ КАКОЙ СЕРВЕР'), findsOneWidget);
+      expect(find.text('Авто: основной → запасной 1'), findsOneWidget);
+      expect(find.text('сейчас: основной · отвечают 1 из 2'), findsOneWidget);
+      expect(find.text('Всегда основной'), findsOneWidget);
+      expect(find.text('Всегда запасной 1'), findsOneWidget);
+      expect(find.text('нет ответа'), findsOneWidget, reason: 'пинг запасного в строке режима');
+      expect(
+        find.bySemanticsLabel('Авто: основной → запасной 1, сейчас: основной · отвечают 1 из 2'),
+        findsOneWidget,
+      );
       expect(find.text('Добавить подписку'), findsNothing);
       expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 
-      expect(find.text('Нидерланды'), findsOneWidget);
-      expect(find.text('VLESS'), findsOneWidget);
+      // Карточки серверов: имя по порядку, имя из подписки мелко; протокол — только в «подробнее».
+      expect(find.text('Запасной 1'), findsOneWidget);
+      expect(find.text('Германия · если основной заблокируют'), findsWidgets);
+      expect(find.text('VLESS'), findsNothing);
+      expect(find.text('ПОДРОБНЕЕ'), findsNWidgets(2));
+      expect(find.byTooltip('VLESS · first.example'), findsOneWidget);
+      expect(find.text('АВТОВЫБОР'), findsOneWidget, reason: 'у групп — как раньше');
       expect(find.text('120 МС'), findsOneWidget);
       expect(find.text('НЕТ ОТВЕТА'), findsOneWidget);
       // Здоровье — только у выбранного сервера.
       expect(find.text('92'), findsOneWidget);
       expect(
-        find.bySemanticsLabel(RegExp(r'^Нидерланды, VLESS, пинг 120 мс, здоровье за сутки 92, выбран$')),
+        find.bySemanticsLabel(RegExp(r'^Основной, Нидерланды, пинг 120 мс, здоровье за сутки 92, выбран$')),
         findsOneWidget,
       );
       semantics.dispose();
@@ -288,11 +301,11 @@ void main() {
       final scroll = find.byKey(const ValueKey('servers-scroll'));
       final scrollable = find.descendant(of: scroll, matching: find.byType(Scrollable)).first;
       expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
-      await tester.drag(scrollable, const Offset(0, -3000));
+      await tester.drag(scrollable, const Offset(0, -20000));
       await tester.pump();
       expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
-      expect(find.text('Запасной: Сервер 1'), findsOneWidget, reason: 'конец списка достижим');
-      expect(rect(tester, find.text('Запасной: Сервер 1')).bottom, lessThanOrEqualTo(window.height));
+      expect(find.text('Запасной 39'), findsOneWidget, reason: 'конец списка достижим');
+      expect(rect(tester, find.text('Запасной 39')).bottom, lessThanOrEqualTo(window.height));
 
       for (final e in fixed.entries) {
         expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
@@ -319,15 +332,15 @@ void main() {
       final more = find.byKey(const ValueKey('servers-more'));
       await tester.scrollUntilVisible(more, 300, scrollable: page);
       expect(find.text('Показать ещё · 30 из 40'), findsOneWidget);
-      expect(find.text('Сервер 29'), findsOneWidget);
-      expect(find.text('Сервер 30'), findsNothing);
+      expect(find.text('Запасной 29'), findsOneWidget);
+      expect(find.text('Запасной 30'), findsNothing);
       await tester.tap(more);
       await tester.pump();
-      expect(find.text('Сервер 39'), findsOneWidget);
+      expect(find.text('Запасной 39'), findsOneWidget);
       expect(more, findsNothing);
-      await tester.drag(page, const Offset(0, -9000));
+      await tester.drag(page, const Offset(0, -20000));
       await tester.pump();
-      expect(find.text('Запасной: Сервер 1'), findsOneWidget);
+      expect(find.text('Запасной 39'), findsOneWidget);
       expectNoLayoutErrors(tester);
       await closePage(tester, container);
     });
@@ -419,28 +432,67 @@ void main() {
           inShell: true,
         );
         expectNoLayoutErrors(tester);
-        final toggle = find.byKey(const ValueKey('failover-toggle'));
-        await tester.scrollUntilVisible(toggle, 300, scrollable: find.byType(Scrollable).last);
-        expect(find.text('Запасной: NL запасной'), findsOneWidget);
-        expect(find.text('используется сейчас'), findsOneWidget);
-        expect(find.text('пинг 64 мс'), findsOneWidget);
+        final row = find.byKey(const ValueKey('failover-mode-nl-b'));
+        await tester.scrollUntilVisible(row, 300, scrollable: find.byType(Scrollable).last);
+        expect(find.text('сейчас: запасной 1 · отвечают 1 из 2'), findsOneWidget);
+        expect(find.text('Всегда запасной 1'), findsOneWidget);
+        expect(find.text('если основной заблокируют · NL запасной'), findsWidgets);
+        expect(find.text('64 мс'), findsOneWidget);
         expectNoLayoutErrors(tester);
         await closePage(tester, container);
       });
     }
 
-    testWidgets('переключатель меняет настройку, а она — опцию ядра', (tester) async {
-      final container = await start(tester, profiles: _FakeProfiles([main]), proxies: _FakeProxies(servers()));
+    testWidgets('«Всегда запасной 1» выключает сторожа и выбирает сервер; «Авто» включает', (tester) async {
+      final proxies = _FakeProxies(servers());
+      final container = await start(tester, profiles: _FakeProfiles([main]), proxies: proxies);
       expect(container.read(FailoverPreferences.auto), isTrue);
       expect(container.read(ConfigOptions.singboxConfigOptions).toJson()['rescue-failover'], isTrue);
 
-      await tapText(tester, find.byKey(const ValueKey('failover-toggle')));
+      await tapText(tester, find.byKey(const ValueKey('failover-mode-de')));
+      expect(proxies.changed, ['select/de']);
       expect(container.read(FailoverPreferences.auto), isFalse);
-      expect(tester.widget<RescueToggle>(find.byKey(const ValueKey('failover-toggle'))).value, isFalse);
-      expect(find.text('Автопереключение выключено: сервер выбирается только вручную.'), findsOneWidget);
+      expect(
+        find.text('Автопереключение выключено: всегда через выбранный сервер, даже если он не отвечает.'),
+        findsOneWidget,
+      );
       expect(container.read(ConfigOptions.singboxConfigOptions).toJson().containsKey('rescue-failover'), isFalse);
 
-      await tapText(tester, find.byKey(const ValueKey('failover-toggle')));
+      // Выбран «nl» (фальшивое ядро выбор не меняет): строка «Всегда основной» отмечена.
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('failover-mode-nl'))),
+        matchesSemantics(
+          label: 'Всегда основной, Нидерланды, пинг 120 мс',
+          isButton: true,
+          hasCheckedState: true,
+          isChecked: true,
+          isInMutuallyExclusiveGroup: true,
+        ),
+      );
+
+      await tapText(tester, find.byKey(const ValueKey('failover-mode-auto')));
+      expect(container.read(FailoverPreferences.auto), isTrue);
+      expect(proxies.changed, ['select/de'], reason: '«Авто» сам сервер не выбирает — это делает сторож');
+      await closePage(tester, container);
+    });
+
+    testWidgets('VPN выключен: имена из прошлого раза, выбрать сервер нельзя', (tester) async {
+      final proxies = _FakeProxies(null, error: const ServiceNotRunning());
+      final container = await start(
+        tester,
+        profiles: _FakeProfiles([main]),
+        proxies: proxies,
+        prefs: {lastServersKey: rescueServersOf(onBackup())!.encode()},
+        size: const Size(900, 900),
+      );
+      expectNoLayoutErrors(tester);
+      final auto = find.byKey(const ValueKey('failover-mode-auto'));
+      await tester.scrollUntilVisible(auto, 300, scrollable: find.byType(Scrollable).last);
+      expect(find.text('что работает сейчас — видно, когда VPN подключён'), findsOneWidget);
+      expect(find.text('Всегда запасной 1'), findsOneWidget);
+      expect(find.text('Пока запасного нет: в подписке один сервер.'), findsNothing);
+      await tapText(tester, find.byKey(const ValueKey('failover-mode-nl-b')));
+      expect(proxies.changed, isEmpty);
       expect(container.read(FailoverPreferences.auto), isTrue);
       await closePage(tester, container);
     });

@@ -16,6 +16,7 @@ import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/data/rename_profile.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/model/servers_format.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
@@ -28,7 +29,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// добавить по ссылке, обновить, переименовать, удалить, выбрать активную подписку и сервер, проверить пинг.
 ///
 /// Активная подписка — жёлтый блок с кольцами (расход, срок, автообновление — только то, что
-/// прислал сервер подписки), ниже — карточки серверов с пингом и пунктирная карточка «Запасной».
+/// прислал сервер подписки), ниже — режим «Авто / Всегда <сервер>» (при одном сервере — пунктирная
+/// заглушка «Запасной») и карточки серверов с пингом.
 ///
 /// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка с кнопками и блок
 /// активной подписки закреплены, а «Другие подписки», серверы и «Запасной» прокручиваются в своей
@@ -599,75 +601,142 @@ Future<void> _delete(BuildContext context, WidgetRef ref, ProfileEntity profile)
   if (ok ?? false) await ref.read(profilesNotifierProvider.notifier).deleteProfile(profile);
 }
 
-/// «Запасной»: при двух и больше серверах в подписке — второй сервер, его состояние, пинг и
-/// переключатель автопереключения (docs/redesign/failover.md); при одном — честная заглушка.
-class _BackupCard extends ConsumerWidget {
-  const _BackupCard();
+/// Режим «для всего остального» (docs/redesign/servers-v2.md): радио-список «Авто: основной →
+/// запасной 1 → …» (сторож ядра включён) или «Всегда <сервер>» (сторож выключен, сервер выбран в
+/// `select` тем же путём, что нажатие на карточку). Показывается при двух и больше серверах.
+class _ModeCard extends ConsumerWidget {
+  const _ModeCard({required this.servers});
+
+  final RescueServers servers;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final servers = ref.watch(failoverServersProvider);
-    if (servers == null) return const _NoBackupCard();
     final auto = ref.watch(FailoverPreferences.auto);
-    final backup = servers.backup;
-    final name = serverTitle(backup.tagDisplay.isNotEmpty ? backup.tagDisplay : backup.tag);
-    final inUse = servers.backupInUse;
-    final delay = backup.urlTestDelay;
-    final timedOut = pingTimedOut(delay);
-    return RescueCard.dashed(
-      semanticLabel: 'Запасной сервер',
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 154),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Запасной: $name',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamilyFallback: [FontFamily.emoji]),
+    final live = servers.live;
+    final current = servers.current;
+    final chain = ['основной', for (final s in servers.servers.skip(1)) s.lowerName].join(' → ');
+    final autoNote = live
+        ? [
+            if (current != null) 'сейчас: ${current.lowerName}',
+            'отвечают ${servers.responding} из ${servers.servers.length}',
+          ].join(' · ')
+        : 'что работает сейчас — видно, когда VPN подключён';
+
+    Future<void> always(RescueServer s) async {
+      await ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(servers.group, s.tag);
+      if (auto) await ref.read(FailoverPreferences.auto.notifier).update(false);
+    }
+
+    return RescueCard(
+      semanticLabel: 'Через какой сервер',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionLabel('Через какой сервер'),
+          const SizedBox(height: 4),
+          const Text(
+            'Для всего, что идёт через VPN и не закреплено за сервером в «Туннеле».',
+            style: RescueText.caption,
+          ),
+          const SizedBox(height: 8),
+          _ModeRow(
+            key: const ValueKey('failover-mode-auto'),
+            selected: auto,
+            title: 'Авто: $chain',
+            subtitle: autoNote,
+            onTap: auto ? null : () => ref.read(FailoverPreferences.auto.notifier).update(true),
+          ),
+          for (final s in servers.servers)
+            _ModeRow(
+              key: ValueKey('failover-mode-${s.tag}'),
+              selected: !auto && live && servers.selected == s.tag,
+              title: 'Всегда ${s.lowerName}',
+              subtitle: [?s.hint, s.title].join(' · '),
+              ping: live ? s.delay : null,
+              // Выбрать сервер в `select` можно только у работающего ядра.
+              onTap: !live || (!auto && servers.selected == s.tag) ? null : () => always(s),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(height: 8),
+          Text(
+            auto
+                ? 'Если основной не отвечает полторы минуты, Шлюпка перейдёт на следующий живой запасной '
+                      'и вернётся, когда основной оживёт.'
+                : live
+                ? 'Автопереключение выключено: всегда через выбранный сервер, даже если он не отвечает.'
+                : 'Автопереключение выключено. Выбрать сервер можно, когда VPN подключён.',
+            style: RescueText.caption,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Строка радио-списка режима: кружок, название, пояснение и пинг.
+class _ModeRow extends StatelessWidget {
+  const _ModeRow({
+    super.key,
+    required this.selected,
+    required this.title,
+    required this.subtitle,
+    this.ping,
+    this.onTap,
+  });
+
+  final bool selected;
+  final String title;
+  final String subtitle;
+
+  /// Пинг сервера; null — не показываем (строка «Авто» или VPN выключен).
+  final int? ping;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ping = this.ping;
+    final timedOut = ping != null && pingTimedOut(ping);
+    return Semantics(
+      button: true,
+      inMutuallyExclusiveGroup: true,
+      checked: selected,
+      label: [title, subtitle, if (ping != null) 'пинг ${pingLabel(ping)}'].join(', '),
+      onTap: onTap,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(
               children: [
-                Text(
-                  inUse ? 'используется сейчас' : 'готов',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: inUse ? RescueColors.accent : RescueColors.text,
+                Icon(
+                  selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                  size: 22,
+                  color: selected ? RescueColors.accent : RescueColors.muted,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, style: RescueText.rowTitle),
+                      Text(subtitle, style: RescueText.caption),
+                    ],
                   ),
                 ),
-                Text(
-                  'пинг ${pingLabel(delay)}',
-                  style: TextStyle(fontSize: 13, color: timedOut ? RescueColors.warn : RescueColors.muted),
-                ),
+                if (ping != null) ...[
+                  const SizedBox(width: 12),
+                  Text(
+                    pingLabel(ping),
+                    style: TextStyle(fontSize: 13, color: timedOut ? RescueColors.warn : RescueColors.muted),
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              auto
-                  ? 'Если основной не отвечает полторы минуты, Шлюпка перейдёт на запасной и вернётся, когда основной оживёт.'
-                  : 'Автопереключение выключено: сервер выбирается только вручную.',
-              style: RescueText.caption,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Expanded(child: Text('Переключаться автоматически', style: RescueText.small)),
-                const SizedBox(width: 12),
-                RescueToggle(
-                  key: const ValueKey('failover-toggle'),
-                  value: auto,
-                  semanticLabel: 'Переключаться на запасной автоматически',
-                  onChanged: (v) => ref.read(FailoverPreferences.auto.notifier).update(v),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -720,6 +789,8 @@ class _ServersSection extends HookConsumerWidget {
     final sortBy = ref.watch(proxiesSortNotifierProvider);
     final group = proxies.valueOrNull;
     final count = group?.items.length;
+    final servers = ref.watch(rescueServersProvider);
+    final several = servers != null && servers.several;
 
     final note = switch (proxies) {
       AsyncData(value: final g?) when g.items.isNotEmpty => null,
@@ -758,6 +829,7 @@ class _ServersSection extends HookConsumerWidget {
           ),
           const SizedBox(height: 12),
           if (note != null) ...[Text(note, style: RescueText.smallSecondary), const SizedBox(height: 12)],
+          if (several) ...[_ModeCard(servers: servers), const SizedBox(height: 16)],
           if (proxies.isLoading && group == null)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -765,8 +837,9 @@ class _ServersSection extends HookConsumerWidget {
             ),
           _FillGrid(
             children: [
-              if (group != null) ..._cards(ref, group).take(pinned ? group.items.length : limit.value),
-              const _BackupCard(),
+              if (group != null) ..._cards(ref, group, servers).take(pinned ? group.items.length : limit.value),
+              // Один сервер — честная заглушка «Запасной».
+              if (!several) const _NoBackupCard(),
             ],
           ),
           if (!pinned && group != null && group.items.length > limit.value)
@@ -784,12 +857,13 @@ class _ServersSection extends HookConsumerWidget {
     );
   }
 
-  static List<Widget> _cards(WidgetRef ref, OutboundGroup group) {
+  static List<Widget> _cards(WidgetRef ref, OutboundGroup group, RescueServers? servers) {
     final health = ref.watch(healthProvider).valueOrNull;
     return [
       for (final item in group.items)
         _ServerCard(
           item: item,
+          server: servers != null && servers.live ? servers.byTag(item.tag) : null,
           selected: group.selected == item.tag,
           health: group.selected == item.tag && health != null && !health.isEmpty ? health.overall.score : null,
           onTap: () => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, item.tag),
@@ -832,12 +906,16 @@ class _FillGrid extends StatelessWidget {
   }
 }
 
-/// Карточка сервера: плитка с кодом страны, название, протокол, полоска отклика и пинг.
-/// Выбранный — тёмная (deep) с жёлтым названием; остальные — card.
+/// Карточка сервера: плитка с кодом страны, имя по порядку подписки («Запасной 1»), под ним — имя из
+/// подписки и подсказка, полоска отклика и пинг. Протокол — только во всплывающей подсказке
+/// «подробнее». Группы («Автовыбор») — как раньше. Выбранный — тёмная (deep) с жёлтым названием.
 class _ServerCard extends StatelessWidget {
-  const _ServerCard({required this.item, required this.selected, required this.onTap, this.health});
+  const _ServerCard({required this.item, required this.selected, required this.onTap, this.health, this.server});
 
   final OutboundInfo item;
+
+  /// Этот выход как сервер подписки (с именем по порядку); null — группа или список неизвестен.
+  final RescueServer? server;
   final bool selected;
   final VoidCallback onTap;
 
@@ -847,19 +925,32 @@ class _ServerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fullName = item.tagDisplay.isNotEmpty ? item.tagDisplay : item.tag;
-    final name = serverTitle(fullName);
+    final server = this.server;
+    final name = server?.name ?? serverTitle(fullName);
     final proto = switch (item.type.toLowerCase()) {
       'urltest' => 'Автовыбор',
       _ when item.isGroup => 'Группа',
       _ => protocolName(item.type),
     };
     final delay = item.urlTestDelay;
-    final sub = _subtitle(item);
+    final sub = server == null ? _subtitle(item) : [server.title, ?server.hint].join(' · ');
     final timedOut = pingTimedOut(delay);
     final health = this.health;
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));
     final subColor = selected ? RescueColors.subOnDeep : RescueColors.muted;
     final fg = selected ? RescueColors.textOnDeep : RescueColors.text;
+    // Метка под именем: у групп — что это за группа, у серверов — «подробнее» с протоколом в подсказке.
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: selected ? RescueColors.off : RescueColors.line2),
+      ),
+      child: Text(
+        server == null ? proto.toUpperCase() : 'ПОДРОБНЕЕ',
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: fg),
+      ),
+    );
 
     return Semantics(
       button: true,
@@ -867,7 +958,7 @@ class _ServerCard extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       label: [
         name,
-        proto,
+        if (server != null) sub else proto,
         'пинг ${pingLabel(delay)}',
         if (health != null) 'здоровье за сутки $health',
         if (selected) 'выбран',
@@ -920,17 +1011,10 @@ class _ServerCard extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: subColor),
                       ),
                     const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: selected ? RescueColors.off : RescueColors.line2),
-                      ),
-                      child: Text(
-                        proto.toUpperCase(),
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1, color: fg),
-                      ),
-                    ),
+                    if (server == null)
+                      badge
+                    else
+                      Tooltip(message: [proto, if (item.host.isNotEmpty) item.host].join(' · '), child: badge),
                     const SizedBox(height: 16),
                     RescueProgressBar(
                       value: timedOut ? 1 : pingSpeedFraction(delay),
