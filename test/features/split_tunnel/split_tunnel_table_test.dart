@@ -8,6 +8,8 @@ import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
@@ -18,6 +20,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../compare/fake_core.dart';
 import '../screens_test_helpers.dart';
+import '../servers/servers_fixtures.dart';
 import '../shell_frame_helper.dart';
 
 NetConnection conn(String exe, {String host = '', String ip = '1.2.3.4'}) => NetConnection(
@@ -483,6 +486,152 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       expect((core.request!['target'], core.request!['port']), ('example.org', 8443));
       await closeDialog(tester);
+      await closePage(tester, container);
+    });
+  });
+
+  group('серверы: «Через VPN ▸ Авто / Основной / Запасной 1 / …»', () {
+    final three = rescueServersOf(threeServers(), threeServersOrder)!;
+    final one = RescueServers(servers: [three.main]);
+
+    Future<void> openMenu(WidgetTester tester, String title) async {
+      final button = find.byTooltip('Куда направить: $title');
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      testWidgets('${size.width.toInt()}×${size.height.toInt()}: подпись сервера, подменю с галочкой, перенос', (
+        tester,
+      ) async {
+        writeState(
+          const SplitTunnel(
+            via: SplitList(domains: ['youtube.com']),
+            servers: {
+              'NL игры': SplitList(apps: ['Discord.exe']),
+              'пропавший': SplitList(domains: ['old.example.com']),
+            },
+          ),
+        );
+        final container = await start(
+          tester,
+          connections: const [],
+          extra: [rescueServersProvider.overrideWith((ref) => three)],
+        );
+        await pumpPage(tester, container, const SplitTunnelTablePage(), size: size);
+        expectNoLayoutErrors(tester);
+        SplitTunnel state() => container.read(splitTunnelProvider);
+
+        expect(find.text('Discord.exe · через запасной 2'), findsOneWidget);
+        expect(find.text('и все поддомены · сервера нет — идёт через Авто'), findsOneWidget);
+        expect(tester.widget<RouteSwitch>(routeSwitch('Discord')).value, RouteChoice.vpn);
+
+        await openMenu(tester, 'youtube.com');
+        expect(find.text('Мимо VPN'), findsOneWidget);
+        expect(find.text('Сравнить пути…'), findsOneWidget);
+        expect(find.text('Убрать из списков'), findsOneWidget);
+        await tester.tap(find.text('Через VPN').last);
+        await tester.pumpAndSettle();
+        expect(find.text('Авто (основной, при сбое — запасные)'), findsOneWidget);
+        expect(find.text('Основной'), findsOneWidget);
+        expect(find.text('Запасной 1'), findsOneWidget);
+        expect(find.text('Запасной 2'), findsOneWidget);
+        expect(find.text('если основной заблокируют · NL запасной'), findsOneWidget);
+        expect(find.text('для игр и звонков · NL игры'), findsOneWidget);
+        // Галочки: у «Через VPN» и у «Авто».
+        expect(find.byIcon(Icons.check_rounded), findsNWidgets(2));
+        await tester.tap(find.text('Запасной 1').last);
+        await tester.pumpAndSettle();
+        expect(state().serverOf(SplitKind.domain, 'youtube.com'), 'NL запасной');
+        expect(state().via.domains, isEmpty);
+        expect(find.text('и все поддомены · через запасной 1'), findsOneWidget);
+        expectNoLayoutErrors(tester);
+
+        await openMenu(tester, 'Discord');
+        await tester.tap(find.text('Мимо VPN').last);
+        await tester.pumpAndSettle();
+        expect(state().servers.containsKey('NL игры'), isFalse);
+        expect(state().bypass.apps, ['Discord.exe']);
+
+        await openMenu(tester, 'Discord');
+        await tester.tap(find.text('Убрать из списков').last);
+        await tester.pumpAndSettle();
+        expect(state().targetOf(SplitKind.app, 'Discord.exe'), isNull);
+
+        // Пропавший сервер: в подменю видно, где пункт; «Авто» переносит в обычный список.
+        await openMenu(tester, 'old.example.com');
+        await tester.tap(find.text('Через VPN').last);
+        await tester.pumpAndSettle();
+        expect(find.text('«пропавший» — сервера нет, идёт через Авто'), findsOneWidget);
+        await tester.tap(find.text('Авто (основной, при сбое — запасные)').last);
+        await tester.pumpAndSettle();
+        expect(state().servers.keys, ['NL запасной']);
+        expect(state().via.domains, ['old.example.com']);
+        expectNoLayoutErrors(tester);
+        await closePage(tester, container);
+      });
+    }
+
+    testWidgets('один сервер — подменю нет, «Через VPN» сразу', (tester) async {
+      writeState(const SplitTunnel(bypass: SplitList(domains: ['youtube.com'])));
+      final container = await start(
+        tester,
+        connections: const [],
+        extra: [rescueServersProvider.overrideWith((ref) => one)],
+      );
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+      await openMenu(tester, 'youtube.com');
+      expect(find.byType(SubmenuButton), findsNothing);
+      await tester.tap(find.text('Через VPN').last);
+      await tester.pumpAndSettle();
+      expect(container.read(splitTunnelProvider).via.domains, ['youtube.com']);
+      expect(find.text('Основной'), findsNothing);
+      await closePage(tester, container);
+    });
+
+    testWidgets('«Сейчас в сети»: путь — сервер соединения именем из интерфейса', (tester) async {
+      writeState(const SplitTunnel());
+      NetConnection withChain(String host, List<String> chains) => NetConnection.fromJson({
+        'id': host,
+        'metadata': {
+          'processPath': r'C:\Games\cs2.exe',
+          'host': host,
+          'destinationIP': '5.6.7.8',
+          'destinationPort': '443',
+          'network': 'tcp',
+        },
+        'chains': chains,
+      });
+      final container = await start(
+        tester,
+        connections: [
+          withChain('a.example.com', ['NL игры', 'select']),
+          withChain('b.example.com', ['direct']),
+          withChain('c.example.com', ['NL', 'select']),
+        ],
+        extra: [rescueServersProvider.overrideWith((ref) => three)],
+      );
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+      await tester.tap(find.text('cs2'));
+      await tester.pumpAndSettle();
+      expect(find.text('ПУТЬ'), findsOneWidget);
+      String path(String host) => tester.widget<Text>(find.byKey(ValueKey('conn-path-$host'))).data!;
+      expect(path('a.example.com'), 'через запасной 2');
+      expect(path('b.example.com'), 'напрямую');
+      expect(path('c.example.com'), 'через основной');
+
+      await tester.tap(find.byTooltip('В список: a.example.com'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Сайт example.com').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Через VPN').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Запасной 2').last);
+      await tester.pumpAndSettle();
+      expect(container.read(splitTunnelProvider).serverOf(SplitKind.domain, 'example.com'), 'NL игры');
+      expectNoLayoutErrors(tester);
       await closePage(tester, container);
     });
   });

@@ -5,24 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
-import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 
 import '../screens_test_helpers.dart';
+import 'servers_fixtures.dart';
 
-/// Подписка как у PasarGuard: основной, запасной XHTTP, Hysteria2 для игр; плюс группа.
-OutboundGroup threeServers({String selected = 'NL'}) => OutboundGroup(
-  tag: 'select',
-  type: 'selector',
-  selected: selected,
-  items: [
-    OutboundInfo(tag: 'balance', type: 'balancer', isGroup: true, tagDisplay: 'Балансировщик'),
-    OutboundInfo(tag: 'NL игры', type: 'hysteria2', urlTestDelay: 70000, tagDisplay: '🇳🇱 NL игры'),
-    OutboundInfo(tag: 'NL', type: 'vless', urlTestDelay: 90, tagDisplay: '🇳🇱 NL'),
-    OutboundInfo(tag: 'NL запасной', type: 'vless', urlTestDelay: 120, tagDisplay: '🇳🇱 NL запасной'),
-  ],
-);
-
-const order = ['balance', 'NL', 'NL запасной', 'NL игры'];
+const order = threeServersOrder;
 
 void main() {
   group('ключ сервера', () {
