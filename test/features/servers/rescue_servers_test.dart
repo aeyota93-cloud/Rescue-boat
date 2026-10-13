@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/model/servers_format.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 
@@ -22,6 +23,51 @@ void main() {
   });
 
   group('имена', () {
+    test('протокол из конфига подписки: Reality и XHTTP различаются по транспорту; имя с протоколом', () {
+      final protocols = protocolsOfConfig({
+        'outbounds': [
+          {'tag': 'proxy', 'type': 'selector'},
+          {'tag': 'Best Latency', 'type': 'urltest'},
+          {'tag': 'direct', 'type': 'direct'},
+          {
+            'tag': 'NL',
+            'type': 'vless',
+            'tls': {
+              'reality': {'enabled': true},
+            },
+          },
+          {
+            'tag': 'NL запасной',
+            'type': 'vless',
+            'transport': {'type': 'xhttp'},
+            'tls': {
+              'reality': {'enabled': true},
+            },
+          },
+          {'tag': 'NL игры', 'type': 'hysteria2'},
+          {
+            'tag': 'старый',
+            'type': 'vmess',
+            'transport': {'type': 'ws'},
+          },
+        ],
+      });
+      expect(protocols, {
+        'NL': 'VLESS Reality',
+        'NL запасной': 'XHTTP',
+        'NL игры': 'Hysteria2',
+        'старый': 'VMess WebSocket',
+      });
+      final s = rescueServersOf(threeServers(), order)!.withProtocols(protocols);
+      expect(
+        [for (final x in s.servers) x.fullName],
+        ['Основной · VLESS Reality', 'Запасной 1 · XHTTP', 'Запасной 2 · Hysteria2'],
+      );
+      // Короткое имя (плашки, «через запасной 2») не меняется; протокол переживает перезапуск.
+      expect(s.servers.last.name, 'Запасной 2');
+      expect(RescueServers.decode(s.encode())!.servers.last.protocol, 'Hysteria2');
+    });
+
     test('по порядку подписки, а не по пингу; группы не считаются; подсказки по типу', () {
       final s = rescueServersOf(threeServers(), order)!;
       expect([for (final x in s.servers) x.tag], ['NL', 'NL запасной', 'NL игры']);

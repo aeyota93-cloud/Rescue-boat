@@ -296,7 +296,8 @@ void main() {
         find.descendant(of: find.byKey(const ValueKey('live-app-Discord.exe')), matching: find.text('Общение')),
         findsOneWidget,
       );
-      expect(find.byTooltip('Соединений, которые не удались за сутки'), findsOneWidget);
+      // Ошибки за сутки — не про «сейчас»: здесь их нет, они на «Группах».
+      expect(find.byTooltip('Соединений, которые не удались за сутки'), findsNothing);
 
       await tap(tester, find.text('Google Chrome'));
       expect(find.textContaining('общие правила → мимо', findRichText: true), findsOneWidget);
@@ -304,6 +305,7 @@ void main() {
 
       await openTab(tester, 1);
       expect(find.byKey(const ValueKey('group-card-Игры и лаунчеры')), findsOneWidget);
+      expect(find.byTooltip('Соединений, которые не удались за сутки'), findsWidgets, reason: 'у «Общения» и «Без группы»');
       expect(find.byKey(const ValueKey('group-card-')), findsOneWidget, reason: 'карточка «Без группы»');
       await tap(tester, find.byKey(const ValueKey('group-open-Общение')));
       expect(find.text('Группа «Общение»'), findsOneWidget);

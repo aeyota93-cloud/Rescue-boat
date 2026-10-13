@@ -352,9 +352,10 @@ class _SideItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = item.count ?? 0;
-    final shape = RoundedRectangleBorder(
-      borderRadius: selected ? const BorderRadius.horizontal(left: Radius.circular(18)) : BorderRadius.circular(16),
-    );
+    // Форма одна для всех пунктов: скругление только слева, справа пункт прилегает к области.
+    // Подсветка под мышкой и при нажатии — цветом panel, как у выбранного, чтобы при выборе пункт
+    // не менял форму и цвет.
+    const shape = RoundedRectangleBorder(borderRadius: BorderRadius.horizontal(left: Radius.circular(18)));
     final icon = Icon(selected ? (item.selectedIcon ?? item.icon) : item.icon, size: 20, color: RescueColors.text);
 
     final Widget content;
@@ -397,6 +398,9 @@ class _SideItem extends StatelessWidget {
         onTap: onTap,
         customBorder: shape,
         excludeFromSemantics: true,
+        hoverColor: RescueColors.panel,
+        highlightColor: RescueColors.panel,
+        splashFactory: NoSplash.splashFactory,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 52),
           child: Padding(

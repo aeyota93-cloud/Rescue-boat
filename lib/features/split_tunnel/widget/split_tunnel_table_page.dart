@@ -115,7 +115,6 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           final body = switch (view.value) {
             _View.live => TunnelLiveView(
               connections: connections,
-              errors: errors,
               titles: titles,
               query: query.value,
               pinned: pinned,

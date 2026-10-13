@@ -63,6 +63,33 @@ String autoUpdateLabel(ProfileEntity profile) {
 }
 
 /// Тип outbound из ядра → как его называют люди.
+/// Протокол сервера по его описанию в конфиге подписки (выход sing-box), понятным словом:
+/// «VLESS Reality», «XHTTP», «Hysteria2». Тип выхода не различает Reality и XHTTP — смотрим
+/// транспорт и TLS.
+String protocolOfOutbound(Map<String, dynamic> outbound) {
+  final type = (outbound['type'] as String? ?? '').toLowerCase();
+  final transport = ((outbound['transport'] as Map<String, dynamic>?)?['type'] as String? ?? '').toLowerCase();
+  final tls = outbound['tls'] as Map<String, dynamic>?;
+  final reality = (tls?['reality'] as Map<String, dynamic>?)?['enabled'] == true;
+  final base = protocolName(type);
+  return switch (transport) {
+    'xhttp' => 'XHTTP',
+    'ws' => '$base WebSocket',
+    'grpc' => '$base gRPC',
+    'httpupgrade' => '$base HTTPUpgrade',
+    'http' => '$base HTTP/2',
+    _ when reality => '$base Reality',
+    _ => base,
+  };
+}
+
+/// Протоколы серверов из конфига подписки: тег выхода → «VLESS Reality». Без групп и служебных.
+Map<String, String> protocolsOfConfig(Map<String, dynamic> config) => {
+  for (final o in (config['outbounds'] as List<dynamic>? ?? const []).whereType<Map<String, dynamic>>())
+    if (o['tag'] is String && !const {'selector', 'urltest', 'direct', 'block', 'dns'}.contains(o['type']))
+      o['tag'] as String: protocolOfOutbound(o),
+};
+
 String protocolName(String type) => switch (type.toLowerCase()) {
   'vless' => 'VLESS',
   'vmess' => 'VMess',

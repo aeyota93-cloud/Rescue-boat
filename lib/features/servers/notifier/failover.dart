@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
+import 'package:hiddify/features/profile/data/profile_data_providers.dart';
+import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/model/servers_format.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -94,11 +98,29 @@ const lastServersKey = 'rescue-servers-last';
 final rescueServersProvider = Provider.autoDispose<RescueServers?>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider).requireValue;
   final group = ref.watch(proxiesOverviewNotifierProvider).valueOrNull;
-  final live = rescueServersOf(group, ref.read(proxiesOverviewNotifierProvider.notifier).subscriptionOrder);
+  final protocols = ref.watch(serverProtocolsProvider).valueOrNull ?? const {};
+  final live = rescueServersOf(
+    group,
+    ref.read(proxiesOverviewNotifierProvider.notifier).subscriptionOrder,
+  )?.withProtocols(protocols);
   if (live != null && !live.isEmpty) {
     final text = live.encode();
     if (prefs.getString(lastServersKey) != text) unawaited(prefs.setString(lastServersKey, text));
     return live;
   }
-  return RescueServers.decode(prefs.getString(lastServersKey));
+  return RescueServers.decode(prefs.getString(lastServersKey))?.withProtocols(protocols);
+});
+
+/// Протоколы серверов активной подписки (тег → «VLESS Reality») из её конфига на диске: ядро
+/// отдаёт только тип выхода, а Reality и XHTTP оба «vless». Пусто — конфига нет или не читается.
+final serverProtocolsProvider = FutureProvider.autoDispose<Map<String, String>>((ref) async {
+  try {
+    final profile = await ref.watch(activeProfileProvider.future);
+    if (profile == null) return const {};
+    final file = ref.watch(profilePathResolverProvider).file(profile.id);
+    if (!file.existsSync()) return const {};
+    return protocolsOfConfig(jsonDecode(await file.readAsString()) as Map<String, dynamic>);
+  } catch (_) {
+    return const {};
+  }
 });

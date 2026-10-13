@@ -3,7 +3,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/features/common/pinned_scroll.dart';
 import 'package:hiddify/features/compare/model/compare_target.dart';
 import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
-import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
@@ -22,13 +21,13 @@ const liveWideFrom = 820.0;
 enum _LiveMode { apps, groups }
 
 /// Шлюпка: вкладка «Сейчас в сети» (docs/redesign/tunnel-v3.md). Сводка по реальным выходам,
-/// фильтры, программы с соединениями: группа, куда ушло, почему. Плашка пути у программы —
+/// фильтры, программы с соединениями: группа, куда ушло, почему. Ошибок за сутки здесь нет —
+/// вкладка про то, что идёт сейчас (ошибки — на «Группах» и на экране ошибок). Плашка пути у программы —
 /// правило для всей программы, «⋯» у соединения — для его сайта или IP.
 class TunnelLiveView extends HookConsumerWidget {
   const TunnelLiveView({
     super.key,
     required this.connections,
-    required this.errors,
     required this.titles,
     required this.query,
     required this.pinned,
@@ -38,7 +37,6 @@ class TunnelLiveView extends HookConsumerWidget {
 
   /// null — ядро не запущено (VPN выключен).
   final List<NetConnection>? connections;
-  final List<ErrorGroup> errors;
 
   /// Описания запущенных программ — для названий.
   final Map<String, String> titles;
@@ -80,7 +78,6 @@ class TunnelLiveView extends HookConsumerWidget {
               title: titleOf(app.exe),
               wide: wide,
               open: isOpen,
-              errors: app.exe.isEmpty ? 0 : errorsFor(SplitKind.app, app.exe, errors),
               all: all,
               onToggle: () => open.value = isOpen ? ({...open.value}..remove(key)) : {...open.value, key},
               onOpenGroup: onOpenGroup,
@@ -296,7 +293,6 @@ class _AppRow extends ConsumerWidget {
     required this.title,
     required this.wide,
     required this.open,
-    required this.errors,
     required this.all,
     required this.onToggle,
     required this.onOpenGroup,
@@ -306,7 +302,6 @@ class _AppRow extends ConsumerWidget {
   final String title;
   final bool wide;
   final bool open;
-  final int errors;
   final List<NetConnection> all;
   final VoidCallback onToggle;
   final ValueChanged<String> onOpenGroup;
@@ -333,18 +328,11 @@ class _AppRow extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
-                    ),
-                  ),
-                  Flexible(child: FailBadge(errors)),
-                ],
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
               ),
               Text(
                 sub,

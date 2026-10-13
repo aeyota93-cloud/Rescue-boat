@@ -27,7 +27,14 @@ String? serverHint(String type, int index) {
 
 /// Один сервер из выхода `select` (без групп).
 class RescueServer {
-  const RescueServer({required this.tag, required this.index, this.type = '', this.remark = '', this.delay = 0});
+  const RescueServer({
+    required this.tag,
+    required this.index,
+    this.type = '',
+    this.remark = '',
+    this.delay = 0,
+    this.protocol = '',
+  });
 
   /// Тег выхода в ядре — по нему правила и выбор в `select`.
   final String tag;
@@ -44,7 +51,16 @@ class RescueServer {
   /// Пинг последней проверки: 0 — не проверяли, больше 65000 — нет ответа.
   final int delay;
 
+  /// Протокол из конфига подписки: «VLESS Reality», «XHTTP», «Hysteria2»; пусто — неизвестен.
+  final String protocol;
+
   String get name => serverName(index);
+
+  /// Имя с протоколом — в списках и меню выбора сервера: «Запасной 2 · Hysteria2».
+  String get fullName => protocol.isEmpty ? name : '$name · $protocol';
+
+  RescueServer withProtocol(String value) =>
+      RescueServer(tag: tag, index: index, type: type, remark: remark, delay: delay, protocol: value);
 
   /// Для середины фразы: «через запасной 2».
   String get lowerName => name.toLowerCase();
@@ -58,7 +74,7 @@ class RescueServer {
 
   bool get responds => delay > 0 && !pingTimedOut(delay);
 
-  Map<String, dynamic> toJson() => {'tag': tag, 'type': type, 'remark': remark};
+  Map<String, dynamic> toJson() => {'tag': tag, 'type': type, 'remark': remark, 'protocol': protocol};
 }
 
 /// Серверы подписки по порядку и куда сейчас смотрит `select`.
@@ -78,6 +94,16 @@ class RescueServers {
   final bool live;
 
   bool get isEmpty => servers.isEmpty;
+
+  /// Те же серверы с протоколами из конфига ([protocolsOfConfig]); неизвестные — как были.
+  RescueServers withProtocols(Map<String, String> protocols) => protocols.isEmpty
+      ? this
+      : RescueServers(
+          servers: [for (final s in servers) protocols[s.tag] == null ? s : s.withProtocol(protocols[s.tag]!)],
+          selected: selected,
+          group: group,
+          live: live,
+        );
 
   /// Есть из чего выбирать: подменю «Через VPN ▸», режимы «Авто / Всегда».
   bool get several => servers.length >= 2;
@@ -126,6 +152,7 @@ class RescueServers {
             index: i,
             type: e['type'] as String? ?? '',
             remark: e['remark'] as String? ?? '',
+            protocol: e['protocol'] as String? ?? '',
           ),
       ];
       return servers.isEmpty ? null : RescueServers(servers: servers, live: false);

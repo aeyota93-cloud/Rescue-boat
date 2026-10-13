@@ -655,7 +655,7 @@ class _ModeCard extends ConsumerWidget {
             _ModeRow(
               key: ValueKey('failover-mode-${s.tag}'),
               selected: !auto && live && servers.selected == s.tag,
-              title: 'Всегда ${s.lowerName}',
+              title: ['Всегда ${s.lowerName}', if (s.protocol.isNotEmpty) s.protocol].join(' · '),
               subtitle: [?s.hint, s.title].join(' · '),
               ping: live ? s.delay : null,
               // Выбрать сервер в `select` можно только у работающего ядра.
@@ -965,7 +965,9 @@ class _ServerCard extends StatelessWidget {
       _ => protocolName(item.type),
     };
     final delay = item.urlTestDelay;
-    final sub = server == null ? _subtitle(item) : [server.title, ?server.hint].join(' · ');
+    final sub = server == null
+        ? _subtitle(item)
+        : [if (server.protocol.isNotEmpty) server.protocol, server.title, ?server.hint].join(' · ');
     final timedOut = pingTimedOut(delay);
     final health = this.health;
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));

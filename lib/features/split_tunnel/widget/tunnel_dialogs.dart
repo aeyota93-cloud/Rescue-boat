@@ -170,7 +170,7 @@ class _AddDialog extends HookConsumerWidget {
       ('bypass', 'Мимо VPN'),
       ('via', several ? 'VPN: любой сервер' : 'Через VPN'),
       if (several)
-        for (final s in servers.servers) ('server:${s.tag}', s.name),
+        for (final s in servers.servers) ('server:${s.tag}', s.fullName),
     ];
 
     return AlertDialog(
