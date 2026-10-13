@@ -6,11 +6,15 @@ import 'package:hiddify/features/compare/model/compare_target.dart';
 import 'package:hiddify/features/compare/notifier/compare_notifier.dart';
 import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
+import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../overview/fakes.dart' show FakeSplitTunnel;
 import '../screens_test_helpers.dart';
+import '../servers/servers_fixtures.dart';
 import 'fake_core.dart';
 
 const _id = 'dialogid0001';
@@ -35,6 +39,7 @@ void main() {
     Size size = const Size(1440, 900),
     VpnStatus vpn = _on,
     FakeSplitTunnel? split,
+    RescueServers? servers,
   }) async {
     final container = (await tester.runAsync(
       () => screensContainer(
@@ -43,6 +48,7 @@ void main() {
           vpnStatusProvider.overrideWith((ref) => vpn),
           splitTunnelProvider.overrideWith(() => split ?? FakeSplitTunnel()),
           compareEnvProvider.overrideWithValue(CompareEnv(newId: () => _id)),
+          if (servers != null) rescueServersProvider.overrideWith((ref) => servers),
         ],
       ),
     ))!;
@@ -245,5 +251,131 @@ void main() {
     await tester.pumpAndSettle();
     expect(core.allFiles, isEmpty);
     await closePage(tester, container);
+  });
+
+  group('v2: все дороги (три сервера)', () {
+    final three = rescueServersOf(threeServers(), threeServersOrder)!;
+    List<int?> around(int ms) => [ms, ms + 1, ms - 1, ms + 2, ms, ms - 2, ms + 1, ms, ms - 1, ms];
+
+    List<Map<String, Object?>> serversJson(
+      List<int?> nl,
+      List<int?> backup,
+      List<int?> games, {
+      bool estimate = false,
+    }) => [
+      {'tag': 'NL', 'available': !estimate, 'samples': nl, if (estimate) 'estimate': true},
+      {'tag': 'NL запасной', 'available': !estimate, 'samples': backup, if (estimate) 'estimate': true},
+      {'tag': 'NL игры', 'available': !estimate, 'samples': games, if (estimate) 'estimate': true},
+    ];
+
+    for (final size in const [Size(1440, 900), Size(420, 700)]) {
+      final name = '${size.width.toInt()}×${size.height.toInt()}';
+
+      testWidgets('$name: таблица «Напрямую» + серверы, «сейчас», лучшая дорога и кнопка «Пустить через»', (
+        tester,
+      ) async {
+        // Сайт в «через VPN (Авто)», select смотрит на основной — «сейчас» у основного.
+        final split = FakeSplitTunnel(const SplitTunnel(via: SplitList(domains: ['example.com'])));
+        final container = await open(tester, site, size: size, split: split, servers: three);
+        // До первого ответа таблица уже со всеми дорогами.
+        expect(find.byKey(const ValueKey('compare-road-direct')), findsOneWidget);
+        expect(find.byKey(const ValueKey('compare-road-NL игры')), findsOneWidget);
+        expect(find.text('ЧЕРЕЗ VPN'), findsNothing, reason: 'строку vpn не показываем, когда есть серверы');
+
+        core.respond(_id, direct: [140], vpn: [95], servers: serversJson([95], [], []));
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.text('Замеряем: 3 из 50. Обычно это 10–20 секунд'), findsOneWidget);
+
+        core.respond(
+          _id,
+          direct: around(140),
+          vpn: around(95),
+          servers: serversJson(around(95), around(120), around(40)),
+          done: true,
+        );
+        await tester.pump(const Duration(milliseconds: 600));
+        expectNoLayoutErrors(tester);
+        expect(find.text('Напрямую'), findsOneWidget);
+        expect(find.text('Основной'), findsOneWidget);
+        expect(find.text('Запасной 1'), findsOneWidget);
+        expect(find.text('Запасной 2'), findsOneWidget);
+        expect(find.text('NL игры · для игр и звонков'), findsOneWidget);
+        expect(find.text('СЕЙЧАС'), findsOneWidget);
+        expect(find.text('ЛУЧШЕ'), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^Основной, сейчас, задержка 95 мс')), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^Запасной 2, лучше, задержка 40 мс')), findsOneWidget);
+        expect(find.text('Лучше через запасной 2: на 55 мс быстрее, чем сейчас'), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Пустить через «Запасной 2»'), findsOneWidget);
+        expect(find.widgetWithText(OutlinedButton, 'Пустить напрямую'), findsOneWidget);
+        expect(find.widgetWithText(OutlinedButton, 'Оставить как есть'), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Пустить через «Запасной 2»'));
+        await tester.tap(find.text('Пустить через «Запасной 2»'));
+        await tester.pump();
+        expect(split.state.serverOf(SplitKind.domain, 'example.com'), 'NL игры');
+        expect(split.state.via.domains, isEmpty);
+        expect(find.text('Уже через «Запасной 2»'), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await closePage(tester, container);
+      });
+
+      testWidgets('$name: игры по UDP — оговорка, кнопка сервера остаётся', (tester) async {
+        final container = await open(
+          tester,
+          const CompareSubject(endpoints: [CompareEndpoint('1.2.3.4', 27015)]),
+          size: size,
+          servers: three,
+        );
+        core.respond(
+          _id,
+          direct: around(30),
+          vpn: around(90),
+          done: true,
+          method: 'icmp',
+          vpnEstimate: true,
+          vpnAvailable: false,
+          servers: serversJson(around(90), around(95), around(60), estimate: true),
+        );
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(
+          find.text('Для игры точно покажет только сама игра; по качеству дороги лучше всего — запасной 2'),
+          findsOneWidget,
+        );
+        expect(find.text('ОЦЕНКА'), findsNWidgets(3));
+        expect(find.widgetWithText(FilledButton, 'Пустить через «Запасной 2»'), findsOneWidget);
+        expectNoLayoutErrors(tester);
+        await closePage(tester, container);
+      });
+    }
+
+    testWidgets('лидеры «одинаково», среди них текущая — «Оставить как есть» жёлтая и закрывает окно', (tester) async {
+      final split = FakeSplitTunnel(const SplitTunnel(via: SplitList(domains: ['example.com'])));
+      final container = await open(tester, site, split: split, servers: three);
+      core.respond(
+        _id,
+        direct: around(140),
+        vpn: around(42),
+        servers: serversJson(around(42), around(40), around(41)),
+        done: true,
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('Разницы почти нет — лучше оставить как есть'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Оставить как есть'), findsOneWidget);
+      await tester.tap(find.text('Оставить как есть'));
+      await tester.pumpAndSettle();
+      expect(find.text('Сравнить пути'), findsNothing);
+      expect(split.state.via.domains, ['example.com'], reason: 'ничего не трогали');
+      await closePage(tester, container);
+    });
+
+    testWidgets('ядро без servers (один сервер) — две карточки, как раньше', (tester) async {
+      final container = await open(tester, site, servers: three);
+      await respond(tester, direct10, vpn10, done: true);
+      expect(find.text('ЧЕРЕЗ VPN'), findsOneWidget);
+      expect(find.byKey(const ValueKey('compare-road-direct')), findsNothing);
+      expect(find.text('Лучше напрямую: на 55 мс быстрее'), findsOneWidget);
+      expect(find.text('Всегда через VPN'), findsOneWidget);
+      await closePage(tester, container);
+    });
   });
 }

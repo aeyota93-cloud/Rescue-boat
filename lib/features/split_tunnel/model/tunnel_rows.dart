@@ -14,6 +14,7 @@ class TunnelEntry {
     required this.isDefaultGame,
     required this.connections,
     required this.errors,
+    this.server,
   });
 
   final SplitKind kind;
@@ -23,6 +24,9 @@ class TunnelEntry {
 
   /// null — ни в одном списке («Авто», решают общие правила).
   final SplitTarget? target;
+
+  /// Тег сервера, за которым закреплена запись (тогда [target] — «через VPN»); null — «Авто» или не VPN.
+  final String? server;
 
   /// Из списка игр и лаунчеров по умолчанию.
   final bool isDefaultGame;
@@ -39,7 +43,7 @@ class TunnelEntry {
 class TunnelSummary {
   const TunnelSummary({required this.via, required this.bypass, required this.auto, required this.online});
 
-  /// Записей в списке «через VPN».
+  /// Записей «через VPN»: «Авто» и закреплённые за серверами.
   final int via;
 
   /// Записей в списке «мимо VPN».
@@ -139,24 +143,35 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
   int? count(SplitKind kind, String value) => connections?.where((c) => _connMatches(kind, value, c)).length;
 
   final entries = <TunnelEntry>[];
-  void addEntry(SplitKind kind, String value, SplitTarget? target) => entries.add(
+  void addEntry(SplitKind kind, String value, SplitTarget? target, {String? server}) => entries.add(
     TunnelEntry(
       kind: kind,
       value: value,
       target: target,
+      server: server,
       isDefaultGame: kind == SplitKind.app && isDefaultGame(value),
       connections: count(kind, value),
       errors: errorsFor(kind, value, errors),
     ),
   );
 
+  // Запись в двух местах быть не должна, но если есть — побеждает то, что в ядре раньше:
+  // сервер, потом «через VPN», потом «мимо».
+  final seen = <String>{};
+  bool once(SplitKind kind, String value) =>
+      seen.add('${kind.name}|${kind == SplitKind.ip ? value : value.toLowerCase()}');
+  for (final MapEntry(key: tag, value: list) in split.servers.entries) {
+    for (final kind in SplitKind.values) {
+      for (final value in list.of(kind)) {
+        if (once(kind, value)) addEntry(kind, value, SplitTarget.via, server: tag);
+      }
+    }
+  }
   for (final target in [SplitTarget.via, SplitTarget.bypass]) {
     final list = split.list(target);
     for (final kind in SplitKind.values) {
       for (final value in list.of(kind)) {
-        // Запись в обоих списках быть не должна, но если есть — побеждает «через VPN», как в ядре.
-        if (target == SplitTarget.bypass && split.via.contains(kind, value)) continue;
-        addEntry(kind, value, target);
+        if (once(kind, value)) addEntry(kind, value, target);
       }
     }
   }
@@ -184,7 +199,7 @@ int errorsFor(SplitKind kind, String value, List<ErrorGroup> groups) {
   return (
     entries: entries,
     summary: TunnelSummary(
-      via: total(split.via),
+      via: total(split.via) + split.servers.values.fold(0, (sum, l) => sum + total(l)),
       bypass: total(split.bypass),
       auto: connections == null ? null : auto,
       online: connections == null ? null : onlineApps.length,

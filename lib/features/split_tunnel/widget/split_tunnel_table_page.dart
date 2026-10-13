@@ -8,12 +8,15 @@ import 'package:hiddify/features/compare/widget/compare_paths_dialog.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/data/running_apps.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
+import 'package:hiddify/features/split_tunnel/widget/route_menu.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Закладки над списком: все записи, только «мимо VPN», только «через VPN».
@@ -27,6 +30,9 @@ const _routeWidth = 236.0;
 
 /// Ширина места под кнопку «Сравнить пути» в конце строки таблицы.
 const _compareWidth = 52.0;
+
+/// Ширина места под меню «⋯» строки (куда направить, сервер).
+const _menuWidth = 44.0;
 
 /// Сколько строк показываем сразу, когда прокручивается вся страница; дальше — «Показать ещё».
 const _compactRows = 30;
@@ -289,10 +295,18 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       SplitTarget.bypass => RouteChoice.bypass,
       SplitTarget.via => RouteChoice.vpn,
     };
+    final compare = _compareAction(context, ref, e, title);
     final row = _TunnelRow(
       wide: wide,
       highlighted: highlighted,
-      compare: _compareAction(context, ref, e, title),
+      compare: compare,
+      menu: (onAccent) => RouteMenuButton(
+        kind: e.kind,
+        value: e.value,
+        label: title,
+        onCompare: compare?.onPressed,
+        color: DeepTileColors.of(highlighted: onAccent).foreground,
+      ),
       // Программа в сети: по нажатию — куда она ходит, с переносом сайта или IP в списки.
       onTap: e.kind == SplitKind.app && e.online
           ? () => showDialog<void>(
@@ -302,7 +316,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           : null,
       letter: e.kind == SplitKind.ip ? '#' : title.characters.first.toUpperCase(),
       title: title,
-      subtitle: _detail(e),
+      subtitle: [
+        _detail(e),
+        if (e.server case final tag?) serverPlaceLabel(tag, ref.watch(rescueServersProvider)),
+      ].join(' · '),
       kind: switch (e.kind) {
         SplitKind.app => 'Программа',
         SplitKind.domain => 'Сайт',
@@ -554,6 +571,7 @@ class _HeaderRow extends StatelessWidget {
               child: Text('КУДА ИДЁТ', style: style),
             ),
             SizedBox(width: _compareWidth),
+            SizedBox(width: _menuWidth),
           ],
         ),
       ),
@@ -577,6 +595,7 @@ class _TunnelRow extends StatelessWidget {
     this.dashed = false,
     this.onTap,
     this.compare,
+    this.menu,
     this.letter,
     this.icon,
     this.trailingIcon,
@@ -602,6 +621,9 @@ class _TunnelRow extends StatelessWidget {
 
   /// Кнопка «Сравнить пути» в конце строки; null — у строки её нет.
   final _CompareAction? compare;
+
+  /// Меню «⋯» в конце строки; аргумент — стоит ли оно на жёлтом. null — меню нет.
+  final Widget Function(bool onAccent)? menu;
   final String? letter;
   final IconData? icon;
   final IconData? trailingIcon;
@@ -694,6 +716,7 @@ class _TunnelRow extends StatelessWidget {
             ),
             icon: const Icon(Icons.compare_arrows_rounded, size: 22),
           );
+    final menuButton = menu?.call(highlighted);
     final kindText = Text(kind, maxLines: 1, style: TextStyle(fontSize: 13, color: c.subtitle));
     final errorsText = errors == 0 ? 'нет' : '$errors';
 
@@ -724,6 +747,10 @@ class _TunnelRow extends StatelessWidget {
               width: _compareWidth,
               child: compareButton == null ? null : Center(child: compareButton),
             ),
+            SizedBox(
+              width: _menuWidth,
+              child: menuButton == null ? null : Center(child: menuButton),
+            ),
           ],
         ),
       );
@@ -733,13 +760,14 @@ class _TunnelRow extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (compareButton == null)
+            if (compareButton == null && menuButton == null)
               ExcludeSemantics(child: name)
             else
               Row(
                 children: [
                   Expanded(child: ExcludeSemantics(child: name)),
-                  compareButton,
+                  ?compareButton,
+                  ?menuButton,
                 ],
               ),
             const SizedBox(height: 6),
@@ -985,7 +1013,9 @@ class _RunningAppsDialog extends HookConsumerWidget {
   }
 }
 
-/// Куда сейчас ходит программа: сайт или IP можно сразу отправить мимо VPN или через VPN.
+/// «Сейчас в сети»: куда ходит программа и по какой дороге («Путь» — сервер, через который реально
+/// идёт соединение, именем из интерфейса). Сайт или IP можно сразу направить: мимо VPN, через VPN
+/// («Авто» или конкретный сервер).
 class _AppConnectionsDialog extends ConsumerWidget {
   const _AppConnectionsDialog({required this.exe});
 
@@ -994,7 +1024,8 @@ class _AppConnectionsDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final all = ref.watch(liveConnectionsProvider).valueOrNull ?? const <NetConnection>[];
-    final notifier = ref.read(splitTunnelProvider.notifier);
+    final split = ref.watch(splitTunnelProvider);
+    final servers = ref.watch(rescueServersProvider);
     final hosts = <String, NetConnection>{};
     for (final c in all.where((c) => c.exe.toLowerCase() == exe.toLowerCase())) {
       hosts.putIfAbsent(c.host.isNotEmpty ? c.host : c.ip, () => c);
@@ -1002,42 +1033,72 @@ class _AppConnectionsDialog extends ConsumerWidget {
     return AlertDialog(
       title: Text('Куда ходит $exe'),
       content: SizedBox(
-        width: 520,
+        width: 560,
         height: 420,
         child: hosts.isEmpty
             ? const Center(child: Text('Сейчас соединений нет', style: RescueText.smallSecondary))
             : ListView(
                 children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('АДРЕС', style: RescueText.microLabel)),
+                        SizedBox(width: 12),
+                        SizedBox(width: 150, child: Text('ПУТЬ', style: RescueText.microLabel)),
+                        SizedBox(width: 48),
+                      ],
+                    ),
+                  ),
                   for (final MapEntry(key: name, value: c) in hosts.entries)
                     ListTile(
                       dense: true,
-                      title: Text(name),
-                      subtitle: Text('${c.viaVpn ? 'через VPN' : 'напрямую'} · ${c.network}:${c.port}'),
-                      trailing: PopupMenuButton<VoidCallback>(
-                        tooltip: 'В список',
-                        onSelected: (action) => action(),
-                        itemBuilder: (_) => [
-                          if (c.host.isNotEmpty) ...[
-                            PopupMenuItem(
-                              value: () => notifier.add(SplitTarget.bypass, SplitKind.domain, siteOf(c.host)),
-                              child: Text('Сайт ${siteOf(c.host)} → мимо VPN'),
+                      title: Row(
+                        children: [
+                          Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            width: 150,
+                            child: Text(
+                              connectionPathLabel(c, servers),
+                              key: ValueKey('conn-path-$name'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            PopupMenuItem(
-                              value: () => notifier.add(SplitTarget.via, SplitKind.domain, siteOf(c.host)),
-                              child: Text('Сайт ${siteOf(c.host)} → через VPN'),
-                            ),
-                          ],
-                          if (c.ip.isNotEmpty) ...[
-                            PopupMenuItem(
-                              value: () => notifier.add(SplitTarget.bypass, SplitKind.ip, cidrOf(c.ip)),
-                              child: Text('IP ${c.ip} → мимо VPN'),
-                            ),
-                            PopupMenuItem(
-                              value: () => notifier.add(SplitTarget.via, SplitKind.ip, cidrOf(c.ip)),
-                              child: Text('IP ${c.ip} → через VPN'),
-                            ),
-                          ],
+                          ),
                         ],
+                      ),
+                      subtitle: Text('${c.network}:${c.port}'),
+                      trailing: MenuAnchor(
+                        menuChildren: [
+                          if (c.host.isNotEmpty)
+                            SubmenuButton(
+                              menuChildren: routeMenuItems(
+                                ref: ref,
+                                split: split,
+                                servers: servers,
+                                kind: SplitKind.domain,
+                                value: siteOf(c.host),
+                              ),
+                              child: Text('Сайт ${siteOf(c.host)}'),
+                            ),
+                          if (c.ip.isNotEmpty)
+                            SubmenuButton(
+                              menuChildren: routeMenuItems(
+                                ref: ref,
+                                split: split,
+                                servers: servers,
+                                kind: SplitKind.ip,
+                                value: cidrOf(c.ip),
+                              ),
+                              child: Text('IP ${c.ip}'),
+                            ),
+                        ],
+                        builder: (context, controller, _) => IconButton(
+                          tooltip: 'В список: $name',
+                          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+                          icon: const Icon(Icons.more_vert_rounded),
+                        ),
                       ),
                     ),
                 ],
@@ -1046,4 +1107,12 @@ class _AppConnectionsDialog extends ConsumerWidget {
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
     );
   }
+}
+
+/// «Путь» соединения: «напрямую», «через запасной 1» (сервер из цепочки clash API) или «через VPN»,
+/// если сервер не узнали.
+String connectionPathLabel(NetConnection c, RescueServers? servers) {
+  if (!c.viaVpn) return 'напрямую';
+  final s = servers?.serverOfChain(c.chains);
+  return s == null ? 'через VPN' : 'через ${s.lowerName}';
 }

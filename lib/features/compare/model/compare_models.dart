@@ -4,15 +4,19 @@ library;
 
 import 'dart:math' as math;
 
-/// Одна дорога из ответа ядра (`paths.direct` / `paths.vpn`).
+/// Одна дорога из ответа ядра (`paths.direct` / `paths.vpn` / элемент `paths.servers`).
 class PathResult {
   const PathResult({
+    this.tag = '',
     this.available = true,
     this.estimate = false,
     this.firstMs,
     this.samples = const [],
     this.note = '',
   });
+
+  /// Тег сервера (только у `paths.servers`), иначе пусто.
+  final String tag;
 
   /// false — дорогу измерить нельзя (см. [note]).
   final bool available;
@@ -33,6 +37,7 @@ class PathResult {
     int? ms(Object? v) => v is num ? v.round() : null;
     final raw = json['samples'];
     return PathResult(
+      tag: json['tag'] as String? ?? '',
       available: json['available'] as bool? ?? true,
       estimate: json['estimate'] as bool? ?? false,
       firstMs: ms(json['first_ms']),
@@ -53,6 +58,7 @@ class CompareResult {
     this.error = '',
     this.direct,
     this.vpn,
+    this.servers = const [],
   });
 
   final String id;
@@ -70,8 +76,13 @@ class CompareResult {
   final PathResult? direct;
   final PathResult? vpn;
 
-  /// Сколько замеров по обеим дорогам уже пришло.
-  int get samplesDone => (direct?.samples.length ?? 0) + (vpn?.samples.length ?? 0);
+  /// Каждый сервер `select` по своему выходу, в порядке подписки (ядро rb.16+, servers-v2.md).
+  /// Пусто — старое ядро или в профиле один сервер: тогда сравниваем с [vpn], как раньше.
+  final List<PathResult> servers;
+
+  /// Сколько замеров по всем дорогам уже пришло.
+  int get samplesDone =>
+      (direct?.samples.length ?? 0) + (vpn?.samples.length ?? 0) + servers.fold(0, (sum, s) => sum + s.samples.length);
 
   /// null — не разобралось (не тот JSON, нет id).
   static CompareResult? tryParse(Object? json) {
@@ -84,6 +95,7 @@ class CompareResult {
       return p is Map<String, dynamic> ? PathResult.fromJson(p) : null;
     }
 
+    final rawServers = paths is Map<String, dynamic> ? paths['servers'] : null;
     return CompareResult(
       id: id,
       target: json['target'] as String? ?? '',
@@ -93,6 +105,12 @@ class CompareResult {
       error: json['error'] as String? ?? '',
       direct: path('direct'),
       vpn: path('vpn'),
+      servers: rawServers is List
+          ? [
+              for (final e in rawServers)
+                if (e is Map<String, dynamic> && (e['tag'] as String? ?? '').isNotEmpty) PathResult.fromJson(e),
+            ]
+          : const [],
     );
   }
 }
@@ -263,4 +281,166 @@ String formatMs(num ms) {
   if (rounded < 1000) return '$rounded мс';
   final s = (rounded / 1000).toStringAsFixed(1).replaceFirst('.', ',').replaceFirst(RegExp(r',0$'), '');
   return '$s с';
+}
+
+// ---------- v2: все дороги (docs/redesign/servers-v2.md) ----------
+
+/// Дорога «напрямую» среди [CompareRoad.id]: у серверов id — их тег, а он пустым не бывает.
+const directRoad = '';
+
+/// Одна дорога в таблице v2: напрямую или сервер.
+class CompareRoad {
+  const CompareRoad(this.id, this.path);
+
+  /// [directRoad] или тег сервера.
+  final String id;
+  final PathResult path;
+
+  bool get direct => id == directRoad;
+}
+
+/// Дороги для таблицы: «Напрямую», затем серверы в порядке ответа (порядок `select`).
+/// Пусто — ядро не прислало `servers`: показываем две дороги, как раньше.
+List<CompareRoad> compareRoads(CompareResult result) => result.servers.isEmpty
+    ? const []
+    : [
+        if (result.direct case final d?) CompareRoad(directRoad, d),
+        for (final s in result.servers) CompareRoad(s.tag, s),
+      ];
+
+/// Сравнение двух дорог по правилу договора: -1 — [a] лучше, 1 — [b] лучше, 0 — одинаково,
+/// null — сравнить нечем (замеров нет или обе не ответили).
+int? compareStats(PathStats a, PathStats b) {
+  if (a.total == 0 || b.total == 0) return null;
+  // Неудачи: доли без дробей (failed/total), порог — failureGapPercent п.п.; больше нуля — у [a] неудач больше.
+  final gap = 100 * (a.failed * b.total - b.failed * a.total);
+  final limit = failureGapPercent * a.total * b.total;
+  if (gap >= limit) return 1;
+  if (-gap >= limit) return -1;
+  final am = a.median;
+  final bm = b.median;
+  if (am == null || bm == null) return null;
+  final diff = (am - bm).abs();
+  if (diff < sameAbsoluteMs || diff < math.min(am, bm) * sameRelative) return 0;
+  return am < bm ? -1 : 1;
+}
+
+enum RoadVerdictKind {
+  /// Лучше другая дорога, чем сейчас (или «сейчас» неизвестно).
+  change,
+
+  /// Лучше всего — как сейчас, или лидеров несколько «одинаково» и среди них текущая.
+  keep,
+
+  /// Игры по UDP: серверы сравнены по качеству туннеля — вывод с оговоркой.
+  estimate,
+
+  /// Сравнить не удалось.
+  noData,
+}
+
+class RoadVerdict {
+  const RoadVerdict(this.kind, this.text, {this.best, this.bestServer, this.leaders = const {}});
+
+  final RoadVerdictKind kind;
+  final String text;
+
+  /// Лучшая дорога ([directRoad] или тег); null — вывода нет.
+  final String? best;
+
+  /// Лучший из серверов — для кнопки «Пустить через «…»» (даже если лучше напрямую).
+  final String? bestServer;
+
+  /// Все дороги, которые никем не побиты («одинаково» между собой).
+  final Set<String> leaders;
+}
+
+/// Лучшая дорога v2: правило [compareStats] ко всем дорогам; лидеры — те, кого никто не побил.
+/// Если лидеров несколько и среди них текущая [current] — лучшей считается она (не дёргаем без
+/// пользы). [serverName] — имя сервера по тегу в середине фразы («запасной 2»).
+/// null — замеры ещё идут, была ошибка или ядро не прислало `servers`.
+RoadVerdict? roadVerdict(CompareResult result, {String? current, required String Function(String tag) serverName}) {
+  if (!result.done || result.error.isNotEmpty) return null;
+  String phrase(String id) => id == directRoad ? 'напрямую' : 'через ${serverName(id)}';
+  final roads = compareRoads(result);
+  if (roads.isEmpty) return null;
+
+  String? pick(List<CompareRoad> candidates, Set<String> leaders) {
+    if (leaders.isEmpty) return null;
+    if (current != null && leaders.contains(current)) return current;
+    final sorted = candidates.where((r) => leaders.contains(r.id)).toList()
+      ..sort((a, b) {
+        final byFail = a.path.stats.failed * b.path.stats.total - b.path.stats.failed * a.path.stats.total;
+        if (byFail != 0) return byFail;
+        return (a.path.stats.median ?? 1 << 30).compareTo(b.path.stats.median ?? 1 << 30);
+      });
+    return sorted.first.id;
+  }
+
+  Set<String> leadersOf(List<CompareRoad> candidates) => {
+    for (final r in candidates)
+      if (!candidates.any((o) => o != r && compareStats(o.path.stats, r.path.stats) == -1)) r.id,
+  };
+
+  bool measured(CompareRoad r) => r.path.stats.total > 0 && r.path.stats.ok > 0;
+
+  final servers = roads.where((r) => !r.direct).toList();
+  if (servers.any((r) => r.path.estimate)) {
+    // Оценка качества туннеля — не замер цели: с прямым путём не сравниваем, только серверы между собой.
+    final candidates = servers.where(measured).toList();
+    final best = pick(candidates, leadersOf(candidates));
+    if (best == null) {
+      final median = result.direct?.stats.median;
+      final tail = median == null ? 'Прямой путь не ответил.' : 'Прямой путь: ${formatMs(median)}.';
+      return RoadVerdict(RoadVerdictKind.noData, 'Для игр по UDP сравнить нельзя. $tail');
+    }
+    return RoadVerdict(
+      RoadVerdictKind.estimate,
+      'Для игры точно покажет только сама игра; по качеству дороги лучше всего — ${serverName(best)}',
+      best: best,
+      bestServer: best,
+    );
+  }
+
+  final candidates = roads.where((r) => r.path.available && r.path.stats.total > 0).toList();
+  if (candidates.length < 2 || !candidates.any(measured)) {
+    return const RoadVerdict(RoadVerdictKind.noData, 'Сравнить не удалось: измерить удалось меньше двух дорог');
+  }
+  final leaders = leadersOf(candidates);
+  final best = pick(candidates, leaders);
+  if (best == null) return const RoadVerdict(RoadVerdictKind.noData, 'Ни одна дорога не ответила. Проверьте адрес');
+  final serverCandidates = candidates.where((r) => !r.direct).toList();
+  final bestServer = best != directRoad ? best : pick(serverCandidates, leadersOf(serverCandidates));
+
+  if (best == current) {
+    return RoadVerdict(
+      RoadVerdictKind.keep,
+      leaders.length > 1 ? 'Разницы почти нет — лучше оставить как есть' : 'Лучше всего — как сейчас, ${phrase(best)}',
+      best: best,
+      bestServer: bestServer,
+      leaders: leaders,
+    );
+  }
+
+  // Насколько лучше, чем сейчас (если «сейчас» известно и измерено).
+  var why = '';
+  final now = current == null ? null : candidates.where((r) => r.id == current).firstOrNull;
+  final winner = candidates.firstWhere((r) => r.id == best);
+  if (now != null && compareStats(winner.path.stats, now.path.stats) == -1) {
+    final a = winner.path.stats;
+    final b = now.path.stats;
+    final byFailures = 100 * (b.failed * a.total - a.failed * b.total) >= failureGapPercent * a.total * b.total;
+    if (byFailures) {
+      why = ': сейчас чаще неудачи (${b.failPercent} % против ${a.failPercent} %)';
+    } else if (a.median != null && b.median != null) {
+      why = ': на ${formatMs(b.median! - a.median!)} быстрее, чем сейчас';
+    }
+  }
+  return RoadVerdict(
+    RoadVerdictKind.change,
+    'Лучше ${phrase(best)}$why',
+    best: best,
+    bestServer: bestServer,
+    leaders: leaders,
+  );
 }

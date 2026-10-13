@@ -23,6 +23,7 @@ class NetConnection {
     required this.viaVpn,
     required this.upload,
     required this.download,
+    this.chains = const [],
   });
 
   final String id;
@@ -38,6 +39,9 @@ class NetConnection {
   final bool viaVpn;
   final int upload;
   final int download;
+
+  /// Цепочка выходов из clash API: первый — настоящий выход (сервер или direct), дальше группы.
+  final List<String> chains;
 
   factory NetConnection.fromJson(Map<String, dynamic> json) {
     final meta = json['metadata'] as Map<String, dynamic>? ?? const {};
@@ -57,6 +61,7 @@ class NetConnection {
       viaVpn: !direct && !block,
       upload: (json['upload'] as num? ?? 0).toInt(),
       download: (json['download'] as num? ?? 0).toInt(),
+      chains: List.unmodifiable(chains),
     );
   }
 }

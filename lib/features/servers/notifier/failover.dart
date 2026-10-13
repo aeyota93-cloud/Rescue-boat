@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -71,3 +75,30 @@ final failoverServersProvider = Provider.autoDispose<FailoverServers?>((ref) {
 final failoverOnBackupProvider = Provider.autoDispose<bool>(
   (ref) => ref.watch(FailoverPreferences.auto) && (ref.watch(failoverServersProvider)?.onBackup ?? false),
 );
+
+/// Пометка на Главной: «работаем через запасной 2»; null — пометки нет.
+final failoverNoteProvider = Provider.autoDispose<String?>((ref) {
+  if (!ref.watch(FailoverPreferences.auto)) return null;
+  final servers = ref.watch(rescueServersProvider);
+  final current = servers == null || !servers.live ? null : servers.current;
+  return current == null || current.index == 0 ? null : 'работаем через ${current.lowerName}';
+});
+
+/// Где хранится последний известный список серверов (теги, типы, имена из подписки).
+const lastServersKey = 'rescue-servers-last';
+
+/// Серверы активной подписки с именами из интерфейса — общий источник для всех экранов
+/// (docs/redesign/servers-v2.md). Пока VPN подключён — живой список ядра с пингом и выбором;
+/// выключен — список из прошлого раза (только имена), чтобы Туннель знал, кого предлагать.
+/// null — серверов не видели ни разу.
+final rescueServersProvider = Provider.autoDispose<RescueServers?>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider).requireValue;
+  final group = ref.watch(proxiesOverviewNotifierProvider).valueOrNull;
+  final live = rescueServersOf(group, ref.read(proxiesOverviewNotifierProvider.notifier).subscriptionOrder);
+  if (live != null && !live.isEmpty) {
+    final text = live.encode();
+    if (prefs.getString(lastServersKey) != text) unawaited(prefs.setString(lastServersKey, text));
+    return live;
+  }
+  return RescueServers.decode(prefs.getString(lastServersKey));
+});

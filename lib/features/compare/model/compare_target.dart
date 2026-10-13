@@ -1,6 +1,8 @@
 /// Шлюпка: что сравниваем. Адрес приводится к виду из договора (домен, IPv4 или IPv6 без схемы и пути).
 library;
 
+import 'package:hiddify/features/compare/model/compare_models.dart';
+import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
@@ -131,3 +133,17 @@ List<CompareEndpoint> endpointsForApp(String exe, List<NetConnection> all, {int 
 }
 
 bool _isLoopback(String ip) => ip.startsWith('127.') || ip == '::1' || ip == '0.0.0.0';
+
+/// Какой дорогой цель идёт сейчас (для пометки «сейчас» и выбора при «одинаково»): «мимо VPN» —
+/// напрямую ([directRoad]), закреплена за сервером — он (если сервер есть в подписке), «через VPN
+/// (Авто)» — выбранный сейчас в `select`. null — неизвестно: цели нет в списках (решают общие правила)
+/// или серверы не видны.
+String? currentRoadOf(SplitTunnel split, RescueServers? servers, ({SplitKind kind, String value}) item) {
+  final server = split.serverOf(item.kind, item.value);
+  if (server != null) return servers?.byTag(server) != null ? server : servers?.current?.tag;
+  return switch (split.targetOf(item.kind, item.value)) {
+    SplitTarget.bypass => directRoad,
+    SplitTarget.via => servers?.current?.tag,
+    null => null,
+  };
+}

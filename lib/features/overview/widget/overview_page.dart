@@ -231,20 +231,22 @@ class _PickerColumn extends StatelessWidget {
   }
 }
 
-/// «Работаем через запасной» под выбором сервера: ядро само перешло (или пользователь выбрал)
-/// не основной сервер, а автопереключение включено (docs/redesign/failover.md).
+/// «Работаем через запасной 1» под выбором сервера: ядро само перешло (или пользователь выбрал)
+/// не основной сервер, а автопереключение включено. Имя — по порядку подписки
+/// (docs/redesign/failover.md, servers-v2.md).
 class _FailoverNote extends ConsumerWidget {
   const _FailoverNote();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(failoverOnBackupProvider)) return const SizedBox.shrink();
-    return const Padding(
-      padding: EdgeInsets.only(top: 8),
+    final note = ref.watch(failoverNoteProvider);
+    if (note == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
       child: Text(
-        'работаем через запасной',
-        key: ValueKey('home-failover-note'),
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.onAccentMuted),
+        note,
+        key: const ValueKey('home-failover-note'),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.onAccentMuted),
       ),
     );
   }
