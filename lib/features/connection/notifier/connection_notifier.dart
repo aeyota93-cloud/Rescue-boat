@@ -48,6 +48,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
 
     ref.listen(activeProfileProvider.select((value) => value.asData?.value), (previous, next) async {
       if (previous == null) return;
+      // Удаление активной подписки само отключает и подключает заново ([connectWhenStopped]); свой
+      // перезапуск тут столкнулся бы с остановкой, и вызовы ядра повисали (приложение «замирало»).
+      if (_switchingProfile) return;
       final shouldReconnect = next == null || previous.id != next.id;
       if (shouldReconnect) {
         await reconnect(next);
@@ -69,6 +72,36 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (state case AsyncData(:final value)) {
       if (value case Disconnected()) return _connect();
     }
+  }
+
+  bool _switchingProfile = false;
+
+  /// Шлюпка: пока идёт [action] (удаление активной подписки), смена активной подписки не
+  /// перезапускает ядро — [action] отключает и подключает сам.
+  Future<T> whileSwitchingProfile<T>(Future<T> Function() action) async {
+    _switchingProfile = true;
+    try {
+      return await action();
+    } finally {
+      // Новая активная подписка приходит из базы чуть позже — не пропустить её перезапуск сюда.
+      await Future<void>.delayed(const Duration(seconds: 1));
+      _switchingProfile = false;
+    }
+  }
+
+  /// Шлюпка: подключиться, как только ядро остановится (после [abortConnection] состояние
+  /// приходит не сразу). Ждёт не дольше [timeout]; подключение с активной подпиской.
+  Future<void> connectWhenStopped({Duration timeout = const Duration(seconds: 10)}) async {
+    final until = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(until)) {
+      if (state case AsyncData(value: Disconnected())) {
+        loggy.info("reconnecting after the active profile was deleted");
+        await ref.read(Preferences.startedByUser.notifier).update(true);
+        return _connect();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    loggy.warning("not reconnecting: core did not stop in $timeout");
   }
 
   Future<void> toggleConnection() async {

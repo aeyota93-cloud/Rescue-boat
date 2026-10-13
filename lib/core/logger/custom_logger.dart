@@ -49,7 +49,24 @@ class FileLogPrinter extends LoggyPrinter {
   final File _logFile;
   final LogLevel minLevel;
 
-  late final _sink = _logFile.openWrite(mode: FileMode.writeOnly);
+  late final _sink = _openKeepingPrevious();
+
+  /// Шлюпка: журнал прошлого запуска не затираем, а сохраняем рядом как `app.prev.log` — после
+  /// зависания приложение закрывают и запускают снова, и без этого причина пропадала.
+  IOSink _openKeepingPrevious() {
+    try {
+      if (_logFile.existsSync() && _logFile.lengthSync() > 0) {
+        final prev = File(_logFile.path.replaceFirst(RegExp(r'\.log$'), '.prev.log'));
+        if (prev.path != _logFile.path) {
+          if (prev.existsSync()) prev.deleteSync();
+          _logFile.renameSync(prev.path);
+        }
+      }
+    } catch (_) {
+      // Файл занят или нет прав — пишем поверх, как раньше.
+    }
+    return _logFile.openWrite(mode: FileMode.writeOnly);
+  }
 
   @override
   void onLog(LogRecord record) {

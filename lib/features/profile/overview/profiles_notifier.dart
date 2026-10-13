@@ -50,8 +50,30 @@ class ProfilesNotifier extends _$ProfilesNotifier with AppLogger {
   Future<void> deleteProfile(ProfileEntity profile) async {
     loggy.debug('deleting profile: ${profile.name}');
 
-    if (profile.active) await ref.read(connectionNotifierProvider.notifier).abortConnection();
-    await _profilesRepo
+    // Шлюпка: удаление активной подписки при включённом VPN — отключиться, удалить и подключиться
+    // к подписке, которая стала активной (раньше VPN так и оставался выключенным). Всё нужное
+    // берём до первого await: этот провайдер autoDispose и может закрыться, пока идёт удаление.
+    final connection = ref.read(connectionNotifierProvider.notifier);
+    final wasOn = profile.active && (ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false);
+    final repo = _profilesRepo;
+    final translations = ref.read(translationsProvider).requireValue;
+    final toast = ref.read(inAppNotificationControllerProvider);
+
+    if (!profile.active) return _delete(profile, repo, translations, toast);
+    await connection.whileSwitchingProfile(() async {
+      await connection.abortConnection();
+      await _delete(profile, repo, translations, toast);
+      if (wasOn) await connection.connectWhenStopped();
+    });
+  }
+
+  Future<void> _delete(
+    ProfileEntity profile,
+    ProfileRepository repo,
+    TranslationsEn translations,
+    InAppNotificationController toast,
+  ) async {
+    await repo
         .deleteById(profile.id, profile.active)
         .match(
           (err) {
@@ -60,8 +82,7 @@ class ProfilesNotifier extends _$ProfilesNotifier with AppLogger {
           },
           (_) {
             loggy.info('successfully deleted profile, was active? [${profile.active}]');
-            final t = ref.read(translationsProvider).requireValue;
-            ref.read(inAppNotificationControllerProvider).showSuccessToast(t.pages.profiles.msg.delete.success);
+            toast.showSuccessToast(translations.pages.profiles.msg.delete.success);
             return unit;
           },
         )
