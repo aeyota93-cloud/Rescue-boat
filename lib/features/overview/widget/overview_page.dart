@@ -615,11 +615,11 @@ class _TunnelCard extends ConsumerWidget {
     final split = ref.watch(splitTunnelProvider);
     int size(SplitList l) => l.apps.length + l.domains.length + l.ips.length;
     return RescueCard(
-      semanticLabel: 'Раздельный туннель',
+      semanticLabel: 'Туннелирование',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SectionLabel('Раздельный туннель'),
+          const SectionLabel('Туннелирование'),
           const SizedBox(height: 14),
           StatColumns(
             columns: [

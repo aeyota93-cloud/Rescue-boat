@@ -287,7 +287,7 @@ void main() {
       await pumpInShell(tester, container, const SplitTunnelTablePage(), size: size, selected: 1);
       expectNoLayoutErrors(tester);
 
-      expect(find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'), findsOneWidget);
+      expect(find.text('ТУННЕЛИРОВАНИЕ'), findsOneWidget);
       expect(find.text('3 соединения'), findsOneWidget);
       expect(find.text('Google Chrome'), findsOneWidget);
       expect(find.text('Discord'), findsOneWidget);
@@ -662,7 +662,7 @@ void main() {
     expect(find.text('Без группы'), findsWidgets);
     expect(find.byKey(const ValueKey('entry-site-0.example.com')), findsOneWidget);
     expect(find.byKey(const ValueKey('entry-site-199.example.com')), findsNothing);
-    expect(find.text('РАЗДЕЛЬНЫЙ ТУННЕЛЬ'), findsOneWidget);
+    expect(find.text('ТУННЕЛИРОВАНИЕ'), findsOneWidget);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });

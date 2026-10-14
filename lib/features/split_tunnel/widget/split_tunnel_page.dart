@@ -20,7 +20,7 @@ class SplitTunnelPage extends HookConsumerWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Раздельный туннель'),
+          title: const Text('Туннелирование'),
           actions: [
             PopupMenuButton<void>(
               itemBuilder: (_) => [

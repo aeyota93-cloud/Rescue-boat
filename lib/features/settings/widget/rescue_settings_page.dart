@@ -216,8 +216,8 @@ class _TrafficSection extends ConsumerWidget {
         SettingsSwitchTile(
           title: 'Игры и лаунчеры мимо VPN',
           subtitle: games == total || games == 0
-              ? '$total ${pluralRu(total, 'программа', 'программы', 'программ')}, их видно в раздельном туннеле'
-              : '$games из $total ${pluralRu(total, 'программы', 'программ', 'программ')}, их видно в раздельном туннеле',
+              ? '$total ${pluralRu(total, 'программа', 'программы', 'программ')}, их видно в «Туннелировании»'
+              : '$games из $total ${pluralRu(total, 'программы', 'программ', 'программ')}, их видно в «Туннелировании»',
           value: games > 0,
           onChanged: (v) => setDefaultGamesBypass(ref.read(splitTunnelProvider.notifier), v),
         ),
@@ -294,7 +294,7 @@ class _ModeSection extends ConsumerWidget {
           const SizedBox(height: 12),
           ChoiceCard(
             title: 'Весь компьютер',
-            description: 'Все программы и игры, работают раздельный туннель и список ошибок',
+            description: 'Все программы и игры, работают туннелирование и список ошибок',
             selected: mode == ServiceMode.tun,
             onTap: () => notifier.update(ServiceMode.tun),
           ),

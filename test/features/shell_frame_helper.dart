@@ -6,7 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Пункты меню как в приложении: 0 — Главная … 4 — Настройки.
 const _items = [
   RescueNavItem(icon: Icons.home_rounded, label: 'Главная'),
-  RescueNavItem(icon: Icons.call_split_rounded, label: 'Раздельный туннель'),
+  RescueNavItem(icon: Icons.call_split_rounded, label: 'Туннелирование'),
   RescueNavItem(icon: Icons.warning_amber_rounded, label: 'Ошибки', count: 7),
   RescueNavItem(icon: Icons.dns_rounded, label: 'Подписки и серверы'),
 ];

@@ -41,7 +41,7 @@ class RescueAppShell extends ConsumerWidget {
 
   static const items = [
     RescueNavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Главная'),
-    RescueNavItem(icon: Icons.call_split_rounded, label: 'Раздельный туннель'),
+    RescueNavItem(icon: Icons.call_split_rounded, label: 'Туннелирование'),
     RescueNavItem(icon: Icons.warning_amber_rounded, label: 'Ошибки'),
     RescueNavItem(icon: Icons.dns_outlined, selectedIcon: Icons.dns_rounded, label: 'Подписки и серверы'),
   ];

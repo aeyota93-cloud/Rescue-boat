@@ -23,7 +23,7 @@ void main() {
             onSelected: (i) => setState(() => taps.add(i)),
             items: [
               const RescueNavItem(icon: Icons.home_outlined, label: 'Главная'),
-              const RescueNavItem(icon: Icons.call_split, label: 'Раздельный туннель'),
+              const RescueNavItem(icon: Icons.call_split, label: 'Туннелирование'),
               RescueNavItem(icon: Icons.warning_amber, label: 'Ошибки', count: errors),
               const RescueNavItem(icon: Icons.dns_outlined, label: 'Подписки и серверы', badge: true),
             ],
@@ -47,7 +47,7 @@ void main() {
     expect(find.byType(RescueLogo), findsOneWidget);
     expect(find.text('Шлюпка'), findsOneWidget);
     expect(find.text('спасения'), findsOneWidget);
-    for (final label in ['Главная', 'Раздельный туннель', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
+    for (final label in ['Главная', 'Туннелирование', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
 
@@ -69,11 +69,11 @@ void main() {
     );
 
     // Пункты 52 px; «Настройки» (bottomItem) — последний пункт списка, индекс items.length.
-    final item = find.ancestor(of: find.text('Раздельный туннель'), matching: find.byType(InkWell));
+    final item = find.ancestor(of: find.text('Туннелирование'), matching: find.byType(InkWell));
     expect(tester.getSize(item).height, 52);
     await tester.tap(find.text('Настройки'));
     await tester.pump();
-    await tester.tap(find.text('Раздельный туннель'));
+    await tester.tap(find.text('Туннелирование'));
     await tester.pump();
     expect(taps, [4, 1]);
     expect(tester.takeException(), isNull);
@@ -144,7 +144,7 @@ void main() {
     await pumpShell(tester, const Size(1440, 900));
     final home = tester.getSemantics(find.bySemanticsLabel('Главная'));
     expect(home, containsSemantics(isButton: true, isSelected: true, hasTapAction: true));
-    expect(tester.getSemantics(find.bySemanticsLabel('Раздельный туннель')), containsSemantics(isSelected: false));
+    expect(tester.getSemantics(find.bySemanticsLabel('Туннелирование')), containsSemantics(isSelected: false));
     expect(find.bySemanticsLabel('Шлюпка спасения'), findsOneWidget);
     expect(find.bySemanticsLabel('Разделы'), findsOneWidget);
     handle.dispose();
@@ -154,8 +154,8 @@ void main() {
     final taps = await pumpShell(tester, const Size(800, 700));
     expect(tester.getSize(find.byKey(rail)).width, RescueShell.railWidth);
     expect(find.byKey(bar), findsNothing);
-    expect(find.text('Раздельный туннель'), findsNothing);
-    expect(find.byTooltip('Раздельный туннель'), findsOneWidget);
+    expect(find.text('Туннелирование'), findsNothing);
+    expect(find.byTooltip('Туннелирование'), findsOneWidget);
     expect(find.text('Шлюпка'), findsNothing);
     expect(find.text('Мини'), findsOneWidget);
     expect(find.text('Карточка статуса'), findsNothing);

@@ -368,7 +368,7 @@ void main() {
   group('каркас: меню и карточка статуса', () {
     testWidgets('меню: подписи как в макете, счётчик ошибок за час, версия', (tester) async {
       await pumpPage(tester, shell(), overrides: pageOverrides(), size: const Size(1440, 900));
-      for (final label in ['Главная', 'Раздельный туннель', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
+      for (final label in ['Главная', 'Туннелирование', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
       // За час в образце 5 ошибок (3 + 1 + 1).

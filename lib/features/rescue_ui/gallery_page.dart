@@ -110,7 +110,7 @@ class _RescueGalleryPageState extends State<RescueGalleryPage> {
         onSelected: (i) => setState(() => _nav = i),
         items: const [
           RescueNavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Главная'),
-          RescueNavItem(icon: Icons.call_split_rounded, label: 'Раздельный туннель'),
+          RescueNavItem(icon: Icons.call_split_rounded, label: 'Туннелирование'),
           RescueNavItem(icon: Icons.warning_amber_rounded, label: 'Ошибки', count: 7),
           RescueNavItem(icon: Icons.dns_outlined, selectedIcon: Icons.dns_rounded, label: 'Подписки и серверы'),
         ],
@@ -308,11 +308,11 @@ class _RescueGalleryPageState extends State<RescueGalleryPage> {
             ],
           ),
           RescueCard(
-            semanticLabel: 'Раздельный туннель',
+            semanticLabel: 'Туннелирование',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionLabel('Раздельный туннель'),
+                const SectionLabel('Туннелирование'),
                 const SizedBox(height: 14),
                 const StatColumns(
                   columns: [
@@ -376,7 +376,7 @@ class _RescueGalleryPageState extends State<RescueGalleryPage> {
     );
     return [
       SectionLabel.screen(
-        'Раздельный туннель',
+        'Туннелирование',
         trailing: FilledButton(onPressed: () {}, child: const Text('+ Добавить')),
       ),
       const SizedBox(height: 20),
@@ -688,7 +688,7 @@ class _RescueGalleryPageState extends State<RescueGalleryPage> {
                 const SizedBox(height: 12),
                 ChoiceCard(
                   title: 'Весь компьютер',
-                  description: 'Все программы и игры, работает раздельный туннель',
+                  description: 'Все программы и игры, работает туннелирование',
                   selected: _vpnMode,
                   onTap: () => setState(() => _vpnMode = true),
                 ),

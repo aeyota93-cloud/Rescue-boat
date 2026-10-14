@@ -54,7 +54,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     String? addGroup() => view.value == _View.groups && (openGroup.value?.isNotEmpty ?? false) ? openGroup.value : null;
 
     final header = RescuePageHeader(
-      title: 'Раздельный туннель',
+      title: 'Туннелирование',
       actions: [
         OutlinedButton(
           onPressed: () => showNewGroupDialog(context, entries: listed, titles: titles),
