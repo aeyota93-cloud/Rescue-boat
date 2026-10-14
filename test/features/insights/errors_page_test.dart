@@ -167,6 +167,53 @@ void main() {
     expect(copied, isNot(contains('213.180')));
   });
 
+  testWidgets('IP копируются: из строки события и все IP группы кнопкой', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(split: FakeSplitTunnel()));
+
+    // Группа kinopoisk.ru: два IP, чаще встречающийся — первым.
+    await tester.ensureVisible(find.text('Скопировать IP (2)'));
+    await tester.tap(find.text('Скопировать IP (2)'));
+    await tester.pump();
+    expect(copied, '213.180.204.211\n213.180.193.230');
+    expect(find.text('Скопировано 2 IP — можно вставить в правило туннеля'), findsOneWidget);
+
+    // Адрес в строке события — без порта.
+    final row = find.byKey(const ValueKey('copy-ip-213.180.193.230'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pump();
+    expect(copied, '213.180.193.230');
+  });
+
+  test('IP группы: без повторов и без домашней сети', () {
+    ErrorEvent e(String ip, int n) => ErrorEvent(
+      time: DateTime(2026, 10, 14),
+      kind: ErrorKind.reset,
+      app: '',
+      host: '',
+      ip: ip,
+      port: 443,
+      network: 'tcp',
+      count: n,
+    );
+    final g = ErrorGroup(
+      key: 'k',
+      target: 'k',
+      app: '',
+      route: ErrorRoute.vpn,
+      count: 0,
+      last: DateTime(2026, 10, 14),
+      events: [e('1.1.1.1', 1), e('192.168.1.1', 9), e('8.8.8.8', 2), e('1.1.1.1', 3), e('', 5), e('не ip', 1)],
+    );
+    expect(groupIps(g), ['1.1.1.1', '8.8.8.8']);
+  });
+
   testWidgets('сырые строки раскрываются', (tester) async {
     await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(split: FakeSplitTunnel()));
     expect(find.textContaining('connection reset by peer'), findsNothing);

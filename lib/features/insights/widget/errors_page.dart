@@ -617,6 +617,7 @@ class _EventRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final e = event;
     final address = e.ip.isNotEmpty ? '${e.ip}:${e.port}' : (e.host.isNotEmpty ? e.host : '—');
+    final ip = isIpAddress(e.ip) ? e.ip : null;
     return Container(
       constraints: const BoxConstraints(minHeight: 42),
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -639,12 +640,68 @@ class _EventRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(address, style: RescueText.smallSecondary, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: ip == null
+                ? Text(address, style: RescueText.smallSecondary, maxLines: 1, overflow: TextOverflow.ellipsis)
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: Tooltip(
+                      message: 'Скопировать IP',
+                      child: InkWell(
+                        key: ValueKey('copy-ip-$ip'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => copyIps(context, [ip]),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  address,
+                                  style: RescueText.smallSecondary,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.copy_rounded, size: 14, color: RescueColors.muted),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Внешние IP группы для правил туннеля: без повторов и без домашней сети, чаще встречающиеся —
+/// первыми.
+List<String> groupIps(ErrorGroup group) {
+  final counts = <String, int>{};
+  for (final e in group.events) {
+    if (!isIpAddress(e.ip) || isHomeNetwork(cidrOf(e.ip))) continue;
+    counts[e.ip] = (counts[e.ip] ?? 0) + e.count;
+  }
+  return (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((e) => e.key).toList();
+}
+
+/// Копирует IP (по одному на строку) — чтобы вставить в правило туннеля.
+Future<void> copyIps(BuildContext context, List<String> ips) async {
+  await Clipboard.setData(ClipboardData(text: ips.join('\n')));
+  if (!context.mounted) return;
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    SnackBar(
+      content: Text(
+        ips.length == 1
+            ? 'Скопирован IP ${ips.single} — можно вставить в правило туннеля'
+            : 'Скопировано ${ips.length} IP — можно вставить в правило туннеля',
+      ),
+    ),
+  );
 }
 
 /// «Сырые строки» одним блоком (прокрутка всей страницы): исходный текст ошибок ядра, свёрнуто по
@@ -774,6 +831,7 @@ class _Actions extends ConsumerWidget {
     final item = splitItemFor(group);
     final current = item == null ? null : ref.watch(splitTunnelProvider).targetOf(item.kind, item.value);
     final compareTarget = compareEndpointOf(group);
+    final ips = groupIps(group);
 
     VoidCallback? add(SplitTarget target) => item == null || current == target
         ? null
@@ -802,6 +860,12 @@ class _Actions extends ConsumerWidget {
               : () => showComparePathsDialog(context, CompareSubject(endpoints: [compareTarget])),
           child: const Text('Сравнить пути'),
         ),
+        if (ips.isNotEmpty)
+          OutlinedButton(
+            key: const ValueKey('copy-group-ips'),
+            onPressed: () => copyIps(context, ips),
+            child: Text(ips.length == 1 ? 'Скопировать IP' : 'Скопировать IP (${ips.length})'),
+          ),
         TextButton(
           style: TextButton.styleFrom(foregroundColor: RescueColors.text),
           onPressed: () async {
