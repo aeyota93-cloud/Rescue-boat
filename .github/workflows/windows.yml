@@ -1,81 +1,95 @@
-# Сборка «Шлюпки спасения» для Windows.
-# Лицензия Hiddify требует, чтобы релизы собирались только через GitHub Actions.
-#  - push в main: сборка, файлы лежат в артефакте запуска 7 дней;
-#  - тег vX.Y.Z: то же плюс релиз на GitHub с установщиком и портативной версией
-#    (файлы релиза скачиваются без входа в GitHub, артефакты запуска — только со входом).
+# Ветки и PR проверяются; установщик собирается только для тега или по ручному запросу.
 name: Windows
-
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
-    paths-ignore: ['**.md', 'docs/**']
+    paths-ignore: ['**.md', 'docs/**', 'appcast.xml']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'appcast.xml']
   workflow_dispatch:
-
+    inputs:
+      build_installer:
+        description: 'Собрать установщик после проверок'
+        type: boolean
+        default: false
 permissions:
-  contents: write
-
+  contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 env:
   FLUTTER_VERSION: '3.38.5'
-  # prod: ядро hiddify-core берётся из релиза core.version (dependencies.properties), а не из draft.
   CHANNEL: prod
   IS_GITHUB_ACTIONS: 1
-
+  FASTFORGE_VERSION: '0.6.12'
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
+    env:
+      BUILD_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_installer) }}
     steps:
       - uses: actions/checkout@v6
-
       - uses: subosito/flutter-action@v2.21.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-
+      - name: Зависимости и генерация кода
+        run: make common-prepare
+      - name: Анализ кода (ошибки запрещают сборку)
+        run: dart analyze --no-fatal-warnings lib test
+      - name: Тесты
+        run: flutter test --no-pub
       - name: Инструменты упаковки
+        if: env.BUILD_INSTALLER == 'true'
         run: |
-          make windows-install-deps
+          dart pub global activate fastforge $env:FASTFORGE_VERSION
           $cache = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { "$env:LOCALAPPDATA\Pub\Cache" }
           "$cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-
-      - name: Подготовка (зависимости, генерация кода, ядро)
-        run: make windows-prepare
-
-      - name: Сборка установщика и портативной версии
-        run: make windows-exe-release windows-zip-release
-
-      - name: Сбор файлов
+      - name: Ядро приложения
+        if: env.BUILD_INSTALLER == 'true'
+        run: make windows-libs
+      - name: Сборка установщика
+        if: env.BUILD_INSTALLER == 'true'
+        run: make windows-exe-release
+      - name: Проверка файла
+        if: env.BUILD_INSTALLER == 'true'
         run: |
+          $installers = @(Get-ChildItem dist -Recurse -File -Filter *.exe)
+          if ($installers.Count -ne 1) { throw "Ожидался один установщик" }
           New-Item -ItemType Directory -Path out -Force | Out-Null
-          Get-ChildItem dist -Recurse -File -Filter *.exe | Select-Object -First 1 | Copy-Item -Destination out\RescueBoat-Setup-x64.exe
-          Get-ChildItem dist -Recurse -File -Filter *.zip | Select-Object -First 1 | Copy-Item -Destination out\RescueBoat-Portable-x64.zip
-          if ((Get-ChildItem out).Count -ne 2) { throw "нет установщика или портативной версии" }
-          Get-ChildItem out
-
+          Copy-Item -LiteralPath $installers[0].FullName -Destination out\RescueBoat-Setup-x64.exe
       - uses: actions/upload-artifact@v6
+        if: env.BUILD_INSTALLER == 'true'
         with:
-          name: windows
+          name: windows-installer
           path: out
           retention-days: 7
-
-      - name: Релиз
-        if: startsWith(github.ref, 'refs/tags/v')
+          if-no-files-found: error
+  publish:
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v5
+        with:
+          name: windows-installer
+          path: out
+      - name: Публикация проверенного установщика
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Тег с дефисом (v0.1.0-test) публикуется как пре-релиз: его не предложит автообновление.
           $extra = @()
           if ("${{ github.ref_name }}".Contains('-')) { $extra += '--prerelease' }
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $notesPath = "docs/releases/$version.md"
           if (Test-Path -LiteralPath $notesPath) {
-            gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName --title "${{ github.ref_name }}" --notes-file $notesPath @extra
+            gh release create "${{ github.ref_name }}" out\RescueBoat-Setup-x64.exe --title "${{ github.ref_name }}" --notes-file $notesPath @extra
           } else {
-            gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName --title "${{ github.ref_name }}" --generate-notes @extra
+            gh release create "${{ github.ref_name }}" out\RescueBoat-Setup-x64.exe --title "${{ github.ref_name }}" --generate-notes @extra
           }

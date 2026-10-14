@@ -281,29 +281,7 @@ android-aab-release:
 	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) \
 	  --build-dart-define=release=google-play
 
-windows-release: windows-zip-release windows-exe-release windows-msix-release
-
-windows-zip-release:
-	fastforge package \
-	  --platform windows \
-	  --targets zip \
-	  --skip-clean \
-	  --build-target=$(TARGET) \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) \
-	  --build-dart-define=portable=true
-	@FULL_PATH=$$(ls dist/*/*.zip | head -n 1); \
-	ZIP_DIR=$$(dirname "$$FULL_PATH"); \
-	ZIP_FILE=$$(basename "$$FULL_PATH"); \
-	FILE_NAME=$${ZIP_FILE%.*}; \
-	$(YELLOW)Post-processing Windows portable$(DONE); \
-	cd "$$ZIP_DIR"; \
-	$(BLUE)Extracting and Repacking...$(DONE); \
-	mkdir -p RescueBoat; \
-	unzip -q "$$ZIP_FILE" -d RescueBoat/; \
-	rm "$$ZIP_FILE"; \
-	7z a -tzip -bso0 -bsp0 "$$FILE_NAME.zip" RescueBoat; \
-	rm -rf RescueBoat; \
-	$(GREEN)Successful$(DONE)
+windows-release: windows-exe-release
 
 windows-exe-release:
 	fastforge package \
