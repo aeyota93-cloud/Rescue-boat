@@ -3,7 +3,7 @@ import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 import 'package:hiddify/features/rescue_ui/widgets/power_button.dart';
 
 /// Шлюпка: карточка статуса внизу меню (слот `RescueShell.footer`): точка, «Подключено»,
-/// мелкая подпись и мини-кнопка питания. Фон panel, как у выбранного пункта меню; радиус 24, отступ 14.
+/// мелкая подпись и мини-кнопка питания. Без отдельного фона: строка лежит прямо на боковой панели.
 ///
 /// ```dart
 /// RescueShell(
@@ -40,10 +40,8 @@ class ShellStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sub = subtitle;
     final onPower = this.onPower;
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(14),
-      // Цвета выбранного пункта меню (panel), а не card: светлее него карточка смотрелась чужой.
-      decoration: BoxDecoration(color: RescueColors.panel, borderRadius: BorderRadius.circular(24)),
       child: Row(
         children: [
           Container(
