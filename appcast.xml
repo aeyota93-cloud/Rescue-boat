@@ -8,11 +8,11 @@
     <channel>
         <title>Release</title>
         <item>
-            <title>Version 0.2.1</title>
-            <pubDate>Wed, 14 Oct 2026 06:32:29 +0000</pubDate>
+            <title>Version 0.2.2</title>
+            <pubDate>Wed, 14 Oct 2026 12:14:13 +0000</pubDate>
             <enclosure
-                url="https://github.com/aeyota93-cloud/Rescue-boat/releases/download/v0.2.1/RescueBoat-Setup-x64.exe"
-                sparkle:version="0.2.1" sparkle:os="windows" />
+                url="https://github.com/aeyota93-cloud/Rescue-boat/releases/download/v0.2.2/RescueBoat-Setup-x64.exe"
+                sparkle:version="0.2.2" sparkle:os="windows" />
         </item>
     </channel>
 </rss>
