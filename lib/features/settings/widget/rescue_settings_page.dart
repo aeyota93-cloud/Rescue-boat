@@ -11,6 +11,7 @@ import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/common/rescue_page_header.dart';
 import 'package:hiddify/features/insights/notifier/insights_settings.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/rescue_ui/ui_scale.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
@@ -124,6 +125,7 @@ class _StartupSection extends HookConsumerWidget {
     final autoStart = ref.watch(autoStartNotifierProvider);
     final silent = ref.watch(Preferences.silentStart);
     final closing = ref.watch(Preferences.actionAtClose);
+    final scale = ref.watch(UiScalePreferences.percent);
     final busy = useState(false);
 
     Future<void> setAutoStart(bool value) async {
@@ -143,7 +145,7 @@ class _StartupSection extends HookConsumerWidget {
     }
 
     return _Section(
-      title: 'Запуск',
+      title: 'Запуск и окно',
       children: [
         SettingsSwitchTile(
           title: 'Запускать при входе в Windows',
@@ -167,7 +169,12 @@ class _StartupSection extends HookConsumerWidget {
           value: closing == ActionsAtClosing.hide,
           onChanged: (v) =>
               ref.read(Preferences.actionAtClose.notifier).update(v ? ActionsAtClosing.hide : ActionsAtClosing.ask),
+        ),
+        _ParamRow(
+          title: 'Масштаб',
+          subtitle: 'Текст, кнопки и отступы всего окна',
           divider: false,
+          child: _ScaleStepper(percent: scale, onChanged: ref.read(UiScalePreferences.percent.notifier).update),
         ),
         const Padding(
           padding: EdgeInsets.only(top: 4),
@@ -397,20 +404,73 @@ class _BypassBlocksSection extends ConsumerWidget {
   }
 }
 
+/// «− 100% +»: масштаб окна шагами по 10%. Нажатие на число возвращает 100%.
+class _ScaleStepper extends StatelessWidget {
+  const _ScaleStepper({required this.percent, required this.onChanged});
+
+  final int percent;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = percent.clamp(UiScalePreferences.min, UiScalePreferences.max);
+    Widget button(IconData icon, String tooltip, int direction) {
+      final next = UiScalePreferences.stepped(shown, direction);
+      return IconButton(
+        tooltip: tooltip,
+        onPressed: next == shown ? null : () => onChanged(next),
+        style: IconButton.styleFrom(
+          backgroundColor: RescueColors.line,
+          foregroundColor: RescueColors.text,
+          disabledBackgroundColor: RescueColors.line.withValues(alpha: 0.4),
+          disabledForegroundColor: RescueColors.muted,
+        ),
+        icon: Icon(icon, size: 20),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button(Icons.remove_rounded, 'Мельче', -1),
+        Tooltip(
+          message: shown == 100 ? 'Обычный размер' : 'Вернуть 100%',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: shown == 100 ? null : () => onChanged(100),
+            child: SizedBox(
+              width: 64,
+              height: 40,
+              child: Center(
+                child: Text(
+                  '$shown%',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: RescueColors.text),
+                ),
+              ),
+            ),
+          ),
+        ),
+        button(Icons.add_rounded, 'Крупнее', 1),
+      ],
+    );
+  }
+}
+
 class _ParamRow extends StatelessWidget {
-  const _ParamRow({required this.title, required this.subtitle, required this.child});
+  const _ParamRow({required this.title, required this.subtitle, required this.child, this.divider = true});
 
   final String title;
   final String subtitle;
   final Widget child;
+  final bool divider;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: RescueColors.line)),
+      decoration: BoxDecoration(
+        border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
       ),
       child: Wrap(
         spacing: 12,

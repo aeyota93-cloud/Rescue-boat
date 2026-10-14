@@ -12,6 +12,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/insights/notifier/insights_settings.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/rescue_ui/ui_scale.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/settings/widget/rescue_settings_page.dart';
@@ -87,6 +88,13 @@ void main() {
     return container;
   }
 
+  Future<void> tapTooltip(WidgetTester tester, String tooltip) async {
+    await tester.ensureVisible(find.byTooltip(tooltip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip(tooltip));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> tapText(WidgetTester tester, String text) async {
     await tester.ensureVisible(find.text(text));
     await tester.pumpAndSettle();
@@ -100,7 +108,7 @@ void main() {
       expectNoLayoutErrors(tester);
       expect(find.text('НАСТРОЙКИ'), findsOneWidget);
       for (final title in [
-        'ЗАПУСК',
+        'ЗАПУСК И ОКНО',
         'КУДА ИДЁТ ТРАФИК',
         'ОШИБКИ И ЗДОРОВЬЕ',
         'СПОСОБ РАБОТЫ',
@@ -164,6 +172,20 @@ void main() {
 
     await tapText(tester, 'Запускать свёрнутым');
     expect(container.read(Preferences.silentStart), isTrue);
+
+    // Масштаб: шаги по 10%, нажатие на число возвращает 100%.
+    expect(container.read(UiScalePreferences.percent), 100);
+    expect(find.text('100%'), findsOneWidget);
+    await tapTooltip(tester, 'Крупнее');
+    await tapTooltip(tester, 'Крупнее');
+    expect(container.read(UiScalePreferences.percent), 120);
+    await tapText(tester, '120%');
+    expect(container.read(UiScalePreferences.percent), 100);
+    for (var i = 0; i < 5; i++) {
+      await tapTooltip(tester, 'Мельче');
+    }
+    expect(container.read(UiScalePreferences.percent), UiScalePreferences.min);
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.remove_rounded)).onPressed, isNull);
 
     await tapText(tester, 'Смешанный регистр имени сайта');
     expect(container.read(ConfigOptions.enableTlsMixedSniCase), isTrue);
