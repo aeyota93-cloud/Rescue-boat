@@ -9,8 +9,8 @@ import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/warp_option/warp_option_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service.dart';
-import 'package:hiddify/singbox/model/singbox_config_option.dart';
 import 'package:hiddify/singbox/model/core_status.dart';
+import 'package:hiddify/singbox/model/singbox_config_option.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -113,8 +113,9 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
                   throw const MissingWarpLicense();
                 }
               }
+              final applied = await singbox.changeOptions(overridedOptions).run();
+              applied.match((error) => throw UnexpectedConnectionFailure(error), (_) {});
               _configOptionsSnapshot = overridedOptions;
-              await singbox.changeOptions(overridedOptions).run();
               return unit;
             }, (err, st) => err is ConnectionFailure ? err : ConnectionFailure.unexpected(err, st)),
           );

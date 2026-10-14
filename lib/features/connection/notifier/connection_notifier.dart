@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
@@ -68,11 +69,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
 
-  Future<void> mayConnect() async {
+  final _operations = ConnectionOperationQueue();
+
+  Future<void> mayConnect() => _operations.run(() async {
     if (state case AsyncData(:final value)) {
       if (value case Disconnected()) return _connect();
     }
-  }
+  });
 
   bool _switchingProfile = false;
 
@@ -97,14 +100,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (state case AsyncData(value: Disconnected())) {
         loggy.info("reconnecting after the active profile was deleted");
         await ref.read(Preferences.startedByUser.notifier).update(true);
-        return _connect();
+        return mayConnect();
       }
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     loggy.warning("not reconnecting: core did not stop in $timeout");
   }
 
-  Future<void> toggleConnection() async {
+  Future<void> toggleConnection() {
+    // Повторное нажатие не запускает обратную операцию после завершения первой.
+    if (_operations.busy) return _operations.idle;
+    return _operations.run(_toggleConnection);
+  }
+
+  Future<void> _toggleConnection() async {
     final haptic = ref.read(hapticServiceProvider.notifier);
     if (state case AsyncError()) {
       await haptic.lightImpact();
@@ -126,57 +135,45 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
   }
 
-  Future<void> reconnect(ProfileEntity? profile) async {
+  Future<void> reconnect(ProfileEntity? profile) => _operations.run(() async {
     if (state case AsyncData(:final value) when value == const Connected()) {
       if (profile == null) {
         loggy.info("no active profile, disconnecting");
-        return _disconnect();
+        await _disconnect();
+        return;
       }
       loggy.info("active profile changed, reconnecting");
       await ref.read(Preferences.startedByUser.notifier).update(true);
-      await _connectionRepo.reconnect(profile, ref.read(Preferences.disableMemoryLimit)).mapLeft((err) async {
+      final result = await _connectionRepo.reconnect(profile, ref.read(Preferences.disableMemoryLimit)).run();
+      await result.match((err) async {
         loggy.warning("error reconnecting", err);
         state = AsyncError(err, StackTrace.current);
         await ref
             .read(dialogNotifierProvider.notifier)
             .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
-      }).run();
+      }, (_) => Future<void>.value());
     }
-  }
+  });
 
-  Future<void> abortConnection() async {
+  Future<void> abortConnection() => _operations.run(() async {
     if (state case AsyncData(:final value)) {
       switch (value) {
         case Connected() || Connecting():
           loggy.debug("aborting connection");
-          await _disconnect();
+          if (!await _disconnect()) throw StateError('Не удалось остановить VPN');
         default:
       }
     }
-  }
-
-  final _singleStart = SingleCall();
+  });
 
   Future<void> _connect() async {
-    _singleStart.run(
-      () async {
-        await _connectThrottled();
-      },
-      onIgnored: () {
-        loggy.debug("connect called while another connect/disconnect is still running, ignoring");
-      },
-    );
-  }
-
-  Future<void> _connectThrottled() async {
     final activeProfile = await ref.read(activeProfileProvider.future);
     if (activeProfile == null) {
       loggy.info("no active profile, not connecting");
       return;
     }
-    await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
-      ConnectionFailure err,
-    ) async {
+    final result = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
+    await result.match((ConnectionFailure err) async {
       loggy.warning("error connecting", err);
       //Go err is not normal object to see the go errors are string and need to be dumped
       await ref
@@ -188,17 +185,19 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
       await ref.read(Preferences.startedByUser.notifier).update(false);
       state = AsyncError(err, StackTrace.current);
-    }).run();
+    }, (_) => Future<void>.value());
   }
 
-  Future<void> _disconnect() async {
-    await _connectionRepo.disconnect().mapLeft((err) {
+  Future<bool> _disconnect() async {
+    final result = await _connectionRepo.disconnect().run();
+    return result.match((err) {
       loggy.warning("error disconnecting", err);
       ref
           .read(dialogNotifierProvider.notifier)
           .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
       state = AsyncError(err, StackTrace.current);
-    }).run();
+      return false;
+    }, (_) => true);
   }
 }
 
@@ -210,17 +209,23 @@ Future<bool> serviceRunning(Ref ref) async {
       .onError((error, stackTrace) => false);
 }
 
-class SingleCall {
-  bool _running = false;
+/// Все обращения к подключению выполняются последовательно; ошибка не ломает очередь.
+class ConnectionOperationQueue {
+  Future<void> _tail = Future.value();
+  int _pending = 0;
+  bool get busy => _pending > 0;
+  Future<void> get idle => _tail;
 
-  Future<T> run<T>(Future<T> Function() task, {required T onIgnored}) async {
-    if (_running) return onIgnored;
-
-    _running = true;
-    try {
-      return await task();
-    } finally {
-      _running = false;
-    }
+  Future<T> run<T>(Future<T> Function() task) {
+    _pending++;
+    final result = _tail.then((_) async {
+      try {
+        return await task();
+      } finally {
+        _pending--;
+      }
+    });
+    _tail = result.then<void>((_) {}, onError: (Object error, StackTrace stack) {});
+    return result;
   }
 }
