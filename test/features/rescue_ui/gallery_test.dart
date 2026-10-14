@@ -6,57 +6,14 @@ import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'helpers.dart';
 
 void main() {
-  // Витрина строится целиком (без ленивых списков), поэтому переполнение любой части
-  // упадёт в тесте как ошибка рендеринга.
-  for (final size in const [Size(400, 900), Size(700, 900), Size(1440, 1000)]) {
-    testWidgets('витрина без переполнений на ${size.width.toInt()} px', (tester) async {
-      setWindowSize(tester, size);
-      await tester.pumpWidget(const MaterialApp(home: RescueGalleryPage()));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-
-      // Все кирпичики на месте.
-      for (final type in [
-        RescueShell,
-        RescueCard,
-        SectionHeader,
-        ScoreRow,
-        StatTile,
-        RescueBadge,
-        RouteSwitch,
-        ConnectionPill,
-        RescueTable,
-        DonutChart,
-        LineChart,
-        HourBars,
-        FilterChips,
-        PeriodSwitch,
-        SettingsSwitchTile,
-        ChoiceCard,
-        // Новые кирпичики стиля «Д».
-        FolderTabs,
-        RingStat,
-        PowerButton,
-        ServerSelect,
-        ModeChip,
-        PillSegmented,
-        DeepList,
-        DeepListTile,
-        StatColumns,
-        SectionLabel,
-        FrameTag,
-        ShellStatusCard,
-        RescueToggle,
-      ]) {
-        expect(
-          find.byWidgetPredicate((w) => w.runtimeType.toString().split('<').first == type.toString().split('<').first),
-          findsWidgets,
-          reason: '$type',
-        );
-      }
-    });
-  }
-
+  // Узкое и широкое окна проверяются на настоящих экранах, витрине достаточно smoke-проверки.
+  testWidgets('витрина открывается без ошибок', (tester) async {
+    setWindowSize(tester, const Size(700, 900));
+    await tester.pumpWidget(const MaterialApp(home: RescueGalleryPage()));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(PowerButton), findsWidgets);
+  });
   testWidgets('витрина живая: RouteSwitch в таблице меняет счётчик', (tester) async {
     setWindowSize(tester, const Size(1440, 1000));
     await tester.pumpWidget(const MaterialApp(home: RescueGalleryPage()));

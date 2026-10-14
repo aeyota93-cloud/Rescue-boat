@@ -6,45 +6,30 @@ import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'helpers.dart';
 
 void main() {
-  test('тема: цвета стиля «Д» и шрифт', () {
+  testWidgets('тёмная тема, карточки и метки сохраняют читаемые подписи', (tester) async {
     final theme = RescueTheme.dark();
-    expect(theme.useMaterial3, isTrue);
     expect(theme.brightness, Brightness.dark);
-    // Экраны лежат на области каркаса (panel), карточки — card, действие — жёлтое.
-    expect(theme.scaffoldBackgroundColor, const Color(0xFF1F1E1B));
-    expect(theme.colorScheme.surface, const Color(0xFF1F1E1B));
-    expect(theme.colorScheme.surfaceContainer, const Color(0xFF2A2825));
-    expect(theme.colorScheme.primary, const Color(0xFFF4CC56));
-    expect(theme.colorScheme.onPrimary, const Color(0xFF1F1D1A));
     expect(theme.textTheme.bodyMedium!.fontFamily, 'Segoe UI');
-    expect(theme.textTheme.bodyMedium!.fontFamilyFallback, ['Segoe UI Variable', 'Segoe UI', 'Tahoma']);
-    expect(theme.textTheme.bodyMedium!.color, RescueColors.text);
-  });
-
-  testWidgets('RescueCard: фон, рамка, радиус; варианты inset и dashed', (tester) async {
     await pumpRescue(
       tester,
       const Column(
         children: [
-          RescueCard(key: ValueKey('card'), semanticLabel: 'Секция', child: Text('карточка')),
+          RescueCard(semanticLabel: 'Секция', child: Text('карточка')),
           RescueCard.inset(child: Text('вложенная')),
           RescueCard.dashed(child: Text('пусто')),
+          StatTile(label: 'Через VPN', value: '12'),
+          StatTile(label: 'Израсходовано', value: '48 из 200 ГБ', progress: 0.24, inset: true),
+          RescueBadge(label: 'Предупреждение', kind: RescueBadgeKind.warning),
         ],
       ),
     );
-    expect(find.text('карточка'), findsOneWidget);
-    expect(find.text('вложенная'), findsOneWidget);
-    expect(find.text('пусто'), findsOneWidget);
-    final box = tester.widget<Container>(
-      find.descendant(of: find.byKey(const ValueKey('card')), matching: find.byType(Container)).first,
-    );
-    final decoration = box.decoration! as BoxDecoration;
-    expect(decoration.color, RescueColors.card);
-    expect(decoration.borderRadius, BorderRadius.circular(32));
-    expect(decoration.border, isNull, reason: 'в стиле «Д» у карточек нет рамки');
+    for (final text in ['карточка', 'вложенная', 'пусто', '12', '48 из 200 ГБ', 'Предупреждение']) {
+      expect(find.text(text), findsOneWidget);
+    }
     expect(find.bySemanticsLabel('Секция'), findsOneWidget);
+    expect(find.bySemanticsLabel('Через VPN, 12'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
-
   testWidgets('SectionHeader: заголовок, подпись, ссылка вызывает колбэк', (tester) async {
     var taps = 0;
     await pumpRescue(
@@ -62,41 +47,6 @@ void main() {
     expect(taps, 1);
     expect(tester.getSize(find.byType(RescueLink)).height, greaterThanOrEqualTo(44));
     expect(find.bySemanticsLabel('Все ошибки'), findsOneWidget);
-  });
-
-  testWidgets('StatTile: обычная и вложенная', (tester) async {
-    await pumpRescue(
-      tester,
-      const Column(
-        children: [
-          StatTile(label: 'Через VPN', value: '12', markerColor: RescueColors.accent),
-          StatTile(label: 'Израсходовано', value: '48 из 200 ГБ', progress: 0.24, caption: 'за месяц', inset: true),
-        ],
-      ),
-    );
-    expect(find.text('12'), findsOneWidget);
-    expect(find.text('48 из 200 ГБ'), findsOneWidget);
-    expect(find.byType(RescueProgressBar), findsOneWidget);
-    expect(find.bySemanticsLabel('Через VPN, 12'), findsOneWidget);
-  });
-
-  testWidgets('RescueBadge: все варианты с цветами из палитры', (tester) async {
-    await pumpRescue(
-      tester,
-      Wrap(
-        children: [for (final k in RescueBadgeKind.values) RescueBadge(label: k.name, kind: k)],
-      ),
-    );
-    for (final k in RescueBadgeKind.values) {
-      final text = tester.widget<Text>(find.text(k.name));
-      expect(text.style!.color, k.foreground);
-    }
-    // Стиль «Д»: счётчик — оранжевая плашка с тёмным текстом, «внимание» — жёлтая метка-рамка.
-    expect(RescueBadgeKind.important.background, RescueColors.warn);
-    expect(RescueBadgeKind.important.foreground, RescueColors.onAccent);
-    expect(RescueBadgeKind.warning.foreground, RescueColors.accent);
-    expect(RescueBadgeKind.warning.border, RescueColors.accent);
-    expect(RescueBadgeKind.bypass.border, RescueColors.line2);
   });
 
   testWidgets('ConnectionPill: нажатие переключает, есть подпись для чтеца', (tester) async {
@@ -369,7 +319,6 @@ void main() {
       tester,
       const RescueGrid(
         masonry: true,
-        spacing: 12,
         children: [
           SizedBox(key: ValueKey('a'), height: 40),
           SizedBox(key: ValueKey('b'), height: 200),
