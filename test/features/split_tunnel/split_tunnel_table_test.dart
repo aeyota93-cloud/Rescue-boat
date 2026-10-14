@@ -305,7 +305,11 @@ void main() {
 
       await openTab(tester, 1);
       expect(find.byKey(const ValueKey('group-card-Игры и лаунчеры')), findsOneWidget);
-      expect(find.byTooltip('Соединений, которые не удались за сутки'), findsWidgets, reason: 'у «Общения» и «Без группы»');
+      expect(
+        find.byTooltip('Соединений, которые не удались за сутки'),
+        findsWidgets,
+        reason: 'у «Общения» и «Без группы»',
+      );
       expect(find.byKey(const ValueKey('group-card-')), findsOneWidget, reason: 'карточка «Без группы»');
       await tap(tester, find.byKey(const ValueKey('group-open-Общение')));
       expect(find.text('Группа «Общение»'), findsOneWidget);
@@ -380,13 +384,46 @@ void main() {
     await closePage(tester, container);
   });
 
-  testWidgets('VPN выключен: подсказка и переход к группам', (tester) async {
+  testWidgets('VPN выключен: подсказка и переход ко всем правилам', (tester) async {
     writeState(const SplitTunnel(bypass: SplitList(apps: ['ssh.exe'])));
     final container = await start(tester);
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     expect(find.textContaining('VPN выключен'), findsOneWidget);
-    await tapText(tester, 'Открыть группы');
+    await tapText(tester, 'Открыть все правила');
+    expect(find.text('Все правила'), findsOneWidget);
     expect(find.byKey(const ValueKey('group-card-')), findsOneWidget);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('«Все правила» по программам: все записи одним списком по алфавиту, с поиском', (tester) async {
+    writeState(
+      const SplitTunnel(
+        bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
+        via: SplitList(domains: ['claude.ai']),
+      ),
+    );
+    final container = await start(tester);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    await openTab(tester, 1);
+    expect(find.byKey(const ValueKey('rules-mode')), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-claude.ai')), findsNothing, reason: 'по группам — карточки');
+
+    await tapText(tester, 'По программам');
+    final ys = [
+      for (final v in ['claude.ai', 'mwlogin.net', 'ssh.exe']) tester.getTopLeft(find.byKey(ValueKey('entry-$v'))).dy,
+    ];
+    expect(ys[0] < ys[1] && ys[1] < ys[2], isTrue, reason: 'по алфавиту: $ys');
+
+    await tester.enterText(find.byType(TextField).first, 'mwl');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('entry-mwlogin.net')), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-claude.ai')), findsNothing);
+
+    await tester.enterText(find.byType(TextField).first, '');
+    await tester.pumpAndSettle();
+    await tapText(tester, 'По группам');
+    expect(find.byKey(const ValueKey('group-card-')), findsWidgets);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });

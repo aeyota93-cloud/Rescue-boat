@@ -57,7 +57,7 @@ class TunnelLiveView extends HookConsumerWidget {
     if (all == null) {
       return _Empty(
         text: 'VPN выключен — соединений не видно. Включите VPN, чтобы видеть, что куда идёт прямо сейчас.',
-        action: ('Открыть группы', onShowGroups),
+        action: ('Открыть все правила', onShowGroups),
       );
     }
 

@@ -18,9 +18,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Вкладки экрана.
 enum _View { live, groups }
 
-/// Шлюпка: «Раздельный туннель» (docs/redesign/tunnel-v3.md). Две вкладки:
+/// Шлюпка: «Туннелирование» (docs/redesign/tunnel-v3.md). Две вкладки:
 /// «Сейчас в сети» — что идёт прямо сейчас, через что и почему ([TunnelLiveView]);
-/// «Группы» — карточки групп с путём для всех записей сразу и записи по одной ([TunnelGroupsView]).
+/// «Все правила» — по группам (карточки с путём для всех записей сразу) или одним списком
+/// по программам ([TunnelGroupsView]).
 /// Изменения действуют сразу, без переподключения.
 ///
 /// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка, вкладки и поиск
@@ -92,7 +93,12 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           semanticLabel: 'Сейчас в сети',
           badge: open == null ? null : '$open',
         ),
-        FolderTab(value: _View.groups, title: 'Группы', badge: '${split.groups.length}'),
+        FolderTab(
+          value: _View.groups,
+          title: narrow ? 'Правила' : 'Все правила',
+          semanticLabel: 'Все правила',
+          badge: '${listed.length}',
+        ),
       ],
       value: view.value,
       onChanged: (v) => view.value = v,

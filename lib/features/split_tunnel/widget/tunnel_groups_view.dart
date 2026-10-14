@@ -19,10 +19,15 @@ const _sidePanelFrom = 1000.0;
 const _panelWidth = 460.0;
 const _cardWidth = 280.0;
 
-/// Шлюпка: вкладка «Группы» (docs/redesign/tunnel-v3.md). Карточка группы — путь всем записям
-/// сразу («Авто / Мимо / VPN», сервер — ▾), «Выровнять» при разных путях, «Открыть» — записи
-/// сбоку: у каждой свой путь и своя группа, можно отметить несколько или перетащить на карточку.
-/// При поиске карточек нет — найденные записи одним списком.
+/// Как разложить «Все правила»: карточками групп или одним списком записей.
+enum _RulesMode { apps, groups }
+
+/// Шлюпка: вкладка «Все правила» (docs/redesign/tunnel-v3.md), переключатель «По программам /
+/// По группам» — как на «Сейчас в сети».
+/// По группам: карточка группы — путь всем записям сразу («Авто / Мимо / VPN», сервер — ▾),
+/// «Выровнять» при разных путях, «Открыть» — записи сбоку: у каждой свой путь и своя группа,
+/// можно отметить несколько или перетащить на карточку.
+/// По программам (и при поиске): все записи одним списком по алфавиту, у каждой — путь и группа.
 class TunnelGroupsView extends HookConsumerWidget {
   const TunnelGroupsView({
     super.key,
@@ -46,33 +51,71 @@ class TunnelGroupsView extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final split = ref.watch(splitTunnelProvider);
     final selected = useState(const <String>{});
+    final mode = useState(_RulesMode.groups);
     useEffect(() {
       selected.value = const {};
+      // Группу открыли с «Сейчас в сети» — показываем её карточкой и записи сбоку.
+      if (openGroup.value != null) mode.value = _RulesMode.groups;
       return null;
     }, [openGroup.value]);
+
+    Widget withSwitch(Widget body) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: pinned ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: PillSegmented<_RulesMode>(
+              key: const ValueKey('rules-mode'),
+              segments: const [
+                PillSegment(value: _RulesMode.apps, label: 'По программам'),
+                PillSegment(value: _RulesMode.groups, label: 'По группам'),
+              ],
+              value: mode.value,
+              onChanged: (m) {
+                mode.value = m;
+                if (m == _RulesMode.apps) openGroup.value = null;
+              },
+              semanticLabel: 'Как разложить',
+              expand: true,
+              fontSize: 12,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (pinned) Expanded(child: body) else body,
+      ],
+    );
 
     // Программы в сети, которых нет в списках и группах, живут на «Сейчас в сети».
     final listed = entries.where((e) => e.target != null || e.group != null).toList();
     final q = query.trim().toLowerCase();
-    if (q.isNotEmpty) {
-      final found = listed
-          .where((e) => e.value.toLowerCase().contains(q) || _title(e, titles).toLowerCase().contains(q))
-          .toList();
+    if (q.isNotEmpty || mode.value == _RulesMode.apps) {
+      final found =
+          listed
+              .where(
+                (e) => q.isEmpty || e.value.toLowerCase().contains(q) || _title(e, titles).toLowerCase().contains(q),
+              )
+              .toList()
+            ..sort((a, b) => _title(a, titles).toLowerCase().compareTo(_title(b, titles).toLowerCase()));
       final rows = [
         for (final e in found) _EntryRow(key: ValueKey('entry-${e.value}'), entry: e, titles: titles, showGroup: true),
       ];
       final list = DeepList(
         radius: 28,
         spacing: 0,
-        semanticLabel: 'Найденные записи',
+        semanticLabel: q.isEmpty ? 'Все записи' : 'Найденные записи',
         children: [
           if (rows.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
               child: Text(
-                'Ничего не нашлось.',
+                q.isEmpty ? 'Правил пока нет.' : 'Ничего не нашлось.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
+                style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
               ),
             )
           else if (pinned)
@@ -83,7 +126,7 @@ class TunnelGroupsView extends HookConsumerWidget {
             ...rows,
         ],
       );
-      return list;
+      return withSwitch(list);
     }
 
     final byGroup = <String, List<TunnelEntry>>{for (final g in split.groups) g.name: [], looseGroup: []};
@@ -97,64 +140,66 @@ class TunnelGroupsView extends HookConsumerWidget {
       WidgetsBinding.instance.addPostFrameCallback((_) => openGroup.value = null);
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final side = constraints.maxWidth >= _sidePanelFrom;
-        final panelOpen = open != null && byGroup.containsKey(open);
-        // В закреплённом виде справа от сетки — место под полосу прокрутки (PinnedScroll).
-        final gridWidth =
-            (side && panelOpen ? constraints.maxWidth - _panelWidth - 16 : constraints.maxWidth) - (pinned ? 12 : 0);
-        final cols = ((gridWidth + 12) / (_cardWidth + 12)).floor().clamp(1, 6);
-        final cardWidth = (gridWidth - 12 * (cols - 1)) / cols;
-        final grid = Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final MapEntry(key: name, value: list) in byGroup.entries)
-              SizedBox(
-                width: cardWidth,
-                child: _GroupCard(
-                  key: ValueKey('group-card-$name'),
-                  name: name,
-                  entries: list,
-                  titles: titles,
-                  open: open == name,
-                  onOpen: () => openGroup.value = open == name ? null : name,
+    return withSwitch(
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final side = constraints.maxWidth >= _sidePanelFrom;
+          final panelOpen = open != null && byGroup.containsKey(open);
+          // В закреплённом виде справа от сетки — место под полосу прокрутки (PinnedScroll).
+          final gridWidth =
+              (side && panelOpen ? constraints.maxWidth - _panelWidth - 16 : constraints.maxWidth) - (pinned ? 12 : 0);
+          final cols = ((gridWidth + 12) / (_cardWidth + 12)).floor().clamp(1, 6);
+          final cardWidth = (gridWidth - 12 * (cols - 1)) / cols;
+          final grid = Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final MapEntry(key: name, value: list) in byGroup.entries)
+                SizedBox(
+                  width: cardWidth,
+                  child: _GroupCard(
+                    key: ValueKey('group-card-$name'),
+                    name: name,
+                    entries: list,
+                    titles: titles,
+                    open: open == name,
+                    onOpen: () => openGroup.value = open == name ? null : name,
+                  ),
                 ),
-              ),
-          ],
-        );
-        final panel = panelOpen
-            ? _GroupPanel(
-                key: ValueKey('group-panel-$open'),
-                name: open,
-                entries: byGroup[open]!,
-                titles: titles,
-                selected: selected,
-                pinned: pinned,
-                onClose: () => openGroup.value = null,
-                backLabel: side ? null : 'Все группы',
-              )
-            : null;
+            ],
+          );
+          final panel = panelOpen
+              ? _GroupPanel(
+                  key: ValueKey('group-panel-$open'),
+                  name: open,
+                  entries: byGroup[open]!,
+                  titles: titles,
+                  selected: selected,
+                  pinned: pinned,
+                  onClose: () => openGroup.value = null,
+                  backLabel: side ? null : 'Все группы',
+                )
+              : null;
 
-        if (panel != null && !side) return panel;
-        if (pinned) {
+          if (panel != null && !side) return panel;
+          if (pinned) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: PinnedScroll(child: grid)),
+                if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
+              ],
+            );
+          }
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: PinnedScroll(child: grid)),
+              Expanded(child: grid),
               if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
             ],
           );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: grid),
-            if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
