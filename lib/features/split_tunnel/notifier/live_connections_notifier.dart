@@ -28,7 +28,8 @@ final liveConnectionsProvider = StreamProvider.autoDispose<List<NetConnection>?>
       if (!active) return;
       final now = DateTime.now();
       for (final c in list ?? const <NetConnection>[]) {
-        seen['${c.exe}|${c.host.isNotEmpty ? c.host : c.ip}|${c.port}'] = (c, now);
+        final key = c.id.isNotEmpty ? c.id : '${c.exe}|${c.host}|${c.ip}|${c.port}|${c.network}';
+        seen[key] = (c, now);
       }
       seen.removeWhere((_, s) => now.difference(s.$2) > keep);
       // Не пришедшие в этот раз — закрылись: показываем их ещё минуту, но помеченными.
