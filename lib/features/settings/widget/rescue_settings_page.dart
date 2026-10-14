@@ -55,6 +55,7 @@ class RescueSettingsPage extends HookConsumerWidget {
             const RescueGrid(
               minItemWidth: 380,
               spacing: 20,
+              masonry: true,
               children: [
                 _StartupSection(),
                 _TrafficSection(),

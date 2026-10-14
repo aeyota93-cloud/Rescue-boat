@@ -363,4 +363,28 @@ void main() {
     // 500 − 32 отступа = 468: влезает 2 колонки по 228.
     expect(tester.getSize(find.byKey(const ValueKey('a'))).width, 228);
   });
+
+  testWidgets('RescueGrid masonry: колонка складывается сама, без дыр под короткой карточкой', (tester) async {
+    await pumpRescue(
+      tester,
+      const RescueGrid(
+        masonry: true,
+        spacing: 12,
+        children: [
+          SizedBox(key: ValueKey('a'), height: 40),
+          SizedBox(key: ValueKey('b'), height: 200),
+          SizedBox(key: ValueKey('c'), height: 30),
+          SizedBox(key: ValueKey('d'), height: 30),
+        ],
+      ),
+      size: const Size(500, 400),
+    );
+    Rect r(String k) => tester.getRect(find.byKey(ValueKey(k)));
+    expect(r('a').width, 228);
+    // «c» — во второй строке первой колонки: сразу под «a», а не под высокой «b».
+    expect(r('c').left, r('a').left);
+    expect(r('c').top, r('a').bottom + 12);
+    expect(r('d').left, r('b').left);
+    expect(r('d').top, r('b').bottom + 12);
+  });
 }
