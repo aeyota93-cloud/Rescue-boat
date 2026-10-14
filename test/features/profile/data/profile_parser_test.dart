@@ -168,9 +168,18 @@ void main() {
 
   group("rescue-links (запасной XHTTP из PasarGuard)", () {
     test("адрес /links только для https://host/sub/<токен>", () {
-      expect(ProfileParser.pasarGuardLinksUrl("https://vpn.example.com/sub/abc123"), "https://vpn.example.com/sub/abc123/links");
-      expect(ProfileParser.pasarGuardLinksUrl(" https://vpn.example.com/sub/abc123/ "), "https://vpn.example.com/sub/abc123/links");
-      expect(ProfileParser.pasarGuardLinksUrl("https://vpn.example.com:8443/sub/abc123#NL"), "https://vpn.example.com:8443/sub/abc123/links");
+      expect(
+        ProfileParser.pasarGuardLinksUrl("https://vpn.example.com/sub/abc123"),
+        "https://vpn.example.com/sub/abc123/links",
+      );
+      expect(
+        ProfileParser.pasarGuardLinksUrl(" https://vpn.example.com/sub/abc123/ "),
+        "https://vpn.example.com/sub/abc123/links",
+      );
+      expect(
+        ProfileParser.pasarGuardLinksUrl("https://vpn.example.com:8443/sub/abc123#NL"),
+        "https://vpn.example.com:8443/sub/abc123/links",
+      );
       expect(ProfileParser.pasarGuardLinksUrl("https://vpn.example.com/sub/abc123/links"), isNull);
       expect(ProfileParser.pasarGuardLinksUrl("http://vpn.example.com/sub/abc123"), isNull);
       expect(ProfileParser.pasarGuardLinksUrl(validBaseUrl), isNull);
@@ -189,6 +198,86 @@ void main() {
       expect(ProfileParser.withRescueLinks("vless://a@1.2.3.4:443#NL", "vless://b@1.2.3.4:443#X"), isNull);
       expect(ProfileParser.withRescueLinks('{"log":{}}', "vless://b@1.2.3.4:443#X"), isNull);
       expect(ProfileParser.withRescueLinks('{"outbounds":[]}', '{"detail":"Not Found"}'), isNull);
+    });
+  });
+
+  group("смена портов Hysteria2 (/rescue с сервера)", () {
+    const sub =
+        '{"outbounds":[{"type":"vless","tag":"NL"},{"type":"hysteria2","tag":"NL игры","server_port":443}, '
+        '{"type":"hysteria2","tag":"свой","server_ports":["1000:2000"]}],"route":{"final":"proxy"}}';
+
+    List<Map<String, dynamic>> outbounds(String? merged) =>
+        ((jsonDecode(merged!) as Map<String, dynamic>)["outbounds"] as List).cast<Map<String, dynamic>>();
+
+    test("адрес /rescue строится как /links", () {
+      expect(
+        ProfileParser.pasarGuardSubUrl("https://vpn.example.com/sub/abc123", "rescue"),
+        "https://vpn.example.com/sub/abc123/rescue",
+      );
+      expect(ProfileParser.pasarGuardSubUrl("https://vpn.example.com/sub/abc123/links", "rescue"), isNull);
+    });
+
+    test("диапазон и интервал вписываются только в hysteria2 без своих портов", () {
+      const rescue = '{"hysteria2":{"ports":"20000-20999","hop_interval":"30"}}';
+      final list = outbounds(ProfileParser.withHysteriaHop(sub, rescue));
+      expect(list[0], {"type": "vless", "tag": "NL"});
+      expect(list[1]["server_ports"], ["20000:20999"]);
+      expect(list[1]["hop_interval"], "30s");
+      expect(list[1]["server_port"], 443);
+      expect(list[2]["server_ports"], ["1000:2000"]);
+      expect(list[2].containsKey("hop_interval"), isFalse);
+      expect((jsonDecode(ProfileParser.withHysteriaHop(sub, rescue)!) as Map)["route"], {"final": "proxy"});
+    });
+
+    test("форматы: двоеточие, несколько диапазонов, один порт, интервал числом и с s", () {
+      final list = outbounds(
+        ProfileParser.withHysteriaHop(
+          sub,
+          '{"hysteria2":{"ports":"20000:20099, 30000 ,40000-40001","hop_interval":45}}',
+        ),
+      );
+      expect(list[1]["server_ports"], ["20000:20099", "30000:30000", "40000:40001"]);
+      expect(list[1]["hop_interval"], "45s");
+      expect(
+        outbounds(
+          ProfileParser.withHysteriaHop(sub, '{"hysteria2":{"ports":"20000-20999","hop_interval":"60s"}}'),
+        )[1]["hop_interval"],
+        "60s",
+      );
+    });
+
+    test("кривой интервал — порты есть, интервал по умолчанию sing-box", () {
+      for (final bad in ['"2"', '"полминуты"', '""', 'null', '"30m"']) {
+        final list = outbounds(
+          ProfileParser.withHysteriaHop(sub, '{"hysteria2":{"ports":"20000-20999","hop_interval":$bad}}'),
+        );
+        expect(list[1]["server_ports"], ["20000:20999"], reason: bad);
+        expect(list[1].containsKey("hop_interval"), isFalse, reason: bad);
+      }
+    });
+
+    test("кривой ответ или диапазон — подписка без изменений (иначе sing-box не запустится)", () {
+      for (final bad in [
+        '',
+        '<html>404</html>',
+        '{"detail":"Not Found"}',
+        '{"hysteria2":"20000-20999"}',
+        '{"hysteria2":{"ports":20000}}',
+        '{"hysteria2":{"ports":""}}',
+        '{"hysteria2":{"ports":"20000-"}}',
+        '{"hysteria2":{"ports":"0-100"}}',
+        '{"hysteria2":{"ports":"20999-20000"}}',
+        '{"hysteria2":{"ports":"60000-70000"}}',
+        '{"hysteria2":{"ports":"20000-20999,abc"}}',
+      ]) {
+        expect(ProfileParser.withHysteriaHop(sub, bad), isNull, reason: bad);
+      }
+    });
+
+    test("нет hysteria2 без портов или подписка не JSON — без изменений", () {
+      const rescue = '{"hysteria2":{"ports":"20000-20999"}}';
+      expect(ProfileParser.withHysteriaHop('{"outbounds":[{"type":"vless"}]}', rescue), isNull);
+      expect(ProfileParser.withHysteriaHop("hysteria2://p@1.2.3.4:443#NL", rescue), isNull);
     });
   });
 }

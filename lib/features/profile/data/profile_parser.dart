@@ -171,37 +171,58 @@ class ProfileParser {
       ref: _ref,
     );
     await _addRescueLinks(url, tempFilePath, cancelToken);
+    await _addHysteriaHop(url, tempFilePath, cancelToken);
     // fixing headers before return
     return rs.headers.map.map((key, value) {
       if (value.length == 1) return MapEntry(key, value.first);
       return MapEntry(key, value);
     });
   }, (err, st) => err is ProfileFailure ? err : ProfileFailure.unexpected(err, st));
+
   /// Шлюпка: PasarGuard не кладёт серверы XHTTP в подписку sing-box (обычный sing-box их не
   /// знает), а ядро Шлюпки знает. Те же серверы есть в `<подписка>/links` — передаём их ядру
   /// полем `rescue-links`, ядро добавит недостающие (rescue_links.go в ядре). Любой сбой —
   /// подписка остаётся как скачана.
-  Future<void> _addRescueLinks(String url, String tempFilePath, CancelToken? cancelToken) async {
-    final linksUrl = pasarGuardLinksUrl(url);
-    if (linksUrl == null) return;
+  Future<void> _addRescueLinks(String url, String tempFilePath, CancelToken? cancelToken) =>
+      _amendWith(pasarGuardLinksUrl(url), tempFilePath, cancelToken, withRescueLinks);
+
+  /// Шлюпка: смену портов Hysteria2 PasarGuard 5.4.1 в подписку передать не может (падает с 500),
+  /// поэтому сервер отдаёт диапазон отдельно, по `<подписка>/rescue` (Caddy vpn-sub, docs в
+  /// vpn-server: backup-routes.md). Вписываем его в выходы hysteria2. Сбой — подписка как была.
+  Future<void> _addHysteriaHop(String url, String tempFilePath, CancelToken? cancelToken) =>
+      _amendWith(pasarGuardSubUrl(url, 'rescue'), tempFilePath, cancelToken, withHysteriaHop);
+
+  /// Скачивает [extraUrl] и правит подписку sing-box в [tempFilePath] через [amend]
+  /// (null из [amend] — оставить как есть). Любой сбой, кроме отмены, глотается.
+  Future<void> _amendWith(
+    String? extraUrl,
+    String tempFilePath,
+    CancelToken? cancelToken,
+    String? Function(String content, String extra) amend,
+  ) async {
+    if (extraUrl == null) return;
     final file = File(tempFilePath);
-    final linksFile = File('$tempFilePath.links');
+    final extraFile = File('$tempFilePath.extra');
     try {
       final content = await file.readAsString();
       if (_singboxJson(content) == null) return;
-      await _httpClient.download(linksUrl, linksFile.path, cancelToken: cancelToken);
-      final merged = withRescueLinks(content, await linksFile.readAsString());
+      await _httpClient.download(extraUrl, extraFile.path, cancelToken: cancelToken);
+      final merged = amend(content, await extraFile.readAsString());
       if (merged != null) await file.writeAsString(merged);
     } catch (err) {
       if (err is DioException && CancelToken.isCancel(err)) rethrow;
     } finally {
-      if (linksFile.existsSync()) linksFile.deleteSync();
+      if (extraFile.existsSync()) extraFile.deleteSync();
     }
   }
 
   /// `https://host/sub/<токен>` → `https://host/sub/<токен>/links`; для прочих адресов null.
   @visibleForTesting
-  static String? pasarGuardLinksUrl(String url) {
+  static String? pasarGuardLinksUrl(String url) => pasarGuardSubUrl(url, 'links');
+
+  /// `https://host/sub/<токен>` → `https://host/sub/<токен>/<suffix>`; для прочих адресов null.
+  @visibleForTesting
+  static String? pasarGuardSubUrl(String url, String suffix) {
     final uri = Uri.tryParse(url.trim());
     if (uri == null || !uri.isScheme('https')) return null;
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
@@ -210,8 +231,63 @@ class ProfileParser {
       scheme: uri.scheme,
       host: uri.host,
       port: uri.hasPort ? uri.port : null,
-      pathSegments: [...segments, 'links'],
+      pathSegments: [...segments, suffix],
     ).toString();
+  }
+
+  /// Подписка sing-box, где у выходов hysteria2 без `server_ports` вписаны порты и интервал из
+  /// ответа `/rescue` (`{"hysteria2":{"ports":"20000-20999","hop_interval":"30"}}`); null, если
+  /// менять нечего или ответ кривой. Кривой диапазон в sing-box ломает ВЕСЬ конфиг, поэтому
+  /// пропускаем только то, что точно разберёт sing-quic (`начало:конец`).
+  @visibleForTesting
+  static String? withHysteriaHop(String content, String rescue) {
+    final json = _singboxJson(content);
+    final hop = _hysteriaHop(rescue);
+    if (json == null || hop == null) return null;
+    var changed = false;
+    final outbounds = [
+      for (final o in json['outbounds'] as List)
+        if (o is Map<String, dynamic> && o['type'] == 'hysteria2' && o['server_ports'] == null)
+          () {
+            changed = true;
+            return {...o, ...hop};
+          }()
+        else
+          o,
+    ];
+    return changed ? jsonEncode({...json, 'outbounds': outbounds}) : null;
+  }
+
+  static Map<String, dynamic>? _hysteriaHop(String rescue) {
+    Object? section;
+    try {
+      final json = jsonDecode(rescue);
+      section = json is Map<String, dynamic> ? json['hysteria2'] : null;
+    } catch (_) {
+      return null;
+    }
+    if (section is! Map<String, dynamic>) return null;
+    final ports = section['ports'];
+    if (ports is! String) return null;
+    final ranges = <String>[];
+    for (final part in ports.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty)) {
+      final m = RegExp(r'^(\d{1,5})(?:[-:](\d{1,5}))?$').firstMatch(part);
+      if (m == null) return null;
+      final start = int.parse(m[1]!);
+      final end = int.parse(m[2] ?? m[1]!);
+      if (start < 1 || end > 65535 || start > end) return null;
+      ranges.add('$start:$end');
+    }
+    if (ranges.isEmpty) return null;
+    final interval = _hopInterval(section['hop_interval']);
+    return {'server_ports': ranges, if (interval != null) 'hop_interval': interval};
+  }
+
+  /// `30` / `"30"` / `"30s"` → `"30s"`; меньше 5 с или непонятное — null (у sing-box своё по умолчанию).
+  static String? _hopInterval(Object? value) {
+    final m = RegExp(r'^(\d{1,4})s?$').firstMatch('${value ?? ''}'.trim());
+    final seconds = m == null ? null : int.parse(m[1]!);
+    return seconds != null && seconds >= 5 ? '${seconds}s' : null;
   }
 
   /// Подписка sing-box (JSON с `outbounds`) с добавленным полем `rescue-links`; null, если
