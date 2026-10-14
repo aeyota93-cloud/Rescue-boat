@@ -281,7 +281,8 @@ String _spokenLabel(RescueNavItem item) {
 
 String _countText(int count) => count > 99 ? '99+' : '$count';
 
-/// Счётчик: оранжевая плашка с тёмным текстом (контраст 6.3:1).
+/// Счётчик: спокойная серая плашка (line2, текст subOnDeep — контраст 4.7:1). Не оранжевый: в «Ошибки»
+/// заходят по нужде, а не по каждому сбросу соединения.
 class _CountBadge extends StatelessWidget {
   const _CountBadge(this.count, {this.small = false});
 
@@ -294,11 +295,11 @@ class _CountBadge extends StatelessWidget {
       key: const ValueKey('rescue-shell-count'),
       constraints: BoxConstraints(minWidth: small ? 16 : 22),
       padding: EdgeInsets.symmetric(horizontal: small ? 4 : 7, vertical: small ? 0 : 1),
-      decoration: BoxDecoration(color: RescueColors.warn, borderRadius: BorderRadius.circular(small ? 8 : 6)),
+      decoration: BoxDecoration(color: RescueColors.line2, borderRadius: BorderRadius.circular(small ? 8 : 6)),
       child: Text(
         _countText(count),
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: small ? 10 : 11, fontWeight: FontWeight.w700, color: RescueColors.onAccent),
+        style: TextStyle(fontSize: small ? 10 : 11, fontWeight: FontWeight.w700, color: RescueColors.subOnDeep),
       ),
     );
   }

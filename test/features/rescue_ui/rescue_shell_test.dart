@@ -125,8 +125,8 @@ void main() {
     expect(count, findsOneWidget);
     expect(find.descendant(of: count, matching: find.text('7')), findsOneWidget);
     final box = tester.widget<Container>(count).decoration! as BoxDecoration;
-    expect(box.color, RescueColors.warn);
-    expect(tester.widget<Text>(find.text('7')).style!.color, RescueColors.onAccent);
+    expect(box.color, RescueColors.line2);
+    expect(tester.widget<Text>(find.text('7')).style!.color, RescueColors.subOnDeep);
     expect(find.bySemanticsLabel('Ошибки, 7'), findsOneWidget);
     expect(find.bySemanticsLabel('Подписки и серверы, есть новое'), findsOneWidget);
 
