@@ -17,7 +17,6 @@ import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
-import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Имя маршрута страницы «Для опытных» (/settings/advanced) — его добавляет основная сессия.
@@ -35,8 +34,9 @@ void openRescueRoute(BuildContext context, String name, {Widget? fallback}) {
 /// Шлюпка: «Настройки» в стиле «Д». Всё сохраняется сразу; изменения, которым нужно
 /// переподключение, применяет ConnectionWrapper сам.
 ///
-/// Сетка карточек (от 380 px): Запуск, Куда идёт трафик, Ошибки и здоровье, Обход блокировок,
-/// Способ работы и тёмный блок «Для опытных» со ссылками на прежние экраны Hiddify.
+/// Карточки кладкой (колонки от 380 px): Запуск и окно, Куда идёт трафик, Обход блокировок,
+/// Ошибки и здоровье и тёмный блок «Для опытных» со ссылками на прежние экраны Hiddify.
+/// «Способ работы» — на Главной. Порядок подобран под колонки: карточка i — в колонке i % колонок.
 class RescueSettingsPage extends HookConsumerWidget {
   const RescueSettingsPage({super.key});
 
@@ -59,9 +59,8 @@ class RescueSettingsPage extends HookConsumerWidget {
               children: [
                 _StartupSection(),
                 _TrafficSection(),
-                _InsightsSection(),
                 _BypassBlocksSection(),
-                _ModeSection(),
+                _InsightsSection(),
                 _AdvancedSection(),
               ],
             ),
@@ -272,42 +271,6 @@ class _InsightsSection extends ConsumerWidget {
           divider: false,
         ),
       ],
-    );
-  }
-}
-
-// ---------- Способ работы ----------
-
-class _ModeSection extends ConsumerWidget {
-  const _ModeSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(ConfigOptions.serviceMode);
-    final notifier = ref.read(ConfigOptions.serviceMode.notifier);
-    return RescueCard(
-      semanticLabel: 'Способ работы',
-      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SectionLabel('Способ работы'),
-          const SizedBox(height: 12),
-          ChoiceCard(
-            title: 'Весь компьютер',
-            description: 'Все программы и игры, работают туннелирование и список ошибок',
-            selected: mode == ServiceMode.tun,
-            onTap: () => notifier.update(ServiceMode.tun),
-          ),
-          const SizedBox(height: 12),
-          ChoiceCard(
-            title: 'Только браузеры',
-            description: 'Режим прокси: без прав администратора, остальные программы идут напрямую',
-            selected: mode != ServiceMode.tun,
-            onTap: () => notifier.update(ServiceMode.systemProxy),
-          ),
-        ],
-      ),
     );
   }
 }

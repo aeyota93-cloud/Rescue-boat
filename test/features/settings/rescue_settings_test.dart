@@ -18,7 +18,6 @@ import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/settings/widget/rescue_settings_page.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
-import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../screens_test_helpers.dart';
@@ -111,7 +110,6 @@ void main() {
         'ЗАПУСК И ОКНО',
         'КУДА ИДЁТ ТРАФИК',
         'ОШИБКИ И ЗДОРОВЬЕ',
-        'СПОСОБ РАБОТЫ',
         'ОБХОД БЛОКИРОВОК',
         'ДЛЯ ОПЫТНЫХ',
       ]) {
@@ -159,10 +157,8 @@ void main() {
     await tapText(tester, 'Замерять пинг');
     expect(container.read(insightsSettingsProvider).measurePing, isFalse);
 
-    await tapText(tester, 'Только браузеры');
-    expect(container.read(ConfigOptions.serviceMode), ServiceMode.systemProxy);
-    await tapText(tester, 'Весь компьютер');
-    expect(container.read(ConfigOptions.serviceMode), ServiceMode.tun);
+    // «Способ работы» переехал на Главную.
+    expect(find.text('Только браузеры'), findsNothing);
 
     await tapText(tester, 'Запускать при входе в Windows');
     expect(autoStart.calls, [true]);

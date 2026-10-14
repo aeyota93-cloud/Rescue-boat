@@ -203,6 +203,10 @@ class _PickerColumn extends StatelessWidget {
         ServerPicker(),
         _FailoverNote(),
         SizedBox(height: 16),
+        SectionLabel('Способ работы'),
+        SizedBox(height: 10),
+        _ServiceModeSwitch(),
+        SizedBox(height: 16),
         SectionLabel('Режим'),
         SizedBox(height: 10),
         _Modes(),
@@ -304,18 +308,57 @@ int defaultGamesBypassed(SplitTunnel split) {
   return defaultBypassApps.where((a) => have.contains(a.toLowerCase())).length;
 }
 
-/// Режимы — те же переключатели, что в Настройках: способ работы, российские сайты, игры.
+/// «Способ работы»: весь компьютер (TUN, нужны права администратора) или только браузеры
+/// (системный прокси). Живёт только здесь — в Настройках его больше нет.
+class _ServiceModeSwitch extends ConsumerWidget {
+  const _ServiceModeSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final whole = ref.watch(ConfigOptions.serviceMode) == ServiceMode.tun;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: PillSegmented<bool>(
+            key: const ValueKey('service-mode'),
+            segments: const [
+              PillSegment(value: true, label: 'Весь компьютер'),
+              PillSegment(value: false, label: 'Только браузеры'),
+            ],
+            value: whole,
+            onChanged: (v) =>
+                ref.read(ConfigOptions.serviceMode.notifier).update(v ? ServiceMode.tun : ServiceMode.systemProxy),
+            style: PillSegmentedStyle.onAccent,
+            semanticLabel: 'Способ работы',
+            expand: true,
+            fontSize: 13,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          whole
+              ? 'Все программы и игры; работают туннелирование и список ошибок'
+              : 'Режим прокси: без прав администратора, остальные программы идут напрямую',
+          style: const TextStyle(fontSize: 12, color: RescueColors.onAccentMuted),
+        ),
+      ],
+    );
+  }
+}
+
+/// Режимы — те же переключатели, что в Настройках: российские сайты, игры.
 class _Modes extends ConsumerWidget {
   const _Modes();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final whole = ref.watch(ConfigOptions.serviceMode) == ServiceMode.tun;
     final smart = ref.watch(ConfigOptions.region) == Region.ru;
     final games = defaultGamesBypassed(ref.watch(splitTunnelProvider));
     final gamesOn = games > 0;
 
-    final wholeHint = whole ? 'Все программы и игры' : 'Только браузеры (прокси)';
     final smartHint = smart ? 'Банки и Госуслуги видят домашний IP' : 'Всё через VPN';
     final gamesHint = gamesOn
         ? '$games ${plural(games, 'игра или лаунчер', 'игры и лаунчера', 'игр и лаунчеров')} напрямую'
@@ -328,13 +371,6 @@ class _Modes extends ConsumerWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            ModeChip(
-              label: 'Весь компьютер',
-              selected: whole,
-              hint: wholeHint,
-              onChanged: (v) =>
-                  ref.read(ConfigOptions.serviceMode.notifier).update(v ? ServiceMode.tun : ServiceMode.systemProxy),
-            ),
             ModeChip(
               label: 'Российские сайты напрямую',
               selected: smart,
@@ -357,7 +393,7 @@ class _Modes extends ConsumerWidget {
         const SizedBox(height: 10),
         ExcludeSemantics(
           child: Text(
-            [wholeHint, smartHint, gamesHint].join(' · '),
+            [smartHint, gamesHint].join(' · '),
             style: const TextStyle(fontSize: 12, color: RescueColors.onAccentMuted),
           ),
         ),

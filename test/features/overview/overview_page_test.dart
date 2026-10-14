@@ -45,10 +45,12 @@ void main() {
     expect(find.text('48 МС'), findsOneWidget);
     expect(find.textContaining('secret-token'), findsNothing);
 
-    // Режимы — только те, что есть в приложении.
+    // Способ работы — выбор из двух; режимы — только те, что есть в приложении.
+    expect(find.text('СПОСОБ РАБОТЫ'), findsOneWidget);
+    expect(find.byKey(const ValueKey('service-mode')), findsOneWidget);
     final chips = tester.widgetList<ModeChip>(find.byType(ModeChip)).toList();
-    expect(chips.map((c) => c.label), ['Весь компьютер', 'Российские сайты напрямую', 'Игры мимо VPN']);
-    expect(chips[2].selected, isTrue, reason: 'стандартный список игр мимо VPN');
+    expect(chips.map((c) => c.label), ['Российские сайты напрямую', 'Игры мимо VPN']);
+    expect(chips[1].selected, isTrue, reason: 'стандартный список игр мимо VPN');
 
     // Связь: пинг, разброс, потери из healthProvider, замирания за час из ошибок.
     expect(ring(tester, 'МС ПИНГ').label, '48');
@@ -98,7 +100,11 @@ void main() {
     expect(find.text('Сначала добавьте подписку'), findsOneWidget);
     expect(find.text('Подписка не добавлена'), findsNWidgets(2), reason: 'кнопка сервера и карточка подписки');
     expect(ring(tester, 'МС ПИНГ').label, '—');
-    expect(find.textContaining('Нет данных: замеры идут, пока VPN включён'), findsNWidgets(2), reason: 'Связь и Здоровье');
+    expect(
+      find.textContaining('Нет данных: замеры идут, пока VPN включён'),
+      findsNWidgets(2),
+      reason: 'Связь и Здоровье',
+    );
     expect(tester.widget<DeepList>(find.byType(DeepList)).count, '0');
     expect(find.text('За последний час ошибок не было'), findsOneWidget);
     expect(find.textContaining('ГБ'), findsNothing);
@@ -216,10 +222,17 @@ void main() {
     await pumpPage(tester, const OverviewPage(), overrides: pageOverrides(split: split));
     ModeChip chip(String label) => tester.widget<ModeChip>(find.widgetWithText(ModeChip, label));
 
-    final whole = chip('Весь компьютер').selected;
+    const wholeText = 'Все программы и игры; работают туннелирование и список ошибок';
+    const proxyText = 'Режим прокси: без прав администратора, остальные программы идут напрямую';
     await tester.tap(find.text('Весь компьютер'));
     await tester.pump();
-    expect(chip('Весь компьютер').selected, !whole);
+    expect(find.text(wholeText), findsOneWidget);
+    await tester.tap(find.text('Только браузеры'));
+    await tester.pump();
+    expect(find.text(proxyText), findsOneWidget);
+    await tester.tap(find.text('Весь компьютер'));
+    await tester.pump();
+    expect(find.text(wholeText), findsOneWidget);
 
     expect(chip('Российские сайты напрямую').selected, isTrue, reason: 'по умолчанию регион ru');
     await tester.tap(find.text('Российские сайты напрямую'));
