@@ -25,13 +25,13 @@
 
 ## Дальше по порядку
 
-1. **Смена портов через Шлюпку (в работе).** Caddy (sub/Caddyfile): `@rescue path /sub/*/rescue`
-   перед `handle /sub/*` → JSON `{"hysteria2":{"server_ports":["20000:20999"],"hop_interval":"30s"}}`
-   из env (добавить VPN_HY2_HOP_PORTS/INTERVAL в environment vpn-sub; формат портов sing-box —
-   через двоеточие, hy2-hop.sh понимает оба). Приложение: `profile_parser.dart` рядом с
-   `_addRescueLinks` — скачать `<подписка>/rescue`, вписать `server_ports`/`hop_interval` в
-   выходы hysteria2 без них (пустые/кривые — пропустить). Тесты как у withRescueLinks.
-   Деплой: бэкап, выкладка, `docker compose up -d sub`, curl проверка, обновить подписку.
+1. ✅ **Смена портов через Шлюпку — сделано 14.10.** Сервер (vpn-server 7289bc9, выложено,
+   бэкап opt-vpn-server-20261014-003657.tgz, check.sh зелёный): Caddy отдаёт
+   `<подписка>/rescue` → `{"hysteria2":{"ports":"20000-20999","hop_interval":"30"}}`.
+   Приложение (5573333d): `_addHysteriaHop` в profile_parser.dart вписывает
+   `server_ports ["20000:20999"]`, `hop_interval "30s"` в hysteria2 без своих портов; кривое —
+   пропуск. Вживую в Шлюпке — только после сборки test2 (обновить подписку, в
+   current-config.json у «Hysteria2» должны быть server_ports).
 2. **Шкала (масштаб) приложения в Настройках** — уменьшить/увеличить на проценты.
 3. **Счётчик ошибок в меню слева — серым**, не оранжевым (пользователь заходит туда только по нужде).
 4. **Подписки и серверы: дублирование** — список «Через какой сервер» и карточки серверов делают
