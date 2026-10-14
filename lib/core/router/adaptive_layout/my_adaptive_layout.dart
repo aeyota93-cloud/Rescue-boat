@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
-import 'package:hiddify/features/servers/notifier/failover.dart';
+import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/overview/notifier/vpn_status.dart';
 import 'package:hiddify/features/overview/widget/vpn_power.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
+import 'package:hiddify/features/servers/notifier/failover.dart';
+import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Шлюпка: каркас нового дизайна — меню слева (на узком окне — значки снизу) и раздел справа.
@@ -50,6 +52,9 @@ class RescueAppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Оранжевый счётчик у «Ошибок»: сколько было за последний час (0 — без счётчика).
+    ref.listen(splitTunnelIssueProvider, (_, message) {
+      if (message != null) ref.read(inAppNotificationControllerProvider).showErrorToast(message);
+    });
     final errorsLastHour = ref.watch(errorCountProvider(const Duration(hours: 1)));
     final vpn = ref.watch(vpnStatusProvider);
     // Время подключения считается, пока жив каркас, — даже если Главная не открыта.

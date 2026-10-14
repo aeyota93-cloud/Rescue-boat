@@ -137,6 +137,15 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           };
           final children = [
             header,
+            if (ref.watch(splitTunnelIssueProvider) case final issue?)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  issue,
+                  key: const ValueKey('split-tunnel-issue'),
+                  style: const TextStyle(color: RescueColors.warn),
+                ),
+              ),
             const SizedBox(height: 20),
             tabs(constraints.maxWidth < 560),
             const SizedBox(height: 20),

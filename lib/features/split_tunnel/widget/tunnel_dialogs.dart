@@ -118,7 +118,7 @@ class _AddDialog extends HookConsumerWidget {
 
     void submit() {
       if (!ready) return;
-      ref.read(splitTunnelProvider.notifier).addItems(items, place, group: targetGroup);
+      if (!ref.read(splitTunnelProvider.notifier).addItems(items, place, group: targetGroup)) return;
       Navigator.of(context).pop();
     }
 
