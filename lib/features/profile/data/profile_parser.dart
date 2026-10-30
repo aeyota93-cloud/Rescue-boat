@@ -171,7 +171,6 @@ class ProfileParser {
       ref: _ref,
     );
     await _addRescueLinks(url, tempFilePath, cancelToken);
-    await _addHysteriaHop(url, tempFilePath, cancelToken);
     await _dropHysteriaUtls(tempFilePath);
     // fixing headers before return
     return rs.headers.map.map((key, value) {
@@ -186,12 +185,6 @@ class ProfileParser {
   /// подписка остаётся как скачана.
   Future<void> _addRescueLinks(String url, String tempFilePath, CancelToken? cancelToken) =>
       _amendWith(pasarGuardLinksUrl(url), tempFilePath, cancelToken, withRescueLinks);
-
-  /// Шлюпка: смену портов Hysteria2 PasarGuard 5.4.1 в подписку передать не может (падает с 500),
-  /// поэтому сервер отдаёт диапазон отдельно, по `<подписка>/rescue` (Caddy vpn-sub, docs в
-  /// vpn-server: backup-routes.md). Вписываем его в выходы hysteria2. Сбой — подписка как была.
-  Future<void> _addHysteriaHop(String url, String tempFilePath, CancelToken? cancelToken) =>
-      _amendWith(pasarGuardSubUrl(url, 'rescue'), tempFilePath, cancelToken, withHysteriaHop);
 
   /// Шлюпка: PasarGuard 5.5 кладёт выходам hysteria2 отпечаток uTLS (берёт его у входа, по
   /// умолчанию chrome), а sing-box не умеет uTLS поверх QUIC: «unsupported usage for uTLS», и
@@ -270,61 +263,6 @@ class ProfileParser {
       port: uri.hasPort ? uri.port : null,
       pathSegments: [...segments, suffix],
     ).toString();
-  }
-
-  /// Подписка sing-box, где у выходов hysteria2 без `server_ports` вписаны порты и интервал из
-  /// ответа `/rescue` (`{"hysteria2":{"ports":"20000-20999","hop_interval":"30"}}`); null, если
-  /// менять нечего или ответ кривой. Кривой диапазон в sing-box ломает ВЕСЬ конфиг, поэтому
-  /// пропускаем только то, что точно разберёт sing-quic (`начало:конец`).
-  @visibleForTesting
-  static String? withHysteriaHop(String content, String rescue) {
-    final json = _singboxJson(content);
-    final hop = _hysteriaHop(rescue);
-    if (json == null || hop == null) return null;
-    var changed = false;
-    final outbounds = [
-      for (final o in json['outbounds'] as List)
-        if (o is Map<String, dynamic> && o['type'] == 'hysteria2' && o['server_ports'] == null)
-          () {
-            changed = true;
-            return {...o, ...hop};
-          }()
-        else
-          o,
-    ];
-    return changed ? jsonEncode({...json, 'outbounds': outbounds}) : null;
-  }
-
-  static Map<String, dynamic>? _hysteriaHop(String rescue) {
-    Object? section;
-    try {
-      final json = jsonDecode(rescue);
-      section = json is Map<String, dynamic> ? json['hysteria2'] : null;
-    } catch (_) {
-      return null;
-    }
-    if (section is! Map<String, dynamic>) return null;
-    final ports = section['ports'];
-    if (ports is! String) return null;
-    final ranges = <String>[];
-    for (final part in ports.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty)) {
-      final m = RegExp(r'^(\d{1,5})(?:[-:](\d{1,5}))?$').firstMatch(part);
-      if (m == null) return null;
-      final start = int.parse(m[1]!);
-      final end = int.parse(m[2] ?? m[1]!);
-      if (start < 1 || end > 65535 || start > end) return null;
-      ranges.add('$start:$end');
-    }
-    if (ranges.isEmpty) return null;
-    final interval = _hopInterval(section['hop_interval']);
-    return {'server_ports': ranges, if (interval != null) 'hop_interval': interval};
-  }
-
-  /// `30` / `"30"` / `"30s"` → `"30s"`; меньше 5 с или непонятное — null (у sing-box своё по умолчанию).
-  static String? _hopInterval(Object? value) {
-    final m = RegExp(r'^(\d{1,4})s?$').firstMatch('${value ?? ''}'.trim());
-    final seconds = m == null ? null : int.parse(m[1]!);
-    return seconds != null && seconds >= 5 ? '${seconds}s' : null;
   }
 
   /// Подписка sing-box (JSON с `outbounds`) с добавленным полем `rescue-links`; null, если
