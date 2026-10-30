@@ -172,6 +172,7 @@ class ProfileParser {
     );
     await _addRescueLinks(url, tempFilePath, cancelToken);
     await _addHysteriaHop(url, tempFilePath, cancelToken);
+    await _dropHysteriaUtls(tempFilePath);
     // fixing headers before return
     return rs.headers.map.map((key, value) {
       if (value.length == 1) return MapEntry(key, value.first);
@@ -191,6 +192,42 @@ class ProfileParser {
   /// vpn-server: backup-routes.md). Вписываем его в выходы hysteria2. Сбой — подписка как была.
   Future<void> _addHysteriaHop(String url, String tempFilePath, CancelToken? cancelToken) =>
       _amendWith(pasarGuardSubUrl(url, 'rescue'), tempFilePath, cancelToken, withHysteriaHop);
+
+  /// Шлюпка: PasarGuard 5.5 кладёт выходам hysteria2 отпечаток uTLS (берёт его у входа, по
+  /// умолчанию chrome), а sing-box не умеет uTLS поверх QUIC: «unsupported usage for uTLS», и
+  /// Hysteria2 «не отвечает». Убираем `tls.utls` у hysteria2 (vpn-server: pasarguard-5.5-upgrade.md).
+  Future<void> _dropHysteriaUtls(String tempFilePath) async {
+    final file = File(tempFilePath);
+    try {
+      final fixed = withoutHysteriaUtls(await file.readAsString());
+      if (fixed != null) await file.writeAsString(fixed);
+    } catch (_) {}
+  }
+
+  /// Подписка sing-box без `tls.utls` у выходов hysteria2; null, если убирать нечего.
+  @visibleForTesting
+  static String? withoutHysteriaUtls(String content) {
+    final json = _singboxJson(content);
+    if (json == null) return null;
+    var changed = false;
+    final outbounds = [
+      for (final o in json['outbounds'] as List)
+        if (o is Map<String, dynamic> &&
+            o['type'] == 'hysteria2' &&
+            o['tls'] is Map<String, dynamic> &&
+            (o['tls'] as Map<String, dynamic>).containsKey('utls'))
+          () {
+            changed = true;
+            return {
+              ...o,
+              'tls': {...o['tls'] as Map<String, dynamic>}..remove('utls'),
+            };
+          }()
+        else
+          o,
+    ];
+    return changed ? jsonEncode({...json, 'outbounds': outbounds}) : null;
+  }
 
   /// Скачивает [extraUrl] и правит подписку sing-box в [tempFilePath] через [amend]
   /// (null из [amend] — оставить как есть). Любой сбой, кроме отмены, глотается.

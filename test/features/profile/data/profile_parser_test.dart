@@ -280,4 +280,24 @@ void main() {
       expect(ProfileParser.withHysteriaHop("hysteria2://p@1.2.3.4:443#NL", rescue), isNull);
     });
   });
+
+  group("uTLS у Hysteria2 (PasarGuard 5.5)", () {
+    test("utls убирается только у hysteria2, остальное в tls и выходах остаётся", () {
+      const sub =
+          '{"outbounds":[{"type":"vless","tag":"NL","tls":{"enabled":true,"utls":{"enabled":true,"fingerprint":"chrome"}}},'
+          '{"type":"hysteria2","tag":"NL игры","tls":{"enabled":true,"server_name":"a.example","alpn":"h3",'
+          '"utls":{"enabled":true,"fingerprint":"chrome"}}}],"route":{"final":"proxy"}}';
+      final json = jsonDecode(ProfileParser.withoutHysteriaUtls(sub)!) as Map<String, dynamic>;
+      final list = (json["outbounds"] as List).cast<Map<String, dynamic>>();
+      expect((list[0]["tls"] as Map)["utls"], {"enabled": true, "fingerprint": "chrome"});
+      expect(list[1]["tls"], {"enabled": true, "server_name": "a.example", "alpn": "h3"});
+      expect(json["route"], {"final": "proxy"});
+    });
+
+    test("без utls у hysteria2 или не JSON — без изменений", () {
+      expect(ProfileParser.withoutHysteriaUtls('{"outbounds":[{"type":"hysteria2","tls":{"enabled":true}}]}'), isNull);
+      expect(ProfileParser.withoutHysteriaUtls('{"outbounds":[{"type":"hysteria2"}]}'), isNull);
+      expect(ProfileParser.withoutHysteriaUtls("hysteria2://p@1.2.3.4:443#NL"), isNull);
+    });
+  });
 }
