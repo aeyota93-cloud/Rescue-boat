@@ -7,19 +7,19 @@ enum RescueBadgeKind {
   important(RescueColors.warn, RescueColors.onAccent),
 
   /// Внимание: метка-рамка жёлтая («7» у «ОШИБКИ ЗА ЧАС»).
-  warning(Colors.transparent, RescueColors.accent, RescueColors.accent),
+  warning(RescueColors.accentTint, RescueColors.accent),
 
   /// Мягкий акцент: тёмная плашка с жёлтым текстом («АКТИВНА», путь «VPN»).
-  soft(RescueColors.deep, RescueColors.accent),
+  soft(RescueColors.accentTint, RescueColors.accent),
 
   /// Нейтральный: плашка line со светлым текстом («ДО 9 НОЯБРЯ», «23 за сутки»).
-  neutral(RescueColors.line, RescueColors.text),
+  neutral(RescueColors.line, RescueColors.text, RescueColors.line2),
 
   /// Мимо VPN: метка-рамка line2 со светлым текстом.
-  bypass(Colors.transparent, RescueColors.text, RescueColors.line2),
+  bypass(RescueColors.infoTint, RescueColors.info),
 
   /// Успех: жёлтая плашка с тёмным текстом.
-  success(RescueColors.accent, RescueColors.onAccent);
+  success(RescueColors.accentTint, RescueColors.accent);
 
   const RescueBadgeKind(this.background, this.foreground, [this.border]);
 

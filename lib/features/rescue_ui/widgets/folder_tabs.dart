@@ -43,10 +43,10 @@ class FolderTabs<T> extends StatefulWidget {
     required this.onChanged,
     required this.child,
     this.cardColor = RescueColors.card,
-    this.activeForeground = RescueColors.text,
-    this.inactiveForeground = RescueColors.text,
+    this.activeForeground = RescueColors.accent,
+    this.inactiveForeground = RescueColors.muted,
     this.padding = const EdgeInsets.all(20),
-    this.radius = 28,
+    this.radius = 16,
     this.semanticLabel,
   });
 
@@ -98,7 +98,7 @@ class _FolderTabsState<T> extends State<FolderTabs<T>> {
   @override
   Widget build(BuildContext context) {
     final r = Radius.circular(widget.radius);
-    final firstActive = _index == 0;
+
     final enabled = widget.onChanged != null;
     final tabs = Semantics(
       container: true,
@@ -139,15 +139,10 @@ class _FolderTabsState<T> extends State<FolderTabs<T>> {
           padding: widget.padding,
           decoration: BoxDecoration(
             color: widget.cardColor,
-            borderRadius: BorderRadius.only(
-              topLeft: firstActive ? Radius.zero : r,
-              topRight: r,
-              bottomLeft: r,
-              bottomRight: r,
-            ),
+            borderRadius: BorderRadius.only(topLeft: r, topRight: r, bottomLeft: r, bottomRight: r),
           ),
           child: DefaultTextStyle.merge(
-            style: TextStyle(color: widget.activeForeground),
+            style: const TextStyle(color: RescueColors.text),
             child: widget.child,
           ),
         ),
@@ -179,12 +174,17 @@ class _FolderTabsState<T> extends State<FolderTabs<T>> {
               constraints: const BoxConstraints(minHeight: 52),
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
               decoration: BoxDecoration(
-                color: selected ? widget.cardColor : Colors.transparent,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                color: Colors.transparent,
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected ? RescueColors.accent : RescueColors.line,
+                    width: selected ? 2 : 1,
+                  ),
+                ),
               ),
               foregroundDecoration: selected && _focused
                   ? BoxDecoration(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: RescueColors.accent, width: 1.5),
                     )
                   : null,

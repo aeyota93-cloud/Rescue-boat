@@ -24,7 +24,7 @@ void main() {
   testWidgets('с данными: счётчики, группы, подробности первой группы', (tester) async {
     await pumpPage(tester, const ErrorsPage(), overrides: pageOverrides(split: FakeSplitTunnel()));
 
-    expect(find.text('ОШИБКИ СОЕДИНЕНИЙ'), findsOneWidget);
+    expect(find.text('Ошибки соединений'), findsOneWidget);
     expect(find.textContaining('Хранится только на этом компьютере, 7 дней'), findsOneWidget);
     expect(stat(tester, 'ВСЕГО ОШИБОК'), '7');
     expect(stat(tester, 'ЧЕРЕЗ VPN'), '5');
@@ -313,7 +313,7 @@ void main() {
       await pumpPage(tester, const ErrorsPage(), overrides: longOverrides(), size: window);
 
       final fixed = {
-        'заголовок': find.text('ОШИБКИ СОЕДИНЕНИЙ'),
+        'заголовок': find.text('Ошибки соединений'),
         'период': find.text('Час'),
         'шапка списка': find.text('ПО САЙТАМ И ПРОГРАММАМ'),
         'график': find.byType(HourBars),

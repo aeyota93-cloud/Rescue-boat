@@ -206,7 +206,7 @@ void main() {
       expectNoLayoutErrors(tester);
       final semantics = tester.ensureSemantics();
 
-      expect(find.text('ПОДПИСКИ И СЕРВЕРЫ'), findsOneWidget);
+      expect(find.text('Подписки и серверы'), findsOneWidget);
       // «Основной» — и подписка, и первый сервер (имя по порядку подписки).
       expect(find.text('Основной'), findsNWidgets(2));
       expect(find.text('АКТИВНА'), findsOneWidget);
@@ -288,7 +288,7 @@ void main() {
       expectNoLayoutErrors(tester);
 
       final fixed = {
-        'заголовок': find.text('ПОДПИСКИ И СЕРВЕРЫ'),
+        'заголовок': find.text('Подписки и серверы'),
         'проверить пинг': find.text('Проверить пинг'),
         'добавить подписку': find.text('+ Добавить подписку'),
         'название подписки': find.text('Основной'),

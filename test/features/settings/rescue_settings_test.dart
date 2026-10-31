@@ -105,7 +105,7 @@ void main() {
     testWidgets('отрисовка, окно ${size.width.toInt()} px: все блоки, без переполнений', (tester) async {
       final container = await start(tester, size: size, inShell: true);
       expectNoLayoutErrors(tester);
-      expect(find.text('НАСТРОЙКИ'), findsOneWidget);
+      expect(find.text('Настройки'), findsOneWidget);
       for (final title in [
         'ЗАПУСК И ОКНО',
         'КУДА ИДЁТ ТРАФИК',
@@ -233,7 +233,7 @@ void main() {
     final container = await tester.runAsync(() => screensContainer(dir));
     await pumpInShell(tester, container!, const AdvancedSettingsPage(), size: const Size(900, 900), selected: 4);
     expectNoLayoutErrors(tester);
-    expect(find.text('ДЛЯ ОПЫТНЫХ'), findsOneWidget);
+    expect(find.text('Для опытных'), findsOneWidget);
     expect(find.byTooltip('Назад'), findsOneWidget);
     for (final link in advancedLinks) {
       expect(find.text(link.title), findsOneWidget);

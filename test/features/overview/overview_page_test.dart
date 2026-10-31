@@ -29,7 +29,7 @@ void main() {
   testWidgets('подключено: статус, сервер, режимы, кольца, ошибки, туннель, подписка', (tester) async {
     await pumpPage(tester, const OverviewPage(), overrides: pageOverrides());
 
-    expect(find.text('ГЛАВНАЯ'), findsOneWidget);
+    expect(find.text('Главная'), findsOneWidget);
     expect(find.text('замеры раз в минуту'), findsOneWidget);
 
     // Жёлтый блок: кнопка, «Подключено», время · сервер · пинг (IP не выдумываем).
@@ -382,14 +382,14 @@ void main() {
     testWidgets('меню: подписи как в макете, счётчик ошибок за час, версия', (tester) async {
       await pumpPage(tester, shell(), overrides: pageOverrides(), size: const Size(1440, 900));
       for (final label in ['Главная', 'Туннелирование', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
-        expect(find.text(label), findsOneWidget, reason: label);
+        expect(find.byTooltip(label), findsOneWidget, reason: label);
       }
       // За час в образце 5 ошибок (3 + 1 + 1).
       final count = find.byKey(const ValueKey('rescue-shell-count'));
       expect(count, findsOneWidget);
       expect(find.descendant(of: count, matching: find.text('5')), findsOneWidget);
       expect(find.bySemanticsLabel('Ошибки, 5'), findsOneWidget);
-      expect(find.text('Версия 0.2.0 · основано на Hiddify'), findsOneWidget);
+      expect(find.byTooltip('Версия 0.2.0 · основано на Hiddify'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

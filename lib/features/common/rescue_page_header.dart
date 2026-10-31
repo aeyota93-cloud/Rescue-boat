@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 
-/// Шлюпка: шапка раздела в стиле «Д» — заголовок маленькими заглавными с разрядкой
-/// («НАСТРОЙКИ», 13 / 700 / 0.18em) слева, кнопки справа, высота от 44.
-/// [title] передаётся обычным регистром: заглавными он станет сам, а чтец прочтёт его как есть.
+/// Шлюпка: шапка раздела — крупный полужирный заголовок
+/// слева, приглушённая подпись под ним, кнопки справа, высота от 44.
+/// [title] сохраняет исходный регистр.
 /// На узком окне кнопки переносятся под заголовок.
 class RescuePageHeader extends StatelessWidget {
   const RescuePageHeader({super.key, required this.title, this.subtitle, this.actions = const [], this.leading});
@@ -32,7 +32,7 @@ class RescuePageHeader extends StatelessWidget {
               Semantics(
                 header: true,
                 label: title,
-                child: ExcludeSemantics(child: Text(title.toUpperCase(), style: RescueText.screenTitle)),
+                child: ExcludeSemantics(child: Text(title, style: RescueText.screenTitle)),
               ),
               if (subtitle != null) ...[const SizedBox(height: 2), Text(subtitle, style: RescueText.caption)],
             ],
@@ -46,7 +46,7 @@ class RescuePageHeader extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           if (actions.isEmpty) return Align(alignment: Alignment.centerLeft, child: heading);
-          if (constraints.maxWidth >= 640) {
+          if (constraints.maxWidth >= 1000) {
             return Row(
               children: [
                 Expanded(child: heading),

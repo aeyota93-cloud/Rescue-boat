@@ -39,85 +39,48 @@ void main() {
     return taps;
   }
 
-  testWidgets('широкое окно: меню 236 px с подписями, область panel без зазора', (tester) async {
+  testWidgets('широкое окно: рейка 72 px, подсказки и переходы', (tester) async {
     final taps = await pumpShell(tester, const Size(1440, 900));
-    expect(tester.getSize(find.byKey(rail)).width, 236);
-    expect(tester.getTopLeft(find.byKey(rail)).dx, 20);
+    expect(tester.getSize(find.byKey(rail)).width, 72);
+    expect(tester.getTopLeft(find.byKey(rail)).dx, 0);
     expect(find.byKey(bar), findsNothing);
     expect(find.byType(RescueLogo), findsOneWidget);
-    expect(find.text('Шлюпка'), findsOneWidget);
-    expect(find.text('спасения'), findsOneWidget);
+    expect(find.byTooltip('Шлюпка спасения'), findsOneWidget);
     for (final label in ['Главная', 'Туннелирование', 'Ошибки', 'Подписки и серверы', 'Настройки']) {
-      expect(find.text(label), findsOneWidget, reason: label);
+      expect(find.byTooltip(label), findsOneWidget, reason: label);
     }
-
-    // Область: panel, радиус 32, сразу за меню.
     final areaBox = tester.widget<Container>(find.byKey(area));
-    final decoration = areaBox.decoration! as BoxDecoration;
-    expect(decoration.color, RescueColors.panel);
-    expect(decoration.borderRadius, BorderRadius.circular(32));
+    expect(areaBox.color, RescueColors.page);
     expect(tester.getTopLeft(find.byKey(area)).dx, tester.getTopRight(find.byKey(rail)).dx);
     expect(tester.getTopLeft(find.text('Содержимое')).dx, tester.getTopLeft(find.byKey(area)).dx + 24);
-
-    // Слот footer и версия внизу меню.
     expect(find.text('Карточка статуса'), findsOneWidget);
-    expect(find.text('Версия 0.3.0'), findsOneWidget);
-    expect(find.text('Мини'), findsNothing);
-    expect(
-      tester.getTopLeft(find.text('Карточка статуса')).dy,
-      greaterThan(tester.getBottomLeft(find.text('Настройки')).dy),
-    );
-
-    // Пункты 52 px; «Настройки» (bottomItem) — последний пункт списка, индекс items.length.
-    final item = find.ancestor(of: find.text('Туннелирование'), matching: find.byType(InkWell));
-    expect(tester.getSize(item).height, 52);
-    await tester.tap(find.text('Настройки'));
+    expect(find.byTooltip('Версия 0.3.0'), findsOneWidget);
+    final item = find.ancestor(of: find.byIcon(Icons.call_split), matching: find.byType(InkWell));
+    expect(tester.getSize(item), const Size(48, 48));
+    await tester.tap(find.byIcon(Icons.tune));
     await tester.pump();
-    await tester.tap(find.text('Туннелирование'));
+    await tester.tap(find.byIcon(Icons.call_split));
     await tester.pump();
     expect(taps, [4, 1]);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('выбранный пункт сливается с областью: panel, скругление слева, «ушки»', (tester) async {
+  testWidgets('выбранный пункт: жёлтая плитка, радиус 12, без ушек', (tester) async {
     await pumpShell(tester, const Size(1440, 900));
     final selected = find.byKey(const ValueKey('rescue-shell-selected'));
-    expect(selected, findsOneWidget);
     final material = tester.widget<Material>(selected);
-    expect(material.color, RescueColors.panel);
+    expect(material.color, RescueColors.accentTint);
     final shape = material.shape! as RoundedRectangleBorder;
-    expect(shape.borderRadius, const BorderRadius.horizontal(left: Radius.circular(18)));
-
-    // Правый край выбранного пункта = левый край области.
-    final areaLeft = tester.getTopLeft(find.byKey(area)).dx;
-    expect(tester.getTopRight(selected).dx, areaLeft);
-
-    // «Ушки» 20×20 только у выбранного: над и под ним, вплотную к области.
-    expect(find.byKey(top), findsOneWidget);
-    expect(find.byKey(bottom), findsOneWidget);
-    expect(tester.getSize(find.byKey(top)), const Size(20, 20));
-    expect(tester.getBottomRight(find.byKey(top)), tester.getTopRight(selected));
-    expect(tester.getTopRight(find.byKey(bottom)), tester.getBottomRight(selected));
-    expect(tester.getTopRight(find.byKey(top)).dx, areaLeft);
-
-    // Ушко: снаружи panel, внутри page со скруглением к пункту.
-    final outer = tester.widget<ColoredBox>(find.descendant(of: find.byKey(top), matching: find.byType(ColoredBox)));
-    expect(outer.color, RescueColors.panel);
-    final inner = tester.widget<DecoratedBox>(
-      find.descendant(of: find.byKey(top), matching: find.byType(DecoratedBox)),
-    );
-    expect((inner.decoration as BoxDecoration).color, RescueColors.page);
-    expect((inner.decoration as BoxDecoration).borderRadius, const BorderRadius.only(bottomRight: Radius.circular(20)));
-
-    // Переход на другой пункт — «ушки» переезжают.
-    await tester.tap(find.text('Ошибки'));
+    expect(shape.borderRadius, BorderRadius.circular(12));
+    expect(tester.getSize(selected), const Size(48, 48));
+    expect(find.byKey(top), findsNothing);
+    expect(find.byKey(bottom), findsNothing);
+    await tester.tap(find.byIcon(Icons.warning_amber));
     await tester.pump();
-    expect(find.byKey(top), findsOneWidget);
     final errorsTile = find.byKey(const ValueKey('rescue-shell-selected'));
-    expect(find.descendant(of: errorsTile, matching: find.text('Ошибки')), findsOneWidget);
-    expect(tester.getBottomRight(find.byKey(top)), tester.getTopRight(errorsTile));
+    expect(find.descendant(of: errorsTile, matching: find.byIcon(Icons.warning_amber)), findsOneWidget);
+    expect(tester.widget<Icon>(find.byIcon(Icons.warning_amber)).color, RescueColors.accent);
   });
-
   testWidgets('счётчик у пункта: число, «99+», для чтеца, без счётчика при 0', (tester) async {
     final handle = tester.ensureSemantics();
     await pumpShell(tester, const Size(1440, 900));
@@ -125,8 +88,8 @@ void main() {
     expect(count, findsOneWidget);
     expect(find.descendant(of: count, matching: find.text('7')), findsOneWidget);
     final box = tester.widget<Container>(count).decoration! as BoxDecoration;
-    expect(box.color, RescueColors.line2);
-    expect(tester.widget<Text>(find.text('7')).style!.color, RescueColors.subOnDeep);
+    expect(box.color, RescueColors.accentTint);
+    expect(tester.widget<Text>(find.text('7')).style!.color, RescueColors.accent);
     expect(find.bySemanticsLabel('Ошибки, 7'), findsOneWidget);
     expect(find.bySemanticsLabel('Подписки и серверы, есть новое'), findsOneWidget);
 
@@ -159,12 +122,12 @@ void main() {
     expect(find.text('Шлюпка'), findsNothing);
     expect(find.text('Мини'), findsOneWidget);
     expect(find.text('Карточка статуса'), findsNothing);
-    expect(find.text('Версия 0.3.0'), findsNothing);
+    expect(find.byTooltip('Версия 0.3.0'), findsOneWidget);
 
     final selected = find.byKey(const ValueKey('rescue-shell-selected'));
-    expect(tester.getTopRight(selected).dx, tester.getTopLeft(find.byKey(area)).dx);
-    expect(find.byKey(top), findsOneWidget);
-    expect(find.byKey(bottom), findsOneWidget);
+    expect(tester.getTopRight(selected).dx, lessThan(tester.getTopLeft(find.byKey(area)).dx));
+    expect(find.byKey(top), findsNothing);
+    expect(find.byKey(bottom), findsNothing);
     // Счётчик в углу значка.
     expect(find.text('7'), findsOneWidget);
     expect(tester.getSize(selected).height, greaterThanOrEqualTo(44));

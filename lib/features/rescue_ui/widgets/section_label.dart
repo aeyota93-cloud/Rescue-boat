@@ -23,11 +23,7 @@ class FrameTag extends StatelessWidget {
     final c = color ?? DefaultTextStyle.of(context).style.color ?? RescueColors.text;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-      decoration: BoxDecoration(
-        color: filled ? c : null,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: c, width: 1.5),
-      ),
+      decoration: BoxDecoration(color: filled ? c : c.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
       child: Text(
         text,
         semanticsLabel: semanticLabel,
@@ -57,8 +53,8 @@ class SectionLabel extends StatelessWidget {
     this.style = RescueText.blockLabel,
   });
 
-  /// Заголовок раздела (h1): «ГЛАВНАЯ», 13 / 700 / 0.18em, высота строки не меньше 44.
-  const SectionLabel.screen(this.text, {super.key, this.trailing, this.count, this.color, this.uppercase = true})
+  /// Заголовок раздела (h1): «Главная», 34 / 700, высота строки не меньше 44.
+  const SectionLabel.screen(this.text, {super.key, this.trailing, this.count, this.color, this.uppercase = false})
     : style = RescueText.screenTitle;
 
   final String text;
@@ -93,7 +89,13 @@ class SectionLabel extends StatelessWidget {
       ],
     );
     final Widget row;
-    if (trailing == null) {
+    if (screen && trailing is Text) {
+      row = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [label, const SizedBox(height: 6), trailing],
+      );
+    } else if (trailing == null) {
       row = Align(alignment: AlignmentDirectional.centerStart, child: label);
     } else {
       // Как flex-wrap в макете: справа, если влезает, иначе — строкой ниже.

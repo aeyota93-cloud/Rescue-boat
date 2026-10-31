@@ -6,24 +6,24 @@ import 'package:hiddify/features/rescue_ui/widgets/section_label.dart';
 /// Пригодятся, чтобы раскрасить свой хвост строки (кольцо, переключатель) в тон.
 enum DeepTileColors {
   normal(
-    background: Colors.transparent,
+    background: RescueColors.card,
     border: RescueColors.line,
     tile: RescueColors.line,
-    title: RescueColors.accent,
+    title: RescueColors.text,
     subtitle: RescueColors.subOnDeep,
     foreground: RescueColors.textOnDeep,
     ring: RescueColors.accent,
     ringTrack: RescueColors.line,
   ),
   highlighted(
-    background: RescueColors.accent,
+    background: RescueColors.raised,
     border: RescueColors.accent,
-    tile: RescueColors.accentTile,
-    title: RescueColors.onAccent,
-    subtitle: RescueColors.onAccentMuted,
-    foreground: RescueColors.onAccent,
-    ring: RescueColors.onAccent,
-    ringTrack: RescueColors.accentDeep,
+    tile: RescueColors.accentTint,
+    title: RescueColors.text,
+    subtitle: RescueColors.muted,
+    foreground: RescueColors.text,
+    ring: RescueColors.accent,
+    ringTrack: RescueColors.line,
   );
 
   const DeepTileColors({
@@ -75,7 +75,7 @@ class DeepList extends StatelessWidget {
     this.count,
     this.actionLabel,
     this.onAction,
-    this.radius = 32,
+    this.radius = 16,
     this.padding = const EdgeInsets.all(18),
     this.spacing = 10,
     this.semanticLabel,
@@ -186,7 +186,7 @@ class DeepListTile extends StatelessWidget {
     this.onTap,
     this.minHeight = 60,
     this.tileSize = 36,
-    this.radius = 20,
+    this.radius = 14,
     this.semanticLabel,
   });
 
@@ -228,13 +228,16 @@ class DeepListTile extends StatelessWidget {
     final tail = trailing;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(radius),
-      side: BorderSide(color: c.border),
+      side: BorderSide(color: c.border, width: highlighted ? 1.5 : 1),
     );
 
     final row = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: highlighted ? RescueColors.accent : RescueColors.info, width: 4)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             if (leading != null || icon != null) ...[
@@ -281,9 +284,13 @@ class DeepListTile extends StatelessWidget {
             if (tailText != null) ...[
               const SizedBox(width: 12),
               ExcludeSemantics(
-                child: Text(
-                  tailText,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w300, color: c.foreground),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(color: RescueColors.accentTint, borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    tailText,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: RescueColors.accent),
+                  ),
                 ),
               ),
             ],
@@ -307,6 +314,7 @@ class DeepListTile extends StatelessWidget {
     final material = Material(
       color: c.background,
       shape: shape,
+      clipBehavior: Clip.antiAlias,
       child: onTap == null ? row : InkWell(onTap: onTap, customBorder: shape, excludeFromSemantics: true, child: row),
     );
     // Тексты строки скрыты от чтеца и читаются одной подписью; кнопки и переключатели

@@ -20,32 +20,7 @@ class RescueNavItem {
   final int? count;
 }
 
-/// Шлюпка: каркас окна стиля «Д» — меню слева и область раздела справа.
-///
-/// Широкое окно (≥ [iconsOnlyWidth], 900): меню 236 px с подписями — логотип и «Шлюпка / спасения»
-/// сверху, пункты 52 px, внизу слот [footer] (карточка статуса) и строка [versionLabel].
-/// Область справа — panel, радиус 32, отступ [contentPadding] (24). Между меню и областью нет
-/// зазора: **выбранный пункт** цвета panel со скруглением только слева прилегает к области,
-/// над и под ним «ушки» 20×20 (вогнутые уголки) — выглядит как закладка, вытянутая в область.
-///
-/// Средняя ширина (≥ [compactWidth], 600): меню только значками (72 px), принцип слияния тот же;
-/// подписи — во всплывающих подсказках, вместо [footer] показывается [compactFooter].
-/// Узкое окно (< 600): область сверху, панель значков снизу.
-///
-/// Индексы: `0..items.length-1` — пункты по порядку, `items.length` — [bottomItem] (Настройки);
-/// в меню он идёт последним пунктом списка, как в макете.
-///
-/// Подключение карточки статуса и счётчика:
-/// ```dart
-/// RescueShell(
-///   items: [..., RescueNavItem(icon: Icons.warning_amber_rounded, label: 'Ошибки', count: errorsLastHour), ...],
-///   bottomItem: const RescueNavItem(icon: Icons.tune_rounded, label: 'Настройки'),
-///   footer: ShellStatusCard(state: power, title: 'Подключено', subtitle: 'Нидерланды · 48 мс', onPower: toggle),
-///   compactFooter: PowerButton.mini(state: power, onPressed: toggle),
-///   versionLabel: 'Версия 0.3.0 · основано на Hiddify',
-///   selectedIndex: ..., onSelected: ..., child: ...,
-/// )
-/// ```
+/// Каркас: рейка значков 72 px; на узком окне навигация снизу.
 class RescueShell extends StatelessWidget {
   const RescueShell({
     super.key,
@@ -116,71 +91,61 @@ class RescueShell extends StatelessWidget {
   List<(int, RescueNavItem)> get _entries => [...items.indexed, if (bottomItem case final b?) (items.length, b)];
 
   Widget _buildSide({required bool full}) {
-    final footer = full ? this.footer : compactFooter;
-    final version = full ? versionLabel : null;
-    return Padding(
-      padding: EdgeInsets.all(full ? 20 : 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            key: const ValueKey('rescue-shell-rail'),
-            width: full ? sidebarWidth : railWidth,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 8, left: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Brand(full: full, title: title, subtitle: subtitle),
-                  Expanded(
-                    child: Semantics(
-                      container: true,
-                      explicitChildNodes: true,
-                      label: 'Разделы',
-                      // Отступ сверху и снизу — место для «ушек» крайних пунктов.
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(vertical: earSize),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (final (i, (index, item)) in _entries.indexed) ...[
-                              if (i > 0) const SizedBox(height: 4),
-                              _SideItem(
-                                item: item,
-                                selected: index == selectedIndex,
-                                showLabel: full,
-                                onTap: () => onSelected(index),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          key: const ValueKey('rescue-shell-rail'),
+          width: railWidth,
+          decoration: const BoxDecoration(
+            color: RescueColors.panel,
+            border: Border(right: BorderSide(color: RescueColors.line)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11.5, vertical: 24),
+          child: Column(
+            children: [
+              Tooltip(
+                message: '$title $subtitle',
+                child: Semantics(label: '$title $subtitle', child: const RescueLogo()),
+              ),
+              const SizedBox(height: 32),
+              Expanded(
+                child: Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  label: 'Разделы',
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        for (final (index, item) in items.indexed) ...[
+                          _SideItem(item: item, selected: index == selectedIndex, onTap: () => onSelected(index)),
+                          const SizedBox(height: 12),
+                        ],
+                      ],
                     ),
                   ),
-                  if (footer != null)
-                    Padding(
-                      padding: EdgeInsets.only(right: full ? 0 : 4),
-                      child: footer,
-                    ),
-                  if (version != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-                      child: Text(version, style: const TextStyle(fontSize: 11, color: RescueColors.muted)),
-                    ),
-                ],
+                ),
               ),
-            ),
+              if (bottomItem case final item?) ...[
+                const SizedBox(height: 12),
+                _SideItem(item: item, selected: selectedIndex == items.length, onTap: () => onSelected(items.length)),
+              ],
+              if (full ? footer ?? compactFooter : compactFooter case final status?) ...[
+                const SizedBox(height: 16),
+                Tooltip(message: versionLabel ?? '$title $subtitle', child: status),
+              ],
+            ],
           ),
-          Expanded(
-            child: Container(
-              key: const ValueKey('rescue-shell-area'),
-              padding: contentPadding,
-              decoration: BoxDecoration(color: RescueColors.panel, borderRadius: BorderRadius.circular(32)),
-              child: child,
-            ),
+        ),
+        Expanded(
+          child: Container(
+            key: const ValueKey('rescue-shell-area'),
+            padding: contentPadding,
+            color: RescueColors.page,
+            child: child,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -225,54 +190,6 @@ class RescueShell extends StatelessWidget {
   }
 }
 
-class _Brand extends StatelessWidget {
-  const _Brand({required this.full, required this.title, required this.subtitle});
-
-  final bool full;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!full) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 6, right: 4),
-        child: Semantics(
-          label: '$title $subtitle',
-          child: const Center(child: RescueLogo()),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 2),
-      child: Semantics(
-        label: '$title $subtitle',
-        child: ExcludeSemantics(
-          child: Row(
-            children: [
-              const RescueLogo(),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: RescueColors.text),
-                    ),
-                    Text(subtitle, style: const TextStyle(fontSize: 12, color: RescueColors.muted)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 String _spokenLabel(RescueNavItem item) {
   final count = item.count ?? 0;
   if (count > 0) return '${item.label}, $count';
@@ -295,11 +212,11 @@ class _CountBadge extends StatelessWidget {
       key: const ValueKey('rescue-shell-count'),
       constraints: BoxConstraints(minWidth: small ? 16 : 22),
       padding: EdgeInsets.symmetric(horizontal: small ? 4 : 7, vertical: small ? 0 : 1),
-      decoration: BoxDecoration(color: RescueColors.line2, borderRadius: BorderRadius.circular(small ? 8 : 6)),
+      decoration: BoxDecoration(color: RescueColors.accentTint, borderRadius: BorderRadius.circular(small ? 8 : 6)),
       child: Text(
         _countText(count),
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: small ? 10 : 11, fontWeight: FontWeight.w700, color: RescueColors.subOnDeep),
+        style: TextStyle(fontSize: small ? 10 : 11, fontWeight: FontWeight.w700, color: RescueColors.accent),
       ),
     );
   }
@@ -317,119 +234,57 @@ class _Dot extends StatelessWidget {
   );
 }
 
-/// «Ушко» — вогнутый уголок 20×20: снаружи panel, внутри page со скруглением к пункту.
-class _Ear extends StatelessWidget {
-  const _Ear({required this.top});
-
-  final bool top;
-
-  @override
-  Widget build(BuildContext context) {
-    const r = Radius.circular(RescueShell.earSize);
-    return SizedBox.square(
-      key: ValueKey(top ? 'rescue-shell-ear-top' : 'rescue-shell-ear-bottom'),
-      dimension: RescueShell.earSize,
-      child: ColoredBox(
-        color: RescueColors.panel,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: RescueColors.page,
-            borderRadius: top ? const BorderRadius.only(bottomRight: r) : const BorderRadius.only(topRight: r),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+/// Квадратная плитка с подсказкой, счётчиком и доступным названием.
 class _SideItem extends StatelessWidget {
-  const _SideItem({required this.item, required this.selected, required this.showLabel, required this.onTap});
-
+  const _SideItem({required this.item, required this.selected, required this.onTap});
   final RescueNavItem item;
   final bool selected;
-  final bool showLabel;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final count = item.count ?? 0;
-    // Форма одна для всех пунктов: скругление только слева, справа пункт прилегает к области.
-    // Подсветка под мышкой и при нажатии — цветом panel, как у выбранного, чтобы при выборе пункт
-    // не менял форму и цвет.
-    const shape = RoundedRectangleBorder(borderRadius: BorderRadius.horizontal(left: Radius.circular(18)));
-    final icon = Icon(selected ? (item.selectedIcon ?? item.icon) : item.icon, size: 20, color: RescueColors.text);
-
-    final Widget content;
-    if (showLabel) {
-      content = Row(
-        children: [
-          icon,
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: RescueColors.text),
-            ),
-          ),
-          if (count > 0) _CountBadge(count) else if (item.badge) const _Dot(),
-        ],
-      );
-    } else {
-      content = Center(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            icon,
-            if (count > 0)
-              Positioned(top: -8, right: -14, child: _CountBadge(count, small: true))
-            else if (item.badge)
-              const Positioned(top: -3, right: -3, child: _Dot()),
-          ],
-        ),
-      );
-    }
-
-    Widget tile = Material(
-      key: selected ? const ValueKey('rescue-shell-selected') : null,
-      color: selected ? RescueColors.panel : Colors.transparent,
-      shape: shape,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: shape,
-        excludeFromSemantics: true,
-        hoverColor: RescueColors.panel,
-        highlightColor: RescueColors.panel,
-        splashFactory: NoSplash.splashFactory,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 52),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: showLabel ? 14 : 8),
-            child: content,
-          ),
-        ),
-      ),
-    );
-    if (!showLabel) {
-      tile = Tooltip(message: item.label, excludeFromSemantics: true, preferBelow: false, child: tile);
-    }
-
+    const shape = RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)));
     return Semantics(
       button: true,
       selected: selected,
       label: _spokenLabel(item),
       onTap: onTap,
       child: ExcludeSemantics(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            tile,
-            if (selected) ...const [
-              Positioned(right: 0, top: -RescueShell.earSize, child: _Ear(top: true)),
-              Positioned(right: 0, bottom: -RescueShell.earSize, child: _Ear(top: false)),
-            ],
-          ],
+        child: Tooltip(
+          message: item.label,
+          excludeFromSemantics: true,
+          preferBelow: false,
+          child: Material(
+            key: selected ? const ValueKey('rescue-shell-selected') : null,
+            color: selected ? RescueColors.accentTint : RescueColors.card,
+            shape: shape,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: shape,
+              focusColor: RescueColors.accent.withValues(alpha: 0.3),
+              hoverColor: RescueColors.raised,
+              child: SizedBox.square(
+                dimension: 48,
+                child: Center(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        selected ? (item.selectedIcon ?? item.icon) : item.icon,
+                        size: 22,
+                        color: selected ? RescueColors.accent : RescueColors.muted,
+                      ),
+                      if (count > 0)
+                        Positioned(top: -10, right: -12, child: _CountBadge(count, small: true))
+                      else if (item.badge)
+                        const Positioned(top: -3, right: -3, child: _Dot()),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -458,7 +313,7 @@ class _BottomItem extends StatelessWidget {
           excludeFromSemantics: true,
           preferBelow: false,
           child: Material(
-            color: selected ? RescueColors.panel : Colors.transparent,
+            color: selected ? RescueColors.accentTint : Colors.transparent,
             borderRadius: radius,
             child: InkWell(
               onTap: onTap,

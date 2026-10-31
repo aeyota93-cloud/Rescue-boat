@@ -105,7 +105,7 @@ class TunnelGroupsView extends HookConsumerWidget {
         for (final e in found) _EntryRow(key: ValueKey('entry-${e.value}'), entry: e, titles: titles, showGroup: true),
       ];
       final list = DeepList(
-        radius: 28,
+        radius: 16,
         spacing: 0,
         semanticLabel: q.isEmpty ? 'Все записи' : 'Найденные записи',
         children: [
@@ -723,39 +723,44 @@ class _EntryRow extends ConsumerWidget {
           )
         : null;
     final place = PlaceButton(key: ValueKey('place-${e.value}'), items: item, label: title, compact: true);
-    final row = Container(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: RescueColors.line)),
-      ),
-      // Узко (панель вместо карточек на маленьком окне) — кнопки второй строкой.
-      child: LayoutBuilder(
-        builder: (context, constraints) => constraints.maxWidth >= 380
-            ? Row(
-                children: [
-                  ?check,
-                  Expanded(child: name),
-                  const SizedBox(width: 6),
-                  if (group != null) ...[group, const SizedBox(width: 6)],
-                  place,
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      ?check,
-                      Expanded(child: name),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: EdgeInsets.only(left: check == null ? 38 : 86),
-                    child: Wrap(spacing: 6, runSpacing: 6, children: [?group, place]),
-                  ),
-                ],
-              ),
+    final row = ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: RescueColors.card,
+          border: const Border(left: BorderSide(color: RescueColors.info, width: 4)),
+        ),
+        // Узко (панель вместо карточек на маленьком окне) — кнопки второй строкой.
+        child: LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth >= 380
+              ? Row(
+                  children: [
+                    ?check,
+                    Expanded(child: name),
+                    const SizedBox(width: 6),
+                    if (group != null) ...[group, const SizedBox(width: 6)],
+                    place,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        ?check,
+                        Expanded(child: name),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: EdgeInsets.only(left: check == null ? 38 : 86),
+                      child: Wrap(spacing: 6, runSpacing: 6, children: [?group, place]),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
     final drag = dragItems;

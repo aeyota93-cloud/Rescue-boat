@@ -36,7 +36,7 @@ class OverviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Material(
-      color: RescueColors.panel,
+      color: RescueColors.page,
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,7 +87,8 @@ class ConnectionBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     const power = _PowerColumn();
     const picker = _PickerColumn();
-    return RescueCard.accent(
+    return RescueCard(
+      borderColor: RescueColors.accent,
       semanticLabel: 'Подключение',
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
       child: LayoutBuilder(
@@ -136,7 +137,7 @@ class _PowerColumn extends ConsumerWidget {
           child: Text(
             vpn.title,
             textAlign: TextAlign.center,
-            style: RescueText.statusLight.copyWith(color: RescueColors.onAccent),
+            style: RescueText.statusLight.copyWith(color: RescueColors.text),
           ),
         ),
         const SizedBox(height: 4),
@@ -185,7 +186,7 @@ class _StatusLine extends HookConsumerWidget {
       text,
       key: const ValueKey('home-status-line'),
       textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 13, color: RescueColors.onAccentMuted),
+      style: const TextStyle(fontSize: 13, color: RescueColors.muted),
     );
   }
 }
@@ -230,7 +231,7 @@ class _FailoverNote extends ConsumerWidget {
       child: Text(
         note,
         key: const ValueKey('home-failover-note'),
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.onAccentMuted),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: RescueColors.muted),
       ),
     );
   }
@@ -330,7 +331,7 @@ class _ServiceModeSwitch extends ConsumerWidget {
             value: whole,
             onChanged: (v) =>
                 ref.read(ConfigOptions.serviceMode.notifier).update(v ? ServiceMode.tun : ServiceMode.systemProxy),
-            style: PillSegmentedStyle.onAccent,
+            style: PillSegmentedStyle.accent,
             semanticLabel: 'Способ работы',
             expand: true,
             fontSize: 13,
@@ -342,7 +343,7 @@ class _ServiceModeSwitch extends ConsumerWidget {
           whole
               ? 'Все программы и игры; работают туннелирование и список ошибок'
               : 'Режим прокси: без прав администратора, остальные программы идут напрямую',
-          style: const TextStyle(fontSize: 12, color: RescueColors.onAccentMuted),
+          style: const TextStyle(fontSize: 12, color: RescueColors.muted),
         ),
       ],
     );
@@ -372,12 +373,14 @@ class _Modes extends ConsumerWidget {
           runSpacing: 8,
           children: [
             ModeChip(
+              onAccent: false,
               label: 'Российские сайты напрямую',
               selected: smart,
               hint: smartHint,
               onChanged: (v) => ref.read(ConfigOptions.region.notifier).update(v ? Region.ru : Region.other),
             ),
             ModeChip(
+              onAccent: false,
               label: 'Игры мимо VPN',
               selected: gamesOn,
               hint: gamesHint,
@@ -394,7 +397,7 @@ class _Modes extends ConsumerWidget {
         ExcludeSemantics(
           child: Text(
             [smartHint, gamesHint].join(' · '),
-            style: const TextStyle(fontSize: 12, color: RescueColors.onAccentMuted),
+            style: const TextStyle(fontSize: 12, color: RescueColors.muted),
           ),
         ),
       ],
@@ -487,7 +490,7 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => RescueCard.deep(
-    radius: 28,
+    radius: 16,
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
     semanticLabel: '$title, $tag',
     child: Column(
@@ -630,7 +633,7 @@ class _ErrorsCard extends ConsumerWidget {
     }
 
     return DeepList(
-      radius: 28,
+      radius: 16,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       spacing: 6,
       title: 'Ошибки за час',
@@ -706,7 +709,7 @@ class _Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
-    decoration: BoxDecoration(color: RescueColors.panel, borderRadius: BorderRadius.circular(6)),
+    decoration: BoxDecoration(color: RescueColors.page, borderRadius: BorderRadius.circular(6)),
     child: Text(text, style: RescueText.microLabel.copyWith(color: color)),
   );
 }

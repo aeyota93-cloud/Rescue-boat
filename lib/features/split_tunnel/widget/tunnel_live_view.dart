@@ -153,7 +153,7 @@ class TunnelLiveView extends HookConsumerWidget {
           ),
         );
         final list = DeepList(
-          radius: 28,
+          radius: 16,
           semanticLabel: 'Программы в сети',
           spacing: 0,
           children: [
@@ -207,7 +207,7 @@ class _Summary extends StatelessWidget {
     final total = parts.fold(0, (s, p) => s + p.$2);
     final programs = {for (final c in connections.where((c) => !c.closed)) c.exe.toLowerCase()}.length;
     return RescueCard.deep(
-      radius: 24,
+      radius: 16,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       semanticLabel:
           'Сейчас $total ${pluralRu(total, 'соединение', 'соединения', 'соединений')}: '
@@ -356,7 +356,7 @@ class _AppRow extends ConsumerWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: onToggle,
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: name),
+          child: Padding(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12), child: name),
         ),
       ),
     );
@@ -431,12 +431,16 @@ class _AppRow extends ConsumerWidget {
         ],
       );
     }
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: RescueColors.line)),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: RescueColors.card,
+          border: const Border(left: BorderSide(color: RescueColors.info, width: 4)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: content,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: content,
     );
   }
 }
@@ -695,7 +699,7 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => RescueCard.deep(
-    radius: 24,
+    radius: 16,
     padding: const EdgeInsets.all(24),
     child: Column(
       mainAxisSize: MainAxisSize.min,

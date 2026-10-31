@@ -1,19 +1,16 @@
 import 'package:flutter/widgets.dart';
 import 'package:hiddify/features/rescue_ui/rescue_colors.dart';
 
-/// Шлюпка: типографика стиля «Д». Шрифт не задаём — он приходит из темы (Segoe UI).
-///
-/// Приёмы стиля: заголовки разделов — маленькие заглавные с разрядкой ([screenTitle], [blockLabel]),
-/// крупные цифры и названия закладок — тонкие ([tabTitle], [bigLight]). Разрядка в Flutter —
-/// в пикселях, поэтому `0.18em` при 13 px = 2.34.
+/// Типографика: крупные заголовки, плотные названия строк и спокойные подписи.
+/// Шрифт приходит из темы (Segoe UI).
 abstract final class RescueText {
   // ── Стиль «Д» ──────────────────────────────────────────────────────────────────────────
 
-  /// Заголовок раздела: «ГЛАВНАЯ» (13 / 700 / 0.18em). Текст передавать заглавными.
+  /// Заголовок раздела: «Главная» (34 / 700), обычный регистр.
   static const screenTitle = TextStyle(
-    fontSize: 13,
+    fontSize: 34,
     fontWeight: FontWeight.w700,
-    letterSpacing: 2.34,
+    letterSpacing: -0.6,
     color: RescueColors.text,
   );
 
@@ -21,7 +18,7 @@ abstract final class RescueText {
   static const blockLabel = TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w700,
-    letterSpacing: 1.68,
+    letterSpacing: 0.4,
     color: RescueColors.text,
   );
 
@@ -36,14 +33,14 @@ abstract final class RescueText {
   /// Метка-рамка с числом («7», «ВКЛ»): 11 / 700.
   static const tag = TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: RescueColors.text);
 
-  /// Название закладки-«папки»: 24 / 300.
-  static const tabTitle = TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: RescueColors.text);
+  /// Название закладки-«папки»: 18 / 600.
+  static const tabTitle = TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: RescueColors.text);
 
-  /// Крупная тонкая цифра («48 ГБ»): 34 / 300.
-  static const bigLight = TextStyle(fontSize: 34, fontWeight: FontWeight.w300, color: RescueColors.text);
+  /// Крупная тонкая цифра («48 ГБ»): 34 / 600.
+  static const bigLight = TextStyle(fontSize: 34, fontWeight: FontWeight.w600, color: RescueColors.text);
 
-  /// Крупный тонкий статус («Подключено»): 28 / 300.
-  static const statusLight = TextStyle(fontSize: 28, fontWeight: FontWeight.w300, color: RescueColors.text);
+  /// Крупный тонкий статус («Подключено»): 28 / 600.
+  static const statusLight = TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: RescueColors.text);
 
   /// Кнопка-таблетка и ссылка-действие: 13 / 700.
   static const button = TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: RescueColors.text);
@@ -53,8 +50,8 @@ abstract final class RescueText {
 
   // ── Общие (имена прежние, вид стиля «Д») ───────────────────────────────────────────────
 
-  /// Заголовок страницы (h1) обычным регистром — тонкий, как названия закладок.
-  static const pageTitle = TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: RescueColors.text);
+  /// Заголовок страницы (h1) обычным регистром — крупный, полужирный.
+  static const pageTitle = TextStyle(fontSize: 34, fontWeight: FontWeight.w600, color: RescueColors.text);
 
   /// Подзаголовок под заголовком страницы.
   static const pageSubtitle = TextStyle(fontSize: 13, color: RescueColors.muted);
@@ -80,6 +77,6 @@ abstract final class RescueText {
   /// Ссылка-действие «Все ошибки ›».
   static const link = TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: RescueColors.text);
 
-  /// Крупное число в плитке — тонкое.
-  static const bigNumber = TextStyle(fontSize: 28, fontWeight: FontWeight.w300, color: RescueColors.text);
+  /// Крупное число в плитке — полужирное.
+  static const bigNumber = TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: RescueColors.text);
 }

@@ -196,17 +196,18 @@ class _EmptySubscriptions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return RescueCard.accent(
+    return RescueCard(
+      borderColor: RescueColors.accent,
       semanticLabel: 'Подписки',
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Подписок пока нет', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w300)),
+          const Text('Подписок пока нет', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           const Text(
             'Вставьте ссылку на подписку, которую дал владелец сервера, — серверы появятся здесь.',
-            style: TextStyle(fontSize: 13, color: RescueColors.onAccentMuted),
+            style: TextStyle(fontSize: 13, color: RescueColors.muted),
           ),
           const SizedBox(height: 14),
           FilledButton(
@@ -278,16 +279,16 @@ class _SubscriptionCard extends HookConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 30,
-                    fontWeight: FontWeight.w300,
+                    fontWeight: FontWeight.w600,
                     fontFamilyFallback: [FontFamily.emoji],
                   ),
                 ),
               ),
             ),
-            _ProfileMenu(profile: profile, color: RescueColors.onAccent),
+            _ProfileMenu(profile: profile, color: RescueColors.text),
           ],
         ),
-        Text(facts, style: const TextStyle(fontSize: 13, color: RescueColors.onAccentMuted)),
+        Text(facts, style: const TextStyle(fontSize: 13, color: RescueColors.muted)),
       ],
     );
     final buttons = Wrap(
@@ -309,12 +310,12 @@ class _SubscriptionCard extends HookConsumerWidget {
             child: Text(updating ? 'Обновляется…' : 'Обновить'),
           ),
         OutlinedButton(
-          style: RescueTheme.outlinedOnAccentButton(),
+          style: OutlinedButton.styleFrom(foregroundColor: RescueColors.text),
           onPressed: () => _rename(context, ref, profile),
           child: const Text('Переименовать'),
         ),
         OutlinedButton(
-          style: RescueTheme.dangerOnAccentButton(),
+          style: RescueTheme.dangerOutlinedButton(),
           onPressed: () => _delete(context, ref, profile),
           child: const Text('Удалить'),
         ),
@@ -322,7 +323,8 @@ class _SubscriptionCard extends HookConsumerWidget {
     );
     final ringRow = Wrap(spacing: 22, runSpacing: 12, children: rings);
 
-    return RescueCard.accent(
+    return RescueCard(
+      borderColor: RescueColors.accent,
       semanticLabel: 'Подписка «${profile.name}»',
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
       child: LayoutBuilder(
@@ -365,7 +367,7 @@ class _SubscriptionCard extends HookConsumerWidget {
   static Widget _trafficRing(SubscriptionInfo info) {
     final used = formatGb(info.consumption);
     if (isUnlimitedTraffic(info)) {
-      return RingStat.onAccent(
+      return RingStat(
         value: 0,
         label: used,
         title: 'ГБ\nБЕЗ ЛИМИТА',
@@ -373,7 +375,7 @@ class _SubscriptionCard extends HookConsumerWidget {
       );
     }
     final total = formatGb(info.total);
-    return RingStat.onAccent(
+    return RingStat(
       value: info.ratio,
       label: used,
       title: 'ГБ\nИЗ $total',
@@ -384,14 +386,14 @@ class _SubscriptionCard extends HookConsumerWidget {
   /// Кольцо срока: заполнение — сколько осталось из 30 дней (сервер присылает только дату окончания).
   static Widget _timeRing(SubscriptionInfo info, DateTime now) {
     if (isUnlimitedTime(info)) {
-      return const RingStat.onAccent(value: 1, label: '∞', title: 'СРОК\nБЕССРОЧНО', semanticLabel: 'Бессрочно');
+      return const RingStat(value: 1, label: '∞', title: 'СРОК\nБЕССРОЧНО', semanticLabel: 'Бессрочно');
     }
     final until = ruDate(info.expire.toLocal());
     if (!info.expire.isAfter(now)) {
-      return RingStat.onAccent(value: 0, label: '0', title: 'СРОК\nИСТЁК', semanticLabel: 'Подписка истекла $until');
+      return RingStat(value: 0, label: '0', title: 'СРОК\nИСТЁК', semanticLabel: 'Подписка истекла $until');
     }
     final days = info.expire.difference(now).inDays;
-    return RingStat.onAccent(
+    return RingStat(
       value: (days / 30).clamp(0.02, 1.0),
       label: days == 0 ? '<1' : '$days',
       title: '${pluralRu(days == 0 ? 1 : days, 'ДЕНЬ', 'ДНЯ', 'ДНЕЙ')}\nОСТАЛОСЬ',
@@ -405,7 +407,7 @@ class _SubscriptionCard extends HookConsumerWidget {
     final auto = hours > 0 && !(profile.userOverride?.isAutoUpdateDisable ?? false);
     final updated = updatedLabel(profile.lastUpdate, now);
     if (!auto) {
-      return RingStat.onAccent(
+      return RingStat(
         value: 0,
         label: '—',
         title: 'ОБНОВЛЕНИЕ\nВРУЧНУЮ',
@@ -413,7 +415,7 @@ class _SubscriptionCard extends HookConsumerWidget {
       );
     }
     final passed = now.difference(profile.lastUpdate).inMinutes / (hours * 60);
-    return RingStat.onAccent(
+    return RingStat(
       value: passed.clamp(0.02, 1.0),
       label: '$hoursч',
       title: 'ОБНОВЛЕНИЕ\nСАМО',
@@ -442,54 +444,59 @@ class _OtherSubscriptionRow extends HookConsumerWidget {
       if (info != null && !isUnlimitedTime(info)) info.isExpired ? 'истекла' : 'до ${ruDate(info.expire.toLocal())}',
       'обновлена ${updatedLabel(profile.lastUpdate, now)}',
     ].join(' · ');
-    return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        border: divider ? const Border(bottom: BorderSide(color: RescueColors.line)) : null,
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        alignment: WrapAlignment.spaceBetween,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 64),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: RescueColors.card,
+          border: const Border(left: BorderSide(color: RescueColors.info, width: 4)),
+        ),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(profile.name, style: RescueText.rowTitle),
+                  Text(facts, style: RescueText.caption),
+                ],
+              ),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(profile.name, style: RescueText.rowTitle),
-                Text(facts, style: RescueText.caption),
+                FilledButton(
+                  onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
+                  child: const Text('Сделать активной'),
+                ),
+                if (remote != null)
+                  OutlinedButton(
+                    onPressed: updating
+                        ? null
+                        : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
+                    child: Text(updating ? 'Обновляется…' : 'Обновить'),
+                  ),
+                OutlinedButton(
+                  onPressed: () => _delete(context, ref, profile),
+                  style: RescueTheme.dangerOutlinedButton(),
+                  child: const Text('Удалить'),
+                ),
+                _ProfileMenu(profile: profile, withRename: true),
               ],
             ),
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              FilledButton(
-                onPressed: () => ref.read(profilesNotifierProvider.notifier).selectActiveProfile(profile.id),
-                child: const Text('Сделать активной'),
-              ),
-              if (remote != null)
-                OutlinedButton(
-                  onPressed: updating
-                      ? null
-                      : () => ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(remote),
-                  child: Text(updating ? 'Обновляется…' : 'Обновить'),
-                ),
-              OutlinedButton(
-                onPressed: () => _delete(context, ref, profile),
-                style: RescueTheme.dangerOutlinedButton(),
-                child: const Text('Удалить'),
-              ),
-              _ProfileMenu(profile: profile, withRename: true),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -638,7 +645,10 @@ class _AutoCard extends ConsumerWidget {
     final footer = servers.live ? responding.toUpperCase() : 'ВИДНО, КОГДА VPN ВКЛЮЧЁН';
     final fg = selected ? RescueColors.textOnDeep : RescueColors.text;
     final subColor = selected ? RescueColors.subOnDeep : RescueColors.muted;
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: selected ? RescueColors.accent : RescueColors.line, width: selected ? 1.5 : 1),
+    );
     final onTap = selected ? null : () => _autoServer(ref);
     return Semantics(
       button: true,
@@ -649,15 +659,19 @@ class _AutoCard extends ConsumerWidget {
       child: ExcludeSemantics(
         child: Material(
           key: const ValueKey('server-card-auto'),
-          color: selected ? RescueColors.deep : RescueColors.card,
+          color: selected ? RescueColors.raised : RescueColors.card,
           shape: shape,
+          clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             customBorder: shape,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 190),
-              child: Padding(
-                padding: const EdgeInsets.all(18),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: selected ? RescueColors.accent : RescueColors.info, width: 4)),
+                ),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -969,7 +983,10 @@ class _ServerCard extends StatelessWidget {
         : [if (server.protocol.isNotEmpty) server.roleLower, server.title, ?server.hint].join(' · ');
     final timedOut = pingTimedOut(delay);
     final health = this.health;
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(28));
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: selected ? RescueColors.accent : RescueColors.line, width: selected ? 1.5 : 1),
+    );
     final subColor = selected ? RescueColors.subOnDeep : RescueColors.muted;
     final fg = selected ? RescueColors.textOnDeep : RescueColors.text;
     // Метка под именем: у групп — что это за группа, у серверов — «подробнее» с протоколом в подсказке.
@@ -1000,15 +1017,19 @@ class _ServerCard extends StatelessWidget {
       onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
-          color: selected ? RescueColors.deep : RescueColors.card,
+          color: selected ? RescueColors.raised : RescueColors.card,
           shape: shape,
+          clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             customBorder: shape,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 190),
-              child: Padding(
-                padding: const EdgeInsets.all(18),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: selected ? RescueColors.accent : RescueColors.info, width: 4)),
+                ),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

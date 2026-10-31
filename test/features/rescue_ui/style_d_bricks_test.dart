@@ -43,15 +43,16 @@ void main() {
       expect(find.text('ВКЛ'), findsOneWidget);
       expect(find.text('92'), findsOneWidget);
       expect(find.byType(FrameTag), findsNWidgets(2));
-      expect(tester.widget<Text>(find.text('Связь')).style!.fontSize, 24);
-      expect(tester.widget<Text>(find.text('Связь')).style!.fontWeight, FontWeight.w300);
+      expect(tester.widget<Text>(find.text('Связь')).style!.fontSize, 18);
+      expect(tester.widget<Text>(find.text('Связь')).style!.fontWeight, FontWeight.w600);
       // Активна первая — у карточки нет верхнего левого скругления; закладка того же цвета.
-      expect(cardRadius(tester).topLeft, Radius.zero);
-      expect(cardRadius(tester).topRight, const Radius.circular(28));
+      expect(cardRadius(tester).topLeft, const Radius.circular(16));
+      expect(cardRadius(tester).topRight, const Radius.circular(16));
       final active = tester.widget<AnimatedContainer>(
         find.ancestor(of: find.text('Связь'), matching: find.byType(AnimatedContainer)),
       );
-      expect((active.decoration! as BoxDecoration).color, RescueColors.card);
+      expect((active.decoration! as BoxDecoration).color, Colors.transparent);
+      expect((active.decoration! as BoxDecoration).border!.bottom.color, RescueColors.accent);
       // Низ активной закладки = верх карточки.
       expect(
         tester.getBottomLeft(find.byKey(const ValueKey('folder-tab-0'))).dy,
@@ -66,7 +67,7 @@ void main() {
       await tester.pump();
       expect(calls, ['health']);
       expect(find.text('Содержимое health'), findsOneWidget);
-      expect(cardRadius(tester).topLeft, const Radius.circular(28));
+      expect(cardRadius(tester).topLeft, const Radius.circular(16));
       final inactive = tester.widget<AnimatedContainer>(
         find.ancestor(of: find.text('Связь'), matching: find.byType(AnimatedContainer)),
       );
@@ -392,10 +393,10 @@ void main() {
       Material tileMaterial(String title) => tester.widget<Material>(
         find.descendant(of: find.widgetWithText(DeepListTile, title), matching: find.byType(Material)).first,
       );
-      expect(tileMaterial('kinopoisk.ru').color, RescueColors.accent);
-      expect(tester.widget<Text>(find.text('kinopoisk.ru')).style!.color, RescueColors.onAccent);
-      expect(tileMaterial('discord.gg').color, Colors.transparent);
-      expect(tester.widget<Text>(find.text('discord.gg')).style!.color, RescueColors.accent);
+      expect(tileMaterial('kinopoisk.ru').color, RescueColors.raised);
+      expect(tester.widget<Text>(find.text('kinopoisk.ru')).style!.color, RescueColors.text);
+      expect(tileMaterial('discord.gg').color, RescueColors.card);
+      expect(tester.widget<Text>(find.text('discord.gg')).style!.color, RescueColors.text);
       expect(tester.getSize(find.byType(DeepListTile).first).height, greaterThanOrEqualTo(60));
 
       await tester.tap(find.text('kinopoisk.ru'));
@@ -432,7 +433,7 @@ void main() {
       await tester.pump();
       expect(route, RouteChoice.vpn);
       expect(find.bySemanticsLabel('Через VPN'), findsOneWidget);
-      expect(DeepTileColors.of(highlighted: true).ringTrack, RescueColors.accentDeep);
+      expect(DeepTileColors.of(highlighted: true).ringTrack, RescueColors.line);
     });
   });
 
@@ -468,13 +469,13 @@ void main() {
       ),
     );
     expect(find.text('СЕРВЕРЫ'), findsOneWidget);
-    expect(find.text('ГЛАВНАЯ'), findsOneWidget);
-    final style = tester.widget<Text>(find.text('ГЛАВНАЯ')).style!;
-    expect(style.fontSize, 13);
-    expect(style.letterSpacing, closeTo(2.34, 0.01));
-    expect(tester.widget<Text>(find.text('СЕРВЕРЫ')).style!.letterSpacing, closeTo(1.68, 0.01));
+    expect(find.text('Главная'), findsOneWidget);
+    final style = tester.widget<Text>(find.text('Главная')).style!;
+    expect(style.fontSize, 34);
+    expect(style.letterSpacing, closeTo(-0.6, 0.01));
+    expect(tester.widget<Text>(find.text('СЕРВЕРЫ')).style!.letterSpacing, closeTo(0.4, 0.01));
     expect(find.byType(FrameTag), findsOneWidget);
-    expect(tester.getSemantics(find.text('ГЛАВНАЯ')), containsSemantics(isHeader: true));
+    expect(tester.getSemantics(find.text('Главная')), containsSemantics(isHeader: true));
     expect(tester.getSize(find.byType(SectionLabel).last).height, greaterThanOrEqualTo(44));
     handle.dispose();
   });
@@ -507,11 +508,11 @@ void main() {
   });
 
   test('палитра стиля «Д» и алиасы старых имён', () {
-    expect(RescueColors.page, const Color(0xFF141311));
-    expect(RescueColors.panel, const Color(0xFF1F1E1B));
-    expect(RescueColors.card, const Color(0xFF2A2825));
-    expect(RescueColors.deep, const Color(0xFF121110));
-    expect(RescueColors.muted, const Color(0xFFA39B91));
+    expect(RescueColors.page, const Color(0xFF16191F));
+    expect(RescueColors.panel, const Color(0xFF1B1F26));
+    expect(RescueColors.card, const Color(0xFF22262E));
+    expect(RescueColors.deep, const Color(0xFF121419));
+    expect(RescueColors.muted, const Color(0xFFA3ABB8));
     expect(RescueColors.accent, const Color(0xFFF4CC56));
     expect(RescueColors.background, RescueColors.panel);
     expect(RescueColors.textSecondary, RescueColors.muted);

@@ -24,7 +24,7 @@ abstract final class RescueTheme {
   );
   static const _buttonSize = Size(44, 44);
   static const _buttonPadding = EdgeInsets.symmetric(horizontal: 18);
-  static const _pill = StadiumBorder();
+  static const _pill = RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)));
 
   static ThemeData dark() {
     const scheme = ColorScheme.dark(
@@ -32,7 +32,7 @@ abstract final class RescueTheme {
       onPrimary: RescueColors.onAccent,
       primaryContainer: RescueColors.deep,
       onPrimaryContainer: RescueColors.accent,
-      secondary: RescueColors.accentDeep,
+      secondary: RescueColors.info,
       onSecondary: RescueColors.onAccent,
       secondaryContainer: RescueColors.line,
       onSecondaryContainer: RescueColors.text,
@@ -40,10 +40,10 @@ abstract final class RescueTheme {
       onTertiary: RescueColors.onAccent,
       tertiaryContainer: RescueColors.deep,
       onTertiaryContainer: RescueColors.warn,
-      error: RescueColors.warn,
+      error: RescueColors.bad,
       onError: RescueColors.onAccent,
       errorContainer: RescueColors.deep,
-      onErrorContainer: RescueColors.warn,
+      onErrorContainer: RescueColors.bad,
       surface: RescueColors.panel,
       onSurface: RescueColors.text,
       onSurfaceVariant: RescueColors.muted,
@@ -70,7 +70,7 @@ abstract final class RescueTheme {
       colorScheme: scheme,
       fontFamily: fontFamily,
       fontFamilyFallback: fontFamilyFallback,
-      scaffoldBackgroundColor: RescueColors.panel,
+      scaffoldBackgroundColor: RescueColors.page,
       canvasColor: RescueColors.panel,
       cardColor: RescueColors.card,
       dividerColor: RescueColors.line,
@@ -98,9 +98,9 @@ abstract final class RescueTheme {
     return base.copyWith(
       textTheme: base.textTheme
           .copyWith(
-            headlineLarge: const TextStyle(fontSize: 34, fontWeight: FontWeight.w300),
-            headlineMedium: const TextStyle(fontSize: 28, fontWeight: FontWeight.w300),
-            headlineSmall: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
+            headlineLarge: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700),
+            headlineMedium: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+            headlineSmall: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             titleLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             titleMedium: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             titleSmall: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
@@ -122,7 +122,10 @@ abstract final class RescueTheme {
         color: RescueColors.card,
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: RescueColors.line),
+        ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: RescueColors.panel,
@@ -132,7 +135,7 @@ abstract final class RescueTheme {
         scrolledUnderElevation: 0,
         titleTextStyle: TextStyle(
           fontSize: 24,
-          fontWeight: FontWeight.w300,
+          fontWeight: FontWeight.w700,
           color: RescueColors.text,
           fontFamily: fontFamily,
           fontFamilyFallback: fontFamilyFallback,
@@ -141,16 +144,25 @@ abstract final class RescueTheme {
       dividerTheme: const DividerThemeData(color: RescueColors.line, thickness: 1, space: 1),
       // Действие — жёлтая таблетка с тёмным текстом.
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: RescueColors.accent,
-          foregroundColor: RescueColors.onAccent,
-          disabledBackgroundColor: RescueColors.line,
-          disabledForegroundColor: RescueColors.muted,
-          minimumSize: _buttonSize,
-          padding: _buttonPadding,
-          shape: _pill,
-          textStyle: buttonText,
-        ),
+        style:
+            FilledButton.styleFrom(
+              backgroundColor: RescueColors.accent,
+              foregroundColor: RescueColors.onAccent,
+              disabledBackgroundColor: RescueColors.line,
+              disabledForegroundColor: RescueColors.muted,
+              minimumSize: _buttonSize,
+              padding: _buttonPadding,
+              shape: _pill,
+              textStyle: buttonText,
+            ).copyWith(
+              overlayColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.pressed) || states.contains(WidgetState.hovered)
+                    ? RescueColors.accentDeep
+                    : null,
+              ),
+              elevation: const WidgetStatePropertyAll(2),
+              shadowColor: const WidgetStatePropertyAll(RescueColors.accentTint),
+            ),
       ),
       // Второстепенная — таблетка с рамкой muted 1.5.
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -203,7 +215,7 @@ abstract final class RescueTheme {
           foregroundColor: RescueColors.muted,
           disabledForegroundColor: RescueColors.line2,
           minimumSize: _buttonSize,
-          shape: const CircleBorder(),
+          shape: _pill,
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
@@ -339,7 +351,7 @@ abstract final class RescueTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
         titleTextStyle: const TextStyle(
           fontSize: 24,
-          fontWeight: FontWeight.w300,
+          fontWeight: FontWeight.w700,
           color: RescueColors.text,
           fontFamily: fontFamily,
           fontFamilyFallback: fontFamilyFallback,

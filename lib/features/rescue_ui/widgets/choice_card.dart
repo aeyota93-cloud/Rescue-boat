@@ -18,7 +18,10 @@ class ChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final description = this.description;
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(22));
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: BorderSide(color: selected ? RescueColors.accent : RescueColors.line, width: selected ? 1.5 : 1),
+    );
     return Semantics(
       button: true,
       inMutuallyExclusiveGroup: true,
@@ -30,7 +33,7 @@ class ChoiceCard extends StatelessWidget {
       onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
-          color: selected ? RescueColors.deep : RescueColors.panel,
+          color: selected ? RescueColors.raised : RescueColors.card,
           shape: shape,
           child: InkWell(
             onTap: onTap,

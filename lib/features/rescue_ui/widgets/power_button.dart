@@ -111,6 +111,9 @@ class _PowerButtonState extends State<PowerButton> with SingleTickerProviderStat
       decoration: BoxDecoration(
         color: c.bg,
         shape: BoxShape.circle,
+        boxShadow: widget.state == PowerState.on
+            ? [BoxShadow(color: RescueColors.accent.withValues(alpha: 0.12), blurRadius: 24)]
+            : null,
         border: ringWidth > 0 ? Border.all(color: c.ring, width: ringWidth) : null,
       ),
       child: Center(

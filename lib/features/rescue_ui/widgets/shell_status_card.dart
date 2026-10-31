@@ -40,53 +40,76 @@ class ShellStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sub = subtitle;
     final onPower = this.onPower;
-    return Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: switch (state) {
-                PowerState.on => RescueColors.accent,
-                PowerState.connecting => RescueColors.warn,
-                PowerState.off => RescueColors.off,
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 100) {
+          return Tooltip(
+            message: [title, ?sub].join(' · '),
+            excludeFromSemantics: true,
             child: Semantics(
+              container: true,
+              explicitChildNodes: true,
               liveRegion: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
-                  ),
-                  if (sub != null)
-                    Text(
-                      sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, color: RescueColors.subOnDeep),
-                    ),
-                ],
-              ),
+              label: [title, ?sub].join(', '),
+              child: PowerButton.mini(state: state, onPressed: onPower, semanticLabel: powerLabel),
             ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: switch (state) {
+                    PowerState.on => RescueColors.accent,
+                    PowerState.connecting => RescueColors.warn,
+                    PowerState.off => RescueColors.off,
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  liveRegion: true,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: RescueColors.textOnDeep,
+                        ),
+                      ),
+                      if (sub != null)
+                        Text(
+                          sub,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: RescueColors.subOnDeep),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (onPower != null) ...[
+                const SizedBox(width: 6),
+                PowerButton.mini(state: state, onPressed: onPower, semanticLabel: powerLabel),
+              ],
+            ],
           ),
-          if (onPower != null) ...[
-            const SizedBox(width: 6),
-            PowerButton.mini(state: state, onPressed: onPower, semanticLabel: powerLabel),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -42,7 +42,7 @@ class RescueTable extends StatelessWidget {
     required this.columns,
     required this.rows,
     this.minWidth = 760,
-    this.rowHeight = 42,
+    this.rowHeight = 52,
     this.gap = 12,
     this.horizontalPadding = 4,
   });
@@ -116,10 +116,16 @@ class RescueTable extends StatelessWidget {
     final onTap = row.onTap;
     Widget content = Container(
       constraints: BoxConstraints(minHeight: onTap != null && rowHeight < 44 ? 44 : rowHeight),
-      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      margin: const EdgeInsets.only(top: 8),
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding + 14, vertical: 8),
       decoration: BoxDecoration(
-        color: row.selected ? RescueColors.panel : null,
-        border: const Border(bottom: BorderSide(color: RescueColors.line)),
+        color: row.selected ? RescueColors.raised : RescueColors.card,
+        border: Border(
+          left: BorderSide(color: row.selected ? RescueColors.accent : RescueColors.info, width: 4),
+          top: BorderSide(color: row.selected ? RescueColors.accent : RescueColors.line),
+          right: BorderSide(color: row.selected ? RescueColors.accent : RescueColors.line),
+          bottom: BorderSide(color: row.selected ? RescueColors.accent : RescueColors.line),
+        ),
       ),
       child: DefaultTextStyle.merge(
         style: RescueText.small,
@@ -128,10 +134,11 @@ class RescueTable extends StatelessWidget {
         child: _cellsRow(row.cells),
       ),
     );
+    content = ClipRRect(borderRadius: BorderRadius.circular(14), child: content);
     if (onTap != null) {
       content = Material(
         type: MaterialType.transparency,
-        child: InkWell(onTap: onTap, child: content),
+        child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(14), child: content),
       );
     }
     final label = row.semanticLabel;

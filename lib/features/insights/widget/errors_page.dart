@@ -70,7 +70,7 @@ class ErrorsPage extends HookConsumerWidget {
     };
 
     return Material(
-      color: RescueColors.panel,
+      color: RescueColors.page,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final group = selected;
@@ -327,7 +327,7 @@ class _GroupList extends HookWidget {
         title: 'По сайтам и программам',
         count: '${groups.length}',
         semanticLabel: 'Список',
-        radius: 36,
+        radius: 16,
         children: [
           Expanded(
             child: PinnedList(
@@ -345,7 +345,7 @@ class _GroupList extends HookWidget {
       title: 'По сайтам и программам',
       count: '${groups.length}',
       semanticLabel: 'Список',
-      radius: 36,
+      radius: 16,
       children: [
         for (final g in shown) _tile(g, most),
         if (groups.length > shown.length)
@@ -371,7 +371,7 @@ class _GroupList extends HookWidget {
       highlighted: on,
       minHeight: 68,
       tileSize: 38,
-      radius: 22,
+      radius: 14,
       semanticLabel:
           '${g.target}, $sub, ${g.count} ${isFailoverGroup(g) ? switchesWord(g.count) : errorsWord(g.count)}',
       onTap: () => onSelect(g),
