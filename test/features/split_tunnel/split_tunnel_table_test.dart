@@ -296,12 +296,15 @@ void main() {
       expectNoLayoutErrors(tester);
 
       expect(find.text('Туннелирование'), findsOneWidget);
-      expect(find.text('3 соединения'), findsOneWidget);
+      expect(find.text('3 соединения · 2 программы · обновляется каждые 2 секунды'), findsOneWidget);
       expect(find.text('Google Chrome'), findsOneWidget);
-      expect(find.text('Discord'), findsOneWidget);
+      expect(find.text('Discord · Общение', findRichText: true), findsOneWidget);
       // У Discord видно группу и сервер.
       expect(
-        find.descendant(of: find.byKey(const ValueKey('live-app-Discord.exe')), matching: find.text('Общение')),
+        find.descendant(
+          of: find.byKey(const ValueKey('live-app-Discord.exe')),
+          matching: find.text('Discord · Общение', findRichText: true),
+        ),
         findsOneWidget,
       );
       // Ошибки за сутки — не про «сейчас»: здесь их нет, они на «Группах».
@@ -328,7 +331,9 @@ void main() {
     });
   }
 
-  testWidgets('«Сейчас в сети»: путь программы, правило для сайта, группа, вид по группам, фильтр', (tester) async {
+  testWidgets('«Сейчас в сети»: путь программы, правило для сайта, группа через меню, переход к группе, фильтр', (
+    tester,
+  ) async {
     writeState(
       const SplitTunnel(
         servers: {
@@ -354,7 +359,7 @@ void main() {
     SplitTunnel state() => container.read(splitTunnelProvider);
 
     // Почему так: у Discord — программа в группе, у Chrome — общие правила.
-    await tap(tester, find.text('Discord'));
+    await tap(tester, find.text('Discord · Общение', findRichText: true));
     expect(find.textContaining('программа Discord · группа «Общение»', findRichText: true), findsOneWidget);
     await tap(tester, find.text('Google Chrome'));
     expect(find.textContaining('общие правила → через VPN', findRichText: true), findsOneWidget);
@@ -372,23 +377,108 @@ void main() {
     expect(find.textContaining('сайт youtube.com', findRichText: true), findsOneWidget);
 
     // Группа программы: новая.
-    await tap(tester, find.byKey(const ValueKey('group-btn-chrome.exe')));
+    await tap(tester, find.byKey(const ValueKey('live-more-chrome.exe')));
+    await tapText(tester, 'Добавить в группу…');
     await tapMenu(tester, 'Новая группа…');
     await nameGroup(tester, 'Браузеры');
     expect(state().groupOf(SplitKind.app, 'chrome.exe'), 'Браузеры');
 
-    // По группам и переход к группе.
-    await tapText(tester, 'По группам');
-    expect(find.text('ОБЩЕНИЕ'), findsOneWidget);
-    expect(find.text('БРАУЗЕРЫ'), findsOneWidget);
-    await tap(tester, find.text('открыть группу').first);
+    // Переход к группе через «⋯» программы.
+    expect(find.text('По группам'), findsNothing);
+    expect(find.text('По программам'), findsNothing);
+    await tap(tester, find.byKey(const ValueKey('live-more-Discord.exe')));
+    await tapMenu(tester, 'Открыть группу «Общение»');
     expect(find.text('Группа «Общение»'), findsOneWidget);
 
     // Фильтр «Мимо» — только Chrome (у него ya.ru напрямую).
     await openTab(tester, 0);
     await tapText(tester, 'Мимо');
-    expect(find.text('Google Chrome'), findsOneWidget);
-    expect(find.text('Discord'), findsNothing);
+    expect(find.text('Google Chrome · Браузеры', findRichText: true), findsOneWidget);
+    expect(find.byKey(const ValueKey('live-app-Discord.exe')), findsNothing);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  for (final width in [320.0, 719.0, 720.0]) {
+    testWidgets('список в сети $width px: путь, раскрытие, поиск и все фильтры', (tester) async {
+      writeState(shellState);
+      final container = await start(tester, connections: shellConns);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: Size(width, 900));
+      final chrome = find.byKey(const ValueKey('live-app-chrome.exe'));
+      final discord = find.byKey(const ValueKey('live-app-Discord.exe'));
+      final chromeRoute = find.byKey(const ValueKey('place-chrome.exe'));
+      expect(find.text('VPN · Запасной 2'), findsOneWidget);
+      expect(find.text('Авто · Основной, Мимо VPN'), findsOneWidget);
+      expect(find.text('+ В группу'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      if (width < 720) {
+        expect(tester.getTopLeft(chromeRoute).dy, greaterThan(tester.getBottomLeft(find.text('Google Chrome')).dy));
+      } else {
+        expect(tester.getTopLeft(chromeRoute).dy, lessThan(tester.getBottomLeft(find.text('Google Chrome')).dy));
+      }
+      await tap(tester, chromeRoute);
+      await tapMenu(tester, 'Мимо VPN');
+      expect(container.read(splitTunnelProvider).bypass.apps, contains('chrome.exe'));
+      expect(
+        find.byKey(ValueKey('live-conn-${shellConns.first.id}')),
+        findsNothing,
+        reason: 'кнопка пути не раскрывает строку',
+      );
+      await tap(tester, chromeRoute);
+      await tapMenu(tester, 'Авто');
+      expect(container.read(splitTunnelProvider).placeOf(SplitKind.app, 'chrome.exe'), autoPlace);
+
+      await tap(tester, chrome);
+      final connection = find.byKey(ValueKey('live-conn-${shellConns.first.id}'));
+      expect(connection, findsOneWidget);
+      await tap(tester, chrome);
+      expect(connection, findsNothing);
+
+      await tapText(tester, 'Через VPN');
+      expect(chrome, findsOneWidget);
+      expect(discord, findsOneWidget);
+      await tapText(tester, 'Мимо');
+      expect(chrome, findsOneWidget);
+      expect(discord, findsNothing);
+      await tapText(tester, 'Без правила');
+      expect(chrome, findsOneWidget);
+      expect(discord, findsNothing);
+      await tapText(tester, 'Все');
+      expect(discord, findsOneWidget);
+
+      await tap(tester, find.byTooltip('Поиск соединений'));
+      final search = find.byKey(const ValueKey('live-search'));
+      await tester.enterText(search, 'discord.com');
+      await tester.pumpAndSettle();
+      expect(chrome, findsNothing);
+      expect(discord, findsOneWidget);
+      await tester.enterText(search, 'нет такого');
+      await tester.pumpAndSettle();
+      expect(find.text('Ничего не нашлось.'), findsOneWidget);
+      await tap(tester, find.byTooltip('Закрыть поиск'));
+      expect(search, findsNothing);
+      expect(chrome, findsOneWidget);
+      expect(discord, findsOneWidget);
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+  }
+
+  testWidgets('меню программы: перенос в существующую группу и удаление сохраняют путь', (tester) async {
+    writeState(shellState);
+    final container = await start(tester, connections: shellConns);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    final more = find.byKey(const ValueKey('live-more-Discord.exe'));
+    await tap(tester, more);
+    await tapText(tester, 'Добавить в группу…');
+    await tapMenu(tester, 'Игры и лаунчеры · ${defaultBypassApps.length}');
+    expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'Discord.exe'), 'Игры и лаунчеры');
+    expect(container.read(splitTunnelProvider).serverOf(SplitKind.app, 'Discord.exe'), 'NL игры');
+    await tap(tester, more);
+    await tap(tester, find.widgetWithText(MenuItemButton, 'Убрать из группы'));
+    expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'Discord.exe'), isNull);
+    expect(container.read(splitTunnelProvider).serverOf(SplitKind.app, 'Discord.exe'), 'NL игры');
+    expect(find.text('Discord'), findsOneWidget);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });

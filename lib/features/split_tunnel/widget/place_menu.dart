@@ -94,7 +94,15 @@ List<Widget> placeMenuItems({
 
 /// Плашка пути «Запасной 2 ▾»: показывает, куда идут [items], по нажатию — меню [placeMenuItems].
 class PlaceButton extends ConsumerWidget {
-  const PlaceButton({super.key, required this.items, required this.label, this.onCompare, this.compact = false});
+  const PlaceButton({
+    super.key,
+    required this.items,
+    required this.label,
+    this.onCompare,
+    this.compact = false,
+    this.inlineText,
+    this.routeColors = const [],
+  });
 
   final List<SplitRef> items;
 
@@ -105,12 +113,16 @@ class PlaceButton extends ConsumerWidget {
   /// Ниже и уже — для строк соединений.
   final bool compact;
 
+  /// Текстовый путь в спокойном списке соединений.
+  final String? inlineText;
+  final List<Color> routeColors;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final split = ref.watch(splitTunnelProvider);
     final servers = ref.watch(rescueServersProvider);
     final place = split.commonPlace(items);
-    final text = placeLabel(place, servers);
+    final text = inlineText ?? placeLabel(place, servers);
     final (bg, fg, border) = switch (place) {
       null => (Colors.transparent, RescueColors.warn, RescueColors.warn),
       (target: null, server: _) => (Colors.transparent, RescueColors.subOnDeep, RescueColors.line2),
@@ -123,6 +135,12 @@ class PlaceButton extends ConsumerWidget {
       (target: SplitTarget.via, server: _) => (RescueColors.accent, RescueColors.onAccent, RescueColors.accent),
     };
     return MenuAnchor(
+      crossAxisUnconstrained: inlineText == null,
+      style: inlineText == null
+          ? null
+          : MenuStyle(
+              maximumSize: WidgetStatePropertyAll(Size(MediaQuery.sizeOf(context).width - 16, double.infinity)),
+            ),
       menuChildren: placeMenuItems(ref: ref, split: split, servers: servers, items: items, onCompare: onCompare),
       builder: (context, controller, _) => Tooltip(
         message: 'Куда направить: $label',
@@ -130,40 +148,100 @@ class PlaceButton extends ConsumerWidget {
           button: true,
           label: 'Куда направить: $label. Сейчас: $text',
           child: ExcludeSemantics(
-            child: Material(
-              color: bg,
-              shape: StadiumBorder(side: BorderSide(color: border)),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: () => controller.isOpen ? controller.close() : controller.open(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: compact ? 32 : 40, minWidth: 44),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            text,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+            child: inlineText != null
+                ? _InlineRoute(
+                    text: text,
+                    colors: routeColors,
+                    onTap: () => controller.isOpen ? controller.close() : controller.open(),
+                  )
+                : Material(
+                    color: bg,
+                    shape: StadiumBorder(side: BorderSide(color: border)),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () => controller.isOpen ? controller.close() : controller.open(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: compact ? 32 : 40, minWidth: 44),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  text,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.expand_more_rounded, size: 16, color: fg),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.expand_more_rounded, size: 16, color: fg),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _InlineRoute extends StatefulWidget {
+  const _InlineRoute({required this.text, required this.colors, required this.onTap});
+  final String text;
+  final List<Color> colors;
+  final VoidCallback onTap;
+  @override
+  State<_InlineRoute> createState() => _InlineRouteState();
+}
+
+class _InlineRouteState extends State<_InlineRoute> {
+  bool highlighted = false;
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: widget.onTap,
+    onHover: (value) => setState(() => highlighted = value),
+    onFocusChange: (value) => setState(() => highlighted = value),
+    borderRadius: BorderRadius.circular(6),
+    hoverColor: RescueColors.line.withValues(alpha: 0.5),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final color in widget.colors) ...[
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 4),
+            ],
+            const SizedBox(width: 2),
+            Flexible(
+              child: Text(
+                widget.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
+              ),
+            ),
+            const SizedBox(width: 3),
+            Opacity(
+              opacity: highlighted ? 1 : 0,
+              child: const Icon(Icons.expand_more_rounded, size: 14, color: RescueColors.subOnDeep),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Кнопка группы записи: имя группы или «+ В группу». Меню: группы, «Новая группа…», «Убрать из
@@ -176,6 +254,7 @@ class GroupButton extends ConsumerWidget {
     this.onOpenGroup,
     this.maxWidth = 160,
     this.short = false,
+    this.menuOnly = false,
   });
 
   /// Одна запись или несколько отмеченных.
@@ -189,6 +268,9 @@ class GroupButton extends ConsumerWidget {
   /// Внутри открытой группы её имя у каждой записи лишнее: «Перенести» вместо имени.
   final bool short;
 
+  /// Действия группы в меню «⋯» строки программы.
+  final bool menuOnly;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final split = ref.watch(splitTunnelProvider);
@@ -198,22 +280,25 @@ class GroupButton extends ConsumerWidget {
     final grouped = current.any((g) => g != null);
     final text = items.length > 1 ? 'В группу' : (only == null ? '+ В группу' : (short ? 'Перенести' : only));
     final color = only == null || items.length > 1 ? RescueColors.accent : RescueColors.subOnDeep;
+    final choices = <Widget>[
+      for (final g in split.groups)
+        MenuItemButton(
+          leadingIcon: _Check(only != null && sameGroupName(g.name, only)),
+          onPressed: only != null && sameGroupName(g.name, only) ? null : () => notifier.moveToGroup(g.name, items),
+          child: Text('${g.name} · ${g.items.length}'),
+        ),
+      MenuItemButton(
+        leadingIcon: const _Check(false),
+        onPressed: () async {
+          final name = await showGroupNameDialog(context, title: 'Новая группа');
+          if (name != null) notifier.moveToGroup(name, items);
+        },
+        child: const Text('Новая группа…'),
+      ),
+    ];
     return MenuAnchor(
       menuChildren: [
-        for (final g in split.groups)
-          MenuItemButton(
-            leadingIcon: _Check(only != null && sameGroupName(g.name, only)),
-            onPressed: only != null && sameGroupName(g.name, only) ? null : () => notifier.moveToGroup(g.name, items),
-            child: Text('${g.name} · ${g.items.length}'),
-          ),
-        MenuItemButton(
-          leadingIcon: const _Check(false),
-          onPressed: () async {
-            final name = await showGroupNameDialog(context, title: 'Новая группа');
-            if (name != null) notifier.moveToGroup(name, items);
-          },
-          child: const Text('Новая группа…'),
-        ),
+        if (menuOnly) SubmenuButton(menuChildren: choices, child: const Text('Добавить в группу…')) else ...choices,
         if (grouped) ...[
           const Divider(height: 8),
           MenuItemButton(
@@ -225,40 +310,50 @@ class GroupButton extends ConsumerWidget {
             MenuItemButton(
               leadingIcon: const _Check(false),
               onPressed: () => onOpenGroup!(only),
-              child: Text('Открыть группу «$only»', style: const TextStyle(color: RescueColors.accent)),
+              child: Text(
+                'Открыть группу «$only»',
+                style: TextStyle(color: menuOnly ? RescueColors.subOnDeep : RescueColors.accent),
+              ),
             ),
         ],
       ],
-      builder: (context, controller, _) => Tooltip(
-        message: 'Группа: $label',
-        child: Semantics(
-          button: true,
-          label: only == null ? 'Положить в группу: $label' : 'Группа $only: $label',
-          child: ExcludeSemantics(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => controller.isOpen ? controller.close() : controller.open(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: 32, maxWidth: maxWidth),
-                child: CustomPaint(
-                  painter: _DashedPainter(
-                    color: only == null ? RescueColors.accent.withValues(alpha: 0.6) : RescueColors.line2,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: Text(
-                      text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+      builder: (context, controller, _) => menuOnly
+          ? IconButton(
+              tooltip: 'Действия: $label',
+              onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+              style: IconButton.styleFrom(minimumSize: const Size(40, 40), foregroundColor: RescueColors.subOnDeep),
+              icon: const Icon(Icons.more_horiz_rounded, size: 20),
+            )
+          : Tooltip(
+              message: 'Группа: $label',
+              child: Semantics(
+                button: true,
+                label: only == null ? 'Положить в группу: $label' : 'Группа $only: $label',
+                child: ExcludeSemantics(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => controller.isOpen ? controller.close() : controller.open(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: 32, maxWidth: maxWidth),
+                      child: CustomPaint(
+                        painter: _DashedPainter(
+                          color: only == null ? RescueColors.accent.withValues(alpha: 0.6) : RescueColors.line2,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Text(
+                            text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }

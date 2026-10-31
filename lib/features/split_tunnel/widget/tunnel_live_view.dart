@@ -15,32 +15,28 @@ import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dar
 import 'package:hiddify/features/split_tunnel/widget/place_menu.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Ширина, с которой строки показываются колонками; уже — в две строчки.
-const liveWideFrom = 820.0;
+/// Уже 720 px путь располагается под названием программы.
+const liveWideFrom = 720.0;
 
-enum _LiveMode { apps, groups }
-
-/// Шлюпка: вкладка «Сейчас в сети» (docs/redesign/tunnel-v3.md). Сводка по реальным выходам,
-/// фильтры, программы с соединениями: группа, куда ушло, почему. Ошибок за сутки здесь нет —
-/// вкладка про то, что идёт сейчас (ошибки — на «Группах» и на экране ошибок). Плашка пути у программы —
-/// правило для всей программы, «⋯» у соединения — для его сайта или IP.
+/// Соединения по программам: фактический выход, правило и действия без карточек.
 class TunnelLiveView extends HookConsumerWidget {
   const TunnelLiveView({
     super.key,
     required this.connections,
     required this.titles,
     required this.query,
+    required this.searchController,
+    required this.onQueryChanged,
     required this.pinned,
     required this.onOpenGroup,
     required this.onShowGroups,
   });
 
-  /// null — ядро не запущено (VPN выключен).
   final List<NetConnection>? connections;
-
-  /// Описания запущенных программ — для названий.
   final Map<String, String> titles;
   final String query;
+  final TextEditingController searchController;
+  final ValueChanged<String> onQueryChanged;
   final bool pinned;
   final ValueChanged<String> onOpenGroup;
   final VoidCallback onShowGroups;
@@ -48,27 +44,25 @@ class TunnelLiveView extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = useState(LiveFilter.all);
-    final mode = useState(_LiveMode.apps);
+    final searching = useState(query.isNotEmpty);
+    final searchFocus = useFocusNode();
     final open = useState(const <String>{});
     final split = ref.watch(splitTunnelProvider);
     final servers = ref.watch(rescueServersProvider);
     final all = connections;
-
     if (all == null) {
       return _Empty(
         text: 'VPN выключен — соединений не видно. Включите VPN, чтобы видеть, что куда идёт прямо сейчас.',
         action: ('Открыть все правила', onShowGroups),
       );
     }
-
     String titleOf(String exe) => appTitle(exe, titles);
     final apps = buildLiveApps(split, all, servers, filter: filter.value, query: query, titleOf: titleOf);
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= liveWideFrom;
         final rows = <Widget>[];
-        void addApp(LiveApp app) {
+        for (final app in apps) {
           final key = app.exe.toLowerCase();
           final isOpen = open.value.contains(key);
           rows.add(
@@ -89,56 +83,68 @@ class TunnelLiveView extends HookConsumerWidget {
             }
           }
         }
-
-        if (mode.value == _LiveMode.apps) {
-          apps.forEach(addApp);
-        } else {
-          final byGroup = <String?, List<LiveApp>>{};
-          for (final a in apps) {
-            (byGroup[a.group] ??= []).add(a);
-          }
-          final order = [
-            for (final g in split.groups)
-              if (byGroup.containsKey(g.name)) g.name,
-            if (byGroup.containsKey(null)) null,
-          ];
-          for (final g in order) {
-            rows.add(_SectionHeader(key: ValueKey('live-section-${g ?? ''}'), group: g, onOpenGroup: onOpenGroup));
-            byGroup[g]!.forEach(addApp);
-          }
-        }
-
-        final summary = _Summary(connections: all, servers: servers);
-        final tools = Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.spaceBetween,
+        final tools = Row(
           children: [
-            FilterChips<LiveFilter>(
-              options: const [
-                (LiveFilter.all, 'Все'),
-                (LiveFilter.vpn, 'Через VPN'),
-                (LiveFilter.direct, 'Мимо'),
-                (LiveFilter.auto, 'Без правила'),
-              ],
-              selected: filter.value,
-              onSelected: (f) => filter.value = f,
-            ),
-            SizedBox(
-              width: constraints.maxWidth < 300 ? constraints.maxWidth : 300,
-              child: PillSegmented<_LiveMode>(
-                segments: const [
-                  PillSegment(value: _LiveMode.apps, label: 'По программам'),
-                  PillSegment(value: _LiveMode.groups, label: 'По группам'),
-                ],
-                value: mode.value,
-                onChanged: (m) => mode.value = m,
-                semanticLabel: 'Как разложить',
-                expand: true,
-                fontSize: 12,
-                letterSpacing: 0,
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final (value, label) in const [
+                      (LiveFilter.all, 'Все'),
+                      (LiveFilter.vpn, 'Через VPN'),
+                      (LiveFilter.direct, 'Мимо'),
+                      (LiveFilter.auto, 'Без правила'),
+                    ])
+                      Semantics(
+                        selected: filter.value == value,
+                        inMutuallyExclusiveGroup: true,
+                        child: InkWell(
+                          onTap: () => filter.value = value,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: filter.value == value ? RescueColors.accent : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: filter.value == value ? RescueColors.textOnDeep : RescueColors.subOnDeep,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
+            ),
+            if (searching.value && wide) ...[
+              const SizedBox(width: 20),
+              SizedBox(
+                width: 260,
+                child: _LiveSearch(controller: searchController, focusNode: searchFocus, onChanged: onQueryChanged),
+              ),
+            ],
+            IconButton(
+              tooltip: searching.value ? 'Закрыть поиск' : 'Поиск соединений',
+              onPressed: () {
+                searching.value = !searching.value;
+                if (searching.value) {
+                  searchFocus.requestFocus();
+                } else {
+                  searchController.clear();
+                  onQueryChanged('');
+                }
+              },
+              color: RescueColors.subOnDeep,
+              icon: Icon(searching.value ? Icons.close_rounded : Icons.search_rounded, size: 19),
             ),
           ],
         );
@@ -152,41 +158,25 @@ class TunnelLiveView extends HookConsumerWidget {
             style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
           ),
         );
-        final list = DeepList(
-          radius: 16,
-          semanticLabel: 'Программы в сети',
-          spacing: 0,
-          children: [
-            if (rows.isEmpty)
-              empty
-            else if (pinned)
-              Expanded(
-                child: PinnedList(
-                  key: const ValueKey('live-rows'),
-                  itemCount: rows.length,
-                  itemBuilder: (_, i) => rows[i],
-                ),
-              )
-            else
-              ...rows,
-          ],
-        );
-        const note = Text(
-          'Цветная метка — куда соединение ушло на самом деле. Плашка пути у программы меняет правило '
-          'для всей программы, меню у соединения — только для его сайта или IP.',
-          style: RescueText.caption,
-        );
+        final list = rows.isEmpty
+            ? empty
+            : pinned
+            ? PinnedList(key: const ValueKey('live-rows'), itemCount: rows.length, itemBuilder: (_, i) => rows[i])
+            : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: pinned ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            summary,
-            const SizedBox(height: 12),
+            _Summary(connections: all, servers: servers),
+            const SizedBox(height: 16),
             tools,
-            const SizedBox(height: 12),
+            if (searching.value && !wide)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: _LiveSearch(controller: searchController, focusNode: searchFocus, onChanged: onQueryChanged),
+              ),
+            const SizedBox(height: 8),
             if (pinned) Expanded(child: list) else list,
-            const SizedBox(height: 10),
-            note,
           ],
         );
       },
@@ -194,98 +184,101 @@ class TunnelLiveView extends HookConsumerWidget {
   }
 }
 
-/// Сводка: сколько соединений и полоска «куда ушли».
+class _LiveSearch extends StatelessWidget {
+  const _LiveSearch({required this.controller, required this.focusNode, required this.onChanged});
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  @override
+  Widget build(BuildContext context) => TextField(
+    key: const ValueKey('live-search'),
+    controller: controller,
+    focusNode: focusNode,
+    autofocus: true,
+    onChanged: onChanged,
+    style: const TextStyle(fontSize: 13, color: RescueColors.textOnDeep),
+    decoration: const InputDecoration(
+      hintText: 'Найти программу, сайт или IP',
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      border: UnderlineInputBorder(borderSide: BorderSide(color: RescueColors.line2)),
+    ),
+  );
+}
+
 class _Summary extends StatelessWidget {
   const _Summary({required this.connections, required this.servers});
-
   final List<NetConnection> connections;
   final RescueServers? servers;
-
   @override
   Widget build(BuildContext context) {
     final parts = liveSummary(connections, servers);
     final total = parts.fold(0, (s, p) => s + p.$2);
     final programs = {for (final c in connections.where((c) => !c.closed)) c.exe.toLowerCase()}.length;
-    return RescueCard.deep(
-      radius: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      semanticLabel:
-          'Сейчас $total ${pluralRu(total, 'соединение', 'соединения', 'соединений')}: '
-          '${[for (final (d, n) in parts) '${destLabel(d)} $n'].join(', ')}',
-      child: ExcludeSemantics(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Wrap(
-              spacing: 16,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.end,
-              children: [
-                Text(
-                  '$total ${pluralRu(total, 'соединение', 'соединения', 'соединений')}',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    '$programs ${pluralRu(programs, 'программа', 'программы', 'программ')} · обновляется каждые 2 секунды',
-                    style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
-                  ),
-                ),
-              ],
-            ),
-            if (total > 0) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: SizedBox(
-                  height: 10,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final (i, (d, n)) in parts.indexed) ...[
-                        if (i > 0) const SizedBox(width: 2),
-                        Expanded(
-                          flex: n,
-                          child: ColoredBox(color: destColor(d)),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 16,
-                runSpacing: 4,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '$total ${pluralRu(total, 'соединение', 'соединения', 'соединений')} · '
+          '$programs ${pluralRu(programs, 'программа', 'программы', 'программ')} · обновляется каждые 2 секунды',
+          style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
+        ),
+        if (total > 0) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: SizedBox(
+              key: const ValueKey('live-share-bar'),
+              height: 4,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final (d, n) in parts)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 9,
-                          height: 9,
-                          decoration: BoxDecoration(color: destColor(d), borderRadius: BorderRadius.circular(3)),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${destLabel(d)} · $n',
-                          style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
-                        ),
-                      ],
+                    Expanded(
+                      flex: n,
+                      child: ColoredBox(color: destColor(d)),
                     ),
                 ],
               ),
-            ],
-          ],
-        ),
-      ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [for (final (d, n) in parts) _DestText(d, label: '${destLabel(d)} · $n')],
+          ),
+        ],
+      ],
     );
   }
 }
 
-/// Строка программы: название, группа, сколько соединений и трафика, куда ушли, плашка пути.
+class _DestText extends StatelessWidget {
+  const _DestText(this.dest, {this.label});
+  final LiveDest dest;
+  final String? label;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(color: destColor(dest), shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 6),
+      Flexible(
+        child: Text(
+          label ?? destLabel(dest),
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
+        ),
+      ),
+    ],
+  );
+}
+
 class _AppRow extends ConsumerWidget {
   const _AppRow({
     super.key,
@@ -297,7 +290,6 @@ class _AppRow extends ConsumerWidget {
     required this.onToggle,
     required this.onOpenGroup,
   });
-
   final LiveApp app;
   final String title;
   final bool wide;
@@ -305,7 +297,6 @@ class _AppRow extends ConsumerWidget {
   final List<NetConnection> all;
   final VoidCallback onToggle;
   final ValueChanged<String> onOpenGroup;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final known = app.exe.isNotEmpty;
@@ -316,130 +307,110 @@ class _AppRow extends ConsumerWidget {
     ].join(' · ');
     final item = [(kind: SplitKind.app, value: app.exe)];
     final count = '${app.open} ${pluralRu(app.open, 'соединение', 'соединения', 'соединений')}';
-
-    final name = Row(
-      children: [
-        Icon(open ? Icons.expand_more_rounded : Icons.chevron_right_rounded, size: 20, color: RescueColors.subOnDeep),
-        const SizedBox(width: 6),
-        _Tile(letter: known ? title.characters.first.toUpperCase() : '?'),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
-              ),
-              Text(
-                sub,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-    final toggle = Semantics(
-      button: true,
-      expanded: open,
-      label:
-          '$title, $count, ${formatBytes(app.bytes)}${app.group == null ? '' : ', группа ${app.group}'}, '
-          'куда ушли: ${[for (final d in app.dests) destLabel(d)].join(', ')}',
-      onTap: onToggle,
-      child: ExcludeSemantics(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onToggle,
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12), child: name),
-        ),
+    final numbers = Tooltip(
+      message: '$count · ${formatBytes(app.bytes)}',
+      child: Text(
+        wide ? count : '${app.open}',
+        overflow: TextOverflow.ellipsis,
+        textAlign: wide ? TextAlign.left : TextAlign.right,
+        style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
       ),
     );
-    final group = known
-        ? GroupButton(key: ValueKey('group-btn-${app.exe}'), items: item, label: title, onOpenGroup: onOpenGroup)
-        : null;
-    final numbers = Text(
-      '$count · ${formatBytes(app.bytes)}',
-      maxLines: 1,
-      style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep, fontFeatures: [FontFeature.tabularFigures()]),
-    );
-    final dests = Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      alignment: WrapAlignment.end,
-      children: [for (final d in app.dests) DestPill(d)],
-    );
-    final place = known
+    final place = ref.watch(splitTunnelProvider).placeOf(SplitKind.app, app.exe);
+    final exits = app.dests.map(destLabel).join(', ');
+    final routeText = switch (place.target) {
+      null => 'Авто · $exits',
+      SplitTarget.bypass => exits == 'Мимо VPN' ? exits : 'Мимо VPN · $exits',
+      SplitTarget.via => 'VPN · $exits',
+    };
+    final route = known
         ? PlaceButton(
             key: ValueKey('place-${app.exe}'),
             items: item,
             label: title,
+            inlineText: routeText,
+            routeColors: [for (final d in app.dests) destColor(d)],
             onCompare: () => showComparePathsDialog(
               context,
               CompareSubject(endpoints: endpointsForApp(app.exe, all), appExe: app.exe),
             ),
           )
-        : null;
-
-    final Widget content;
-    if (wide) {
-      content = Row(
-        children: [
-          Expanded(child: toggle),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 170,
-            child: Align(alignment: Alignment.centerLeft, child: group),
-          ),
-          SizedBox(width: 150, child: ExcludeSemantics(child: numbers)),
-          SizedBox(width: 190, child: ExcludeSemantics(child: dests)),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 132,
-            child: Align(alignment: Alignment.centerRight, child: place),
-          ),
-        ],
-      );
-    } else {
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+        : _DestText(app.dests.first, label: exits);
+    final name = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text.rich(
+          TextSpan(
             children: [
-              Expanded(child: toggle),
-              ?place,
+              TextSpan(text: title),
+              if (app.group != null)
+                TextSpan(
+                  text: ' · ${app.group}',
+                  style: const TextStyle(fontWeight: FontWeight.w400, color: RescueColors.subOnDeep),
+                ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.only(left: 26, top: 4),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ?group,
-                ExcludeSemantics(child: numbers),
-                ExcludeSemantics(child: dests),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: RescueColors.card,
-          border: const Border(left: BorderSide(color: RescueColors.info, width: 4)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: RescueColors.textOnDeep),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: content,
+        const SizedBox(height: 3),
+        Text(
+          sub,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
+        ),
+      ],
+    );
+    return Semantics(
+      expanded: open,
+      child: InkWell(
+        onTap: onToggle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: RescueColors.line, width: 0.5)),
+          ),
+          child: Row(
+            crossAxisAlignment: wide ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: _Tile(letter: known ? title.characters.first.toUpperCase() : '?'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: wide
+                    ? name
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [name, const SizedBox(height: 3), route],
+                      ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(width: wide ? 110 : 36, child: numbers),
+              if (wide) ...[
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 220,
+                  child: Align(alignment: Alignment.centerLeft, child: route),
+                ),
+              ],
+              if (known)
+                GroupButton(
+                  key: ValueKey('live-more-${app.exe}'),
+                  items: item,
+                  label: title,
+                  onOpenGroup: onOpenGroup,
+                  menuOnly: true,
+                )
+              else
+                const SizedBox(width: 40),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -530,7 +501,7 @@ class _ConnRow extends ConsumerWidget {
           const SizedBox(width: 12),
           SizedBox(
             width: 120,
-            child: Align(alignment: Alignment.centerLeft, child: DestPill(conn.dest)),
+            child: Align(alignment: Alignment.centerLeft, child: _DestText(conn.dest)),
           ),
           more,
         ],
@@ -547,7 +518,7 @@ class _ConnRow extends ConsumerWidget {
           ),
           why,
           const SizedBox(height: 4),
-          Row(children: [DestPill(conn.dest), const SizedBox(width: 10), bytes]),
+          Row(children: [_DestText(conn.dest), const SizedBox(width: 10), bytes]),
         ],
       );
     }
@@ -557,7 +528,7 @@ class _ConnRow extends ConsumerWidget {
         margin: const EdgeInsets.only(left: 34),
         padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
         decoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: RescueColors.line2)),
+          border: Border(bottom: BorderSide(color: RescueColors.line, width: 0.5)),
         ),
         child: content,
       ),
@@ -630,48 +601,6 @@ class GroupMenuItem extends ConsumerWidget {
   }
 }
 
-/// Заголовок раздела в режиме «По группам».
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({super.key, required this.group, required this.onOpenGroup});
-
-  final String? group;
-  final ValueChanged<String> onOpenGroup;
-
-  @override
-  Widget build(BuildContext context) {
-    final g = group;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
-      child: Row(
-        children: [
-          Flexible(
-            child: Semantics(
-              header: true,
-              child: Text(
-                (g ?? 'Без группы').toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.1,
-                  color: RescueColors.subOnDeep,
-                ),
-              ),
-            ),
-          ),
-          if (g != null)
-            TextButton(
-              onPressed: () => onOpenGroup(g),
-              style: TextButton.styleFrom(foregroundColor: RescueColors.accent),
-              child: const Text('открыть группу', style: TextStyle(fontSize: 12)),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Tile extends StatelessWidget {
   const _Tile({required this.letter});
 
@@ -679,8 +608,8 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     alignment: Alignment.center,
     decoration: BoxDecoration(color: RescueColors.line, borderRadius: BorderRadius.circular(10)),
     child: Text(
@@ -698,8 +627,7 @@ class _Empty extends StatelessWidget {
   final (String, VoidCallback)? action;
 
   @override
-  Widget build(BuildContext context) => RescueCard.deep(
-    radius: 16,
+  Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(24),
     child: Column(
       mainAxisSize: MainAxisSize.min,

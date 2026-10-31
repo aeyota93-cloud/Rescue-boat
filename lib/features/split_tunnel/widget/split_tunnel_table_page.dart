@@ -110,15 +110,17 @@ class SplitTunnelTablePage extends HookConsumerWidget {
       ],
       value: view.value,
       onChanged: (v) => view.value = v,
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      child: _SearchRow(
-        controller: search,
-        onChanged: (v) => query.value = v.trim(),
-        hint: switch (view.value) {
-          _View.live => 'Что идёт прямо сейчас: группа, реальный сервер и почему',
-          _View.groups => 'Переложите карточку в нужную колонку или выберите путь в её меню',
-        },
-      ),
+      padding: view.value == _View.live ? EdgeInsets.zero : const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      child: view.value == _View.live
+          ? const SizedBox.shrink()
+          : _SearchRow(
+              controller: search,
+              onChanged: (v) => query.value = v.trim(),
+              hint: switch (view.value) {
+                _View.live => 'Что идёт прямо сейчас: группа, реальный сервер и почему',
+                _View.groups => 'Переложите карточку в нужную колонку или выберите путь в её меню',
+              },
+            ),
     );
 
     return Scaffold(
@@ -131,6 +133,8 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               connections: connections,
               titles: titles,
               query: query.value,
+              searchController: search,
+              onQueryChanged: (v) => query.value = v.trim(),
               pinned: pinned,
               onOpenGroup: openGroupTab,
               onShowGroups: () => view.value = _View.groups,
