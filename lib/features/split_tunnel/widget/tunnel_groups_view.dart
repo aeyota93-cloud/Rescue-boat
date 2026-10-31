@@ -163,7 +163,7 @@ class TunnelGroupsView extends HookConsumerWidget {
                       Expanded(
                         child: Text(title, style: RescueText.smallSecondary, overflow: TextOverflow.ellipsis),
                       ),
-                      _Count(count, color: RescueColors.accent),
+                      Text('$count', style: const TextStyle(color: RescueColors.muted, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -261,21 +261,6 @@ SplitRef _ref(TunnelEntry e) => (kind: e.kind, value: e.value);
 String _key(TunnelEntry e) => '${e.kind.name}|${e.value}';
 String _placeKey(SplitPlace place) => place.server ?? place.target?.name ?? 'auto';
 
-class _Count extends StatelessWidget {
-  const _Count(this.count, {required this.color});
-  final int count;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(20)),
-    child: Text(
-      '$count',
-      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
-    ),
-  );
-}
-
 class _PlaceDrop extends ConsumerWidget {
   const _PlaceDrop({super.key, required this.place, required this.child});
   final SplitPlace place;
@@ -316,24 +301,25 @@ class _BoardColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final heading = Row(
       children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             title,
             style: const TextStyle(color: RescueColors.text, fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
-        _Count(count, color: color),
+        Text('$count', style: const TextStyle(color: RescueColors.muted, fontSize: 13)),
       ],
     );
     return _PlaceDrop(
       place: place,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: RescueColors.panel,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: RescueColors.line),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
         child: narrow
             ? ExpansionTile(
                 key: PageStorageKey('expand-${_placeKey(place)}'),
@@ -394,7 +380,7 @@ class _GroupCard extends ConsumerWidget {
       color: RescueColors.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: open ? RescueColors.accent : RescueColors.line),
+        side: open ? const BorderSide(color: RescueColors.accent) : BorderSide.none,
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -403,7 +389,6 @@ class _GroupCard extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(width: 3, color: color),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
@@ -417,12 +402,12 @@ class _GroupCard extends ConsumerWidget {
                             height: 32,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: color.withValues(alpha: .12),
+                              color: RescueColors.line,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               loose ? 'Б' : title.characters.first.toUpperCase(),
-                              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                              style: const TextStyle(color: RescueColors.text, fontWeight: FontWeight.w700),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -487,7 +472,10 @@ class _GroupCard extends ConsumerWidget {
                         runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _Count(entries.length, color: color),
+                          Text(
+                            '${entries.length} ${pluralRu(entries.length, 'запись', 'записи', 'записей')}',
+                            style: const TextStyle(fontSize: 12, color: RescueColors.muted),
+                          ),
                           if (online)
                             Row(
                               mainAxisSize: MainAxisSize.min,
