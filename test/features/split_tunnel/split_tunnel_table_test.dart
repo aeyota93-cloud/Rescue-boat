@@ -124,6 +124,14 @@ void main() {
 
   Future<void> openTab(WidgetTester tester, int i) => tap(tester, find.byKey(ValueKey('folder-tab-$i')));
 
+  Finder card(String name, String place) => find.byKey(ValueKey('group-card-$name-$place'));
+
+  Future<void> moveCard(WidgetTester tester, String name, String place, String destination) async {
+    await tap(tester, find.descendant(of: card(name, place), matching: find.byType(IconButton)));
+    await tap(tester, find.widgetWithText(SubmenuButton, 'Переложить в'));
+    await tapMenu(tester, destination);
+  }
+
   Future<void> nameGroup(WidgetTester tester, String name) async {
     await tester.enterText(find.byKey(const ValueKey('group-name')), name);
     await tester.tap(find.text('Готово'));
@@ -304,14 +312,15 @@ void main() {
       expectNoLayoutErrors(tester);
 
       await openTab(tester, 1);
-      expect(find.byKey(const ValueKey('group-card-Игры и лаунчеры')), findsOneWidget);
+      expect(find.byKey(const ValueKey('group-card-Игры и лаунчеры-bypass')), findsOneWidget);
       expect(
         find.byTooltip('Соединений, которые не удались за сутки'),
         findsWidgets,
         reason: 'у «Общения» и «Без группы»',
       );
-      expect(find.byKey(const ValueKey('group-card-')), findsOneWidget, reason: 'карточка «Без группы»');
-      await tap(tester, find.byKey(const ValueKey('group-open-Общение')));
+      expect(find.byKey(const ValueKey('group-card--via')), findsOneWidget, reason: 'карточка «Без группы»');
+      expect(find.byKey(const ValueKey('group-card--bypass')), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('group-card-Общение-NL игры')));
       expect(find.text('Группа «Общение»'), findsOneWidget);
       expect(find.text('Discord'), findsWidgets);
       expectNoLayoutErrors(tester);
@@ -391,12 +400,12 @@ void main() {
     expect(find.textContaining('VPN выключен'), findsOneWidget);
     await tapText(tester, 'Открыть все правила');
     expect(find.text('Все правила'), findsOneWidget);
-    expect(find.byKey(const ValueKey('group-card-')), findsOneWidget);
+    expect(card('', 'bypass'), findsOneWidget);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });
 
-  testWidgets('«Все правила» по программам: все записи одним списком по алфавиту, с поиском', (tester) async {
+  testWidgets('поиск заменяет доску списком записей по алфавиту', (tester) async {
     writeState(
       const SplitTunnel(
         bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
@@ -406,10 +415,11 @@ void main() {
     final container = await start(tester);
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     await openTab(tester, 1);
-    expect(find.byKey(const ValueKey('rules-mode')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rules-mode')), findsNothing);
     expect(find.byKey(const ValueKey('entry-claude.ai')), findsNothing, reason: 'по группам — карточки');
 
-    await tapText(tester, 'По программам');
+    await tester.enterText(find.byType(TextField).first, '.');
+    await tester.pumpAndSettle();
     final ys = [
       for (final v in ['claude.ai', 'mwlogin.net', 'ssh.exe']) tester.getTopLeft(find.byKey(ValueKey('entry-$v'))).dy,
     ];
@@ -422,13 +432,12 @@ void main() {
 
     await tester.enterText(find.byType(TextField).first, '');
     await tester.pumpAndSettle();
-    await tapText(tester, 'По группам');
-    expect(find.byKey(const ValueKey('group-card-')), findsWidgets);
+    expect(find.byKey(const ValueKey('group-card--via')), findsWidgets);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });
 
-  testWidgets('«Группы»: путь всей группе и сервер, «Выровнять», записи по одной, перенос, отметки', (tester) async {
+  testWidgets('доска: перемещение карточки, частичные карточки, записи, перенос и отметки', (tester) async {
     writeState(
       const SplitTunnel(
         bypass: SplitList(apps: ['ssh.exe'], domains: ['mwlogin.net']),
@@ -452,32 +461,32 @@ void main() {
     SplitTunnel state() => container.read(splitTunnelProvider);
     await openTab(tester, 1);
 
-    final card = find.byKey(const ValueKey('group-card-Работа и дом'));
-    Finder inCard(Finder f) => find.descendant(of: card, matching: f);
-
-    // «VPN» у группы — всем; строка «Сервер» — за «Запасной 2».
-    await tap(tester, inCard(find.text('VPN')));
+    await moveCard(tester, 'Работа и дом', 'bypass', 'Через VPN');
     expect(state().via.items, hasLength(2));
-    await tap(tester, find.byKey(const ValueKey('group-server-Работа и дом')));
-    await tapMenu(tester, 'Запасной 2');
+    await moveCard(tester, 'Работа и дом', 'via', 'Запасной 2');
     expect(state().servers['NL игры']!.items, hasLength(3));
+    expect(find.text('Любой сервер'), findsOneWidget);
+    expect(find.text('Запасной 2'), findsOneWidget);
 
-    // Запись по одной: SSH мимо — у группы «Разные пути», «Выровнять» ставит всем.
-    await tap(tester, find.byKey(const ValueKey('group-open-Работа и дом')));
+    // Одна запись меняет путь — группа разделяется на две частичные карточки.
+    await tap(tester, card('Работа и дом', 'NL игры'));
     await tap(tester, find.byTooltip('Куда направить: SSH'));
     await tapMenu(tester, 'Мимо VPN');
-    expect(inCard(find.textContaining('Разные пути')), findsOneWidget);
-    expect(find.textContaining('не как у группы'), findsOneWidget);
-    await tap(tester, inCard(find.text('Выровнять')));
-    await tapMenu(tester, 'Мимо VPN');
-    expect(state().bypass.items, hasLength(2));
+    expect(find.text('Работа и дом · 1 из 2'), findsNWidgets(2));
+    expect(find.textContaining('Разные пути'), findsNothing);
+    expect(find.text('Выровнять'), findsNothing);
+    expect(find.byKey(const ValueKey('entry-ssh.exe')), findsNothing, reason: 'открыто содержимое серверной карточки');
+    await moveCard(tester, 'Работа и дом', 'bypass', 'Авто');
+    expect(state().placeOf(SplitKind.app, 'ssh.exe'), autoPlace);
+    expect(state().serverOf(SplitKind.domain, 'mwlogin.net'), 'NL игры');
 
     // Перенос одной записи в другую группу.
     await tap(tester, find.byKey(const ValueKey('group-btn-mwlogin.net')));
     await tapMenu(tester, 'Общение · 1');
     expect(state().groupOf(SplitKind.domain, 'mwlogin.net'), 'Общение');
 
-    // Отметить все (остался SSH) → в новую группу. Старая исчезла, панель закрылась.
+    // Отметить все в другой частичной карточке (SSH) → в новую группу.
+    await tap(tester, card('Работа и дом', 'auto'));
     await tap(tester, find.byKey(const ValueKey('select-all')));
     expect(find.byKey(const ValueKey('selection-bar')), findsOneWidget);
     await tap(tester, find.byKey(const ValueKey('selection-group')));
@@ -494,8 +503,140 @@ void main() {
     await tap(tester, find.byTooltip('Группа Мой дом: ещё'));
     await tapMenu(tester, 'Удалить группу (записи останутся)');
     expect(state().groupOf(SplitKind.app, 'ssh.exe'), isNull);
-    expect(state().bypass.apps, ['ssh.exe']);
-    expect(find.byKey(const ValueKey('group-card-')), findsOneWidget);
+    expect(state().placeOf(SplitKind.app, 'ssh.exe'), autoPlace);
+    expect(state().group('Мой дом'), isNull);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  testWidgets('счётчики, четыре частичные карточки, активность и ошибки своего места', (tester) async {
+    writeState(
+      const SplitTunnel(
+        bypass: SplitList(apps: ['Discord.exe'], domains: ['kinopoisk.ru']),
+        via: SplitList(apps: ['Telegram.exe'], domains: ['lone.example']),
+        servers: {
+          'NL игры': SplitList(apps: ['ssh.exe']),
+        },
+        groups: [
+          SplitGroup(
+            name: 'Общение',
+            items: SplitList(apps: ['Discord.exe', 'Telegram.exe', 'ssh.exe'], domains: ['auto.example']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(
+      tester,
+      connections: [conn('Discord.exe'), conn('Telegram.exe', closed: true)],
+      groups: errors,
+    );
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+    await openTab(tester, 1);
+    for (final (place, count) in [('bypass', '2'), ('auto', '1'), ('via', '3')]) {
+      expect(find.descendant(of: find.byKey(ValueKey('column-$place')), matching: find.text(count)), findsWidgets);
+    }
+    expect(find.text('Общение · 1 из 4'), findsNWidgets(4));
+    expect(find.text('сейчас'), findsOneWidget, reason: 'закрытое соединение не означает «сейчас»');
+    expect(find.descendant(of: card('Общение', 'bypass'), matching: find.text('сейчас')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: card('Общение', 'bypass'),
+        matching: find.byTooltip('Соединений, которые не удались за сутки'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card('Общение', 'via'), matching: find.byTooltip('Соединений, которые не удались за сутки')),
+      findsNothing,
+    );
+    expect(card('', 'bypass'), findsOneWidget);
+    expect(card('', 'via'), findsOneWidget);
+    await tap(tester, card('Общение', 'auto'));
+    expect(find.byKey(const ValueKey('entry-auto.example')), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-Discord.exe')), findsNothing);
+    expectNoLayoutErrors(tester);
+    await closePage(tester, container);
+  });
+
+  for (final width in [719.0, 720.0]) {
+    testWidgets('граница $width px: колонки и сворачивание без переполнений', (tester) async {
+      writeState(
+        const SplitTunnel(
+          bypass: SplitList(domains: ['a.example']),
+          via: SplitList(domains: ['b.example']),
+          groups: [
+            SplitGroup(
+              name: 'Группа с очень длинным названием для узкого окна',
+              items: SplitList(domains: ['a.example', 'auto.example']),
+            ),
+          ],
+        ),
+      );
+      final container = await start(tester, connections: const []);
+      await pumpPage(tester, container, const SplitTunnelTablePage(), size: Size(width, 900));
+      await openTab(tester, 1);
+      final bypass = find.byKey(const ValueKey('column-bypass'));
+      final auto = find.byKey(const ValueKey('column-auto'));
+      final vpn = find.byKey(const ValueKey('column-via'));
+      if (width < 720) {
+        expect(tester.getTopLeft(bypass).dy, lessThan(tester.getTopLeft(auto).dy));
+        expect(tester.getTopLeft(auto).dy, lessThan(tester.getTopLeft(vpn).dy));
+        await tap(tester, find.descendant(of: bypass, matching: find.text('Мимо VPN')));
+        expect(card('Группа с очень длинным названием для узкого окна', 'bypass'), findsNothing);
+        await tap(tester, find.descendant(of: bypass, matching: find.text('Мимо VPN')));
+        expect(card('Группа с очень длинным названием для узкого окна', 'bypass'), findsOneWidget);
+      } else {
+        expect(tester.getTopLeft(bypass).dy, tester.getTopLeft(auto).dy);
+        expect(tester.getTopLeft(auto).dx, lessThan(tester.getTopLeft(vpn).dx));
+        expect(find.byType(ExpansionTile), findsNothing);
+      }
+      expectNoLayoutErrors(tester);
+      await closePage(tester, container);
+    });
+  }
+
+  testWidgets('перетаскивание карточки между колонками и на конкретный сервер', (tester) async {
+    writeState(
+      const SplitTunnel(
+        via: SplitList(domains: ['drag.example']),
+        groups: [
+          SplitGroup(
+            name: 'Сайты',
+            items: SplitList(domains: ['drag.example']),
+          ),
+        ],
+      ),
+    );
+    final container = await start(tester, connections: const []);
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 1000));
+    await openTab(tester, 1);
+    Future<void> drag(String from, Finder to) async {
+      final gesture = await tester.startGesture(tester.getCenter(card('Сайты', from)));
+      await gesture.moveBy(const Offset(0, 25));
+      await tester.pumpAndSettle();
+      await gesture.moveTo(tester.getTopLeft(to) + const Offset(40, 25));
+      await tester.pumpAndSettle();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await drag('via', find.byKey(const ValueKey('column-bypass')));
+    expect(container.read(splitTunnelProvider).bypass.domains, ['drag.example']);
+    await drag('bypass', find.byKey(const ValueKey('drop-NL игры')));
+    expect(container.read(splitTunnelProvider).serverOf(SplitKind.domain, 'drag.example'), 'NL игры');
+    expect(card('Сайты', 'NL игры'), findsOneWidget);
+    await drag('NL игры', find.byKey(const ValueKey('column-auto')));
+    expect(container.read(splitTunnelProvider).placeOf(SplitKind.domain, 'drag.example'), autoPlace);
+    expect(card('Сайты', 'auto'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('drop-NL')),
+      findsNothing,
+      reason: 'пустые серверы видны только во время переноса',
+    );
+    final serverRules =
+        jsonDecode(File('${dir.path}/split/${viaServerFile(serverKey('NL игры'))}').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(serverRules['rules'], isEmpty);
     expectNoLayoutErrors(tester);
     await closePage(tester, container);
   });
@@ -537,21 +678,19 @@ void main() {
 
     // «VPN» у группы — все три записи «через VPN».
     await openTab(tester, 1);
-    final card = find.byKey(const ValueKey('group-card-Работа и дом'));
-    await tap(tester, find.descendant(of: card, matching: find.text('VPN')));
+    await moveCard(tester, 'Работа и дом', 'bypass', 'Через VPN');
     expect(rules('via-vpn.json'), {app, site, ip});
     expect(rules('via-domains.json'), {site});
     expect(rules('bypass-vpn.json'), isEmpty);
 
     // Сервер группы — «Запасной 2»: свой набор у сервера (и общий «через VPN» на случай, если
     // сервер пропадёт из подписки).
-    await tap(tester, find.byKey(const ValueKey('group-server-Работа и дом')));
-    await tapMenu(tester, 'Запасной 2');
+    await moveCard(tester, 'Работа и дом', 'via', 'Запасной 2');
     expect(rules(games), {app, site, ip});
     expect(rules('via-vpn.json'), {app, site, ip});
 
     // По одной: программа — мимо, сайт — «Авто» (ни в одном наборе), IP остаётся за сервером.
-    await tap(tester, find.byKey(const ValueKey('group-open-Работа и дом')));
+    await tap(tester, card('Работа и дом', 'NL игры'));
     await tap(tester, find.byTooltip('Куда направить: SSH'));
     await tapMenu(tester, 'Мимо VPN');
     await tap(tester, find.byTooltip('Куда направить: mwlogin.net'));
@@ -592,7 +731,8 @@ void main() {
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     SplitTunnel state() => container.read(splitTunnelProvider);
 
-    await tapText(tester, '+ Добавить');
+    await tapText(tester, 'Добавить');
+    await tapMenu(tester, 'Программа или сайт…');
     await tester.enterText(find.byKey(const ValueKey('add-text')), 'youtube.com\nTelegram.exe');
     await tester.pumpAndSettle();
     expect(find.text('2 записи'), findsOneWidget);
@@ -602,7 +742,8 @@ void main() {
     expect(state().servers['NL игры']!.domains, ['youtube.com']);
     expect(state().groupOf(SplitKind.app, 'Telegram.exe'), 'Общение');
 
-    await tapText(tester, '+ Добавить');
+    await tapText(tester, 'Добавить');
+    await tapMenu(tester, 'Программа или сайт…');
     await tester.enterText(find.byKey(const ValueKey('add-text')), 'https://example.org/page');
     await tester.pumpAndSettle();
     await tapText(tester, '+ Новая…');
@@ -613,7 +754,8 @@ void main() {
     expect(state().groupOf(SplitKind.domain, 'example.org'), 'Сайты');
 
     // Без группы и с «Авто» — ничего не изменится: кнопка неактивна.
-    await tapText(tester, '+ Добавить');
+    await tapText(tester, 'Добавить');
+    await tapMenu(tester, 'Программа или сайт…');
     await tester.enterText(find.byKey(const ValueKey('add-text')), 'abc.com');
     await tester.pumpAndSettle();
     expect(find.textContaining('ничего не изменит'), findsOneWidget);
@@ -643,14 +785,16 @@ void main() {
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     SplitTunnel state() => container.read(splitTunnelProvider);
 
-    await tapText(tester, 'Из запущенных');
+    await tapText(tester, 'Добавить');
+    await tapMenu(tester, 'Из запущенных…');
     await tapText(tester, 'OBS Studio');
     await tapText(tester, 'Служебное');
     await tap(tester, find.byKey(const ValueKey('add-submit')));
     expect(state().groupOf(SplitKind.app, 'obs64.exe'), 'Служебное');
     expect(state().bypass.apps, contains('obs64.exe'), reason: 'как у группы — мимо');
 
-    await tapText(tester, 'Новая группа');
+    await tapText(tester, 'Добавить');
+    await tapMenu(tester, 'Новая группа…');
     expect(tester.widget<FilledButton>(find.byKey(const ValueKey('new-group-create'))).onPressed, isNull);
     await tester.enterText(find.byKey(const ValueKey('new-group-name')), 'Работа и дом');
     await tap(tester, find.byKey(const ValueKey('new-group-pick-ssh.exe')));
@@ -683,7 +827,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('entry-kinopoisk.ru')), findsOneWidget);
     expect(find.byKey(const ValueKey('entry-youtube.com')), findsNothing);
-    expect(find.byKey(const ValueKey('group-card-Видео')), findsNothing);
+    expect(find.byKey(const ValueKey('group-card-Видео-via')), findsNothing);
     await tester.enterText(find.byType(TextField), 'нет такого');
     await tester.pumpAndSettle();
     expect(find.text('Ничего не нашлось.'), findsOneWidget);
@@ -695,7 +839,7 @@ void main() {
     final container = await start(tester, connections: const []);
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     await openTab(tester, 1);
-    await tap(tester, find.byKey(const ValueKey('group-open-')));
+    await tap(tester, find.byKey(const ValueKey('group-card--via')));
     expect(find.text('Без группы'), findsWidgets);
     expect(find.byKey(const ValueKey('entry-site-0.example.com')), findsOneWidget);
     expect(find.byKey(const ValueKey('entry-site-199.example.com')), findsNothing);
@@ -713,7 +857,7 @@ void main() {
     );
     await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
     await openTab(tester, 1);
-    await tap(tester, find.byKey(const ValueKey('group-open-')));
+    await tap(tester, find.byKey(const ValueKey('group-card--bypass')));
     await tap(tester, find.byTooltip('Куда направить: youtube.com'));
     expect(find.text('Основной'), findsNothing);
     await tapMenu(tester, 'Через VPN');

@@ -11,23 +11,17 @@ import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dar
 import 'package:hiddify/features/split_tunnel/widget/place_menu.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Имя «группы» записей без группы на этой вкладке.
 const looseGroup = '';
+const _panelWidth = 420.0;
+typedef _Bucket = ({String name, SplitPlace place});
 
-/// С этой ширины открытая группа — панелью справа от карточек; уже — вместо карточек.
-const _sidePanelFrom = 1000.0;
-const _panelWidth = 460.0;
-const _cardWidth = 280.0;
+/// Перенос карточки меняет путь, перенос строки — её группу.
+class _CardDrag {
+  const _CardDrag(this.items);
+  final List<SplitRef> items;
+}
 
-/// Как разложить «Все правила»: карточками групп или одним списком записей.
-enum _RulesMode { apps, groups }
-
-/// Шлюпка: вкладка «Все правила» (docs/redesign/tunnel-v3.md), переключатель «По программам /
-/// По группам» — как на «Сейчас в сети».
-/// По группам: карточка группы — путь всем записям сразу («Авто / Мимо / VPN», сервер — ▾),
-/// «Выровнять» при разных путях, «Открыть» — записи сбоку: у каждой свой путь и своя группа,
-/// можно отметить несколько или перетащить на карточку.
-/// По программам (и при поиске): все записи одним списком по алфавиту, у каждой — путь и группа.
+/// «Все правила»: доска по местам; при поиске — список записей.
 class TunnelGroupsView extends HookConsumerWidget {
   const TunnelGroupsView({
     super.key,
@@ -37,85 +31,46 @@ class TunnelGroupsView extends HookConsumerWidget {
     required this.pinned,
     required this.openGroup,
   });
-
-  /// Записи списков и групп (строки [buildTunnelRows]) с числом соединений и ошибок.
   final List<TunnelEntry> entries;
   final Map<String, String> titles;
   final String query;
   final bool pinned;
 
-  /// Открытая группа (её записи сбоку); [looseGroup] — «Без группы»; null — ни одна.
+  /// Переход с «Сейчас в сети» открывает всю группу, карточка — своё место.
   final ValueNotifier<String?> openGroup;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final split = ref.watch(splitTunnelProvider);
+    final servers = ref.watch(rescueServersProvider);
     final selected = useState(const <String>{});
-    final mode = useState(_RulesMode.groups);
+    final bucket = useState<_Bucket?>(null);
+    final dragging = useState(false);
     useEffect(() {
       selected.value = const {};
-      // Группу открыли с «Сейчас в сети» — показываем её карточкой и записи сбоку.
-      if (openGroup.value != null) mode.value = _RulesMode.groups;
+      if (bucket.value?.name != openGroup.value) bucket.value = null;
       return null;
     }, [openGroup.value]);
-
-    Widget withSwitch(Widget body) => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: pinned ? MainAxisSize.max : MainAxisSize.min,
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
-            child: PillSegmented<_RulesMode>(
-              key: const ValueKey('rules-mode'),
-              segments: const [
-                PillSegment(value: _RulesMode.apps, label: 'По программам'),
-                PillSegment(value: _RulesMode.groups, label: 'По группам'),
-              ],
-              value: mode.value,
-              onChanged: (m) {
-                mode.value = m;
-                if (m == _RulesMode.apps) openGroup.value = null;
-              },
-              semanticLabel: 'Как разложить',
-              expand: true,
-              fontSize: 12,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        if (pinned) Expanded(child: body) else body,
-      ],
-    );
-
-    // Программы в сети, которых нет в списках и группах, живут на «Сейчас в сети».
     final listed = entries.where((e) => e.target != null || e.group != null).toList();
     final q = query.trim().toLowerCase();
-    if (q.isNotEmpty || mode.value == _RulesMode.apps) {
+    if (q.isNotEmpty) {
       final found =
-          listed
-              .where(
-                (e) => q.isEmpty || e.value.toLowerCase().contains(q) || _title(e, titles).toLowerCase().contains(q),
-              )
-              .toList()
+          listed.where((e) => e.value.toLowerCase().contains(q) || _title(e, titles).toLowerCase().contains(q)).toList()
             ..sort((a, b) => _title(a, titles).toLowerCase().compareTo(_title(b, titles).toLowerCase()));
       final rows = [
         for (final e in found) _EntryRow(key: ValueKey('entry-${e.value}'), entry: e, titles: titles, showGroup: true),
       ];
-      final list = DeepList(
+      return DeepList(
         radius: 16,
-        spacing: 0,
-        semanticLabel: q.isEmpty ? 'Все записи' : 'Найденные записи',
+        semanticLabel: 'Найденные записи',
         children: [
           if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Text(
-                q.isEmpty ? 'Правил пока нет.' : 'Ничего не нашлось.',
+                'Ничего не нашлось.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
+                style: TextStyle(fontSize: 13, color: RescueColors.subOnDeep),
               ),
             )
           else if (pinned)
@@ -126,80 +81,173 @@ class TunnelGroupsView extends HookConsumerWidget {
             ...rows,
         ],
       );
-      return withSwitch(list);
     }
-
-    final byGroup = <String, List<TunnelEntry>>{for (final g in split.groups) g.name: [], looseGroup: []};
+    final groups = <String, List<TunnelEntry>>{for (final g in split.groups) g.name: [], looseGroup: []};
+    final buckets = <_Bucket, List<TunnelEntry>>{};
     for (final e in listed) {
-      byGroup[e.group ?? looseGroup]?.add(e);
+      final name = e.group ?? looseGroup;
+      groups.putIfAbsent(name, () => []).add(e);
     }
-    byGroup.removeWhere((_, list) => list.isEmpty);
+    // Порядок групп не зависит от того, какая программа только что вышла в сеть.
+    for (final group in groups.entries) {
+      for (final e in group.value) {
+        final key = (name: group.key, place: split.placeOf(e.kind, e.value));
+        buckets.putIfAbsent(key, () => []).add(e);
+      }
+    }
     final open = openGroup.value;
-    if (open != null && !byGroup.containsKey(open)) {
-      // Группу удалили или в ней не осталось записей — закрываем.
-      WidgetsBinding.instance.addPostFrameCallback((_) => openGroup.value = null);
+    final opened = open == null
+        ? null
+        : bucket.value == null
+        ? groups[open]
+        : buckets[bucket.value];
+    if (open != null && (opened == null || opened.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (openGroup.value == open) openGroup.value = null;
+      });
+    }
+    void close() {
+      openGroup.value = null;
+      bucket.value = null;
     }
 
-    return withSwitch(
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final side = constraints.maxWidth >= _sidePanelFrom;
-          final panelOpen = open != null && byGroup.containsKey(open);
-          // В закреплённом виде справа от сетки — место под полосу прокрутки (PinnedScroll).
-          final gridWidth =
-              (side && panelOpen ? constraints.maxWidth - _panelWidth - 16 : constraints.maxWidth) - (pinned ? 12 : 0);
-          final cols = ((gridWidth + 12) / (_cardWidth + 12)).floor().clamp(1, 6);
-          final cardWidth = (gridWidth - 12 * (cols - 1)) / cols;
-          final grid = Wrap(
-            spacing: 12,
-            runSpacing: 12,
+    Widget cards(SplitPlace place, Color color) {
+      final here = buckets.entries.where((b) => b.key.place == place);
+      return Column(
+        key: ValueKey('cards-${_placeKey(place)}'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (here.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Text('Пока пусто', textAlign: TextAlign.center, style: RescueText.smallSecondary),
+            ),
+          for (final b in here)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _GroupCard(
+                key: ValueKey('group-card-${b.key.name}-${_placeKey(place)}'),
+                name: b.key.name,
+                entries: b.value,
+                total: groups[b.key.name]!.length,
+                titles: titles,
+                color: color,
+                open: open == b.key.name && (bucket.value == null || bucket.value == b.key),
+                onOpen: () {
+                  selected.value = const {};
+                  bucket.value = b.key;
+                  openGroup.value = b.key.name;
+                },
+                onDrag: (v) => dragging.value = v,
+              ),
+            ),
+        ],
+      );
+    }
+
+    Widget section(SplitPlace place, String? title) {
+      final count = listed.where((e) => split.placeOf(e.kind, e.value) == place).length;
+      return _PlaceDrop(
+        key: ValueKey('drop-${_placeKey(place)}'),
+        place: place,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final MapEntry(key: name, value: list) in byGroup.entries)
-                SizedBox(
-                  width: cardWidth,
-                  child: _GroupCard(
-                    key: ValueKey('group-card-$name'),
-                    name: name,
-                    entries: list,
-                    titles: titles,
-                    open: open == name,
-                    onOpen: () => openGroup.value = open == name ? null : name,
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(title, style: RescueText.smallSecondary, overflow: TextOverflow.ellipsis),
+                      ),
+                      _Count(count, color: RescueColors.accent),
+                    ],
                   ),
                 ),
+              cards(place, RescueColors.accent),
             ],
-          );
-          final panel = panelOpen
-              ? _GroupPanel(
-                  key: ValueKey('group-panel-$open'),
-                  name: open,
-                  entries: byGroup[open]!,
-                  titles: titles,
-                  selected: selected,
-                  pinned: pinned,
-                  onClose: () => openGroup.value = null,
-                  backLabel: side ? null : 'Все группы',
-                )
-              : null;
+          ),
+        ),
+      );
+    }
 
-          if (panel != null && !side) return panel;
-          if (pinned) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: PinnedScroll(child: grid)),
-                if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: grid),
-              if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
-            ],
-          );
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 720;
+        final side = constraints.maxWidth >= 1280;
+        final panel = opened != null && opened.isNotEmpty
+            ? _GroupPanel(
+                key: ValueKey('group-panel-$open'),
+                name: open!,
+                entries: opened,
+                titles: titles,
+                selected: selected,
+                pinned: pinned,
+                onClose: close,
+                backLabel: side ? null : 'Все правила',
+              )
+            : null;
+        if (panel != null && !side) return panel;
+        final subdivide = listed.any((e) => e.server != null) || dragging.value;
+        final assigned = listed.map((e) => e.server).whereType<String>().toSet();
+        final tags = <String>{
+          if (servers != null)
+            for (final s in servers.servers)
+              if (dragging.value || assigned.contains(s.tag)) s.tag,
+          ...(assigned.toList()..sort()),
+        };
+        final columns = [
+          for (final (place, title, color) in [
+            (bypassPlace, 'Мимо VPN', RescueColors.info),
+            (autoPlace, 'Авто', RescueColors.muted),
+            (viaPlace, 'Через VPN', RescueColors.accent),
+          ])
+            _BoardColumn(
+              key: ValueKey('column-${_placeKey(place)}'),
+              title: title,
+              place: place,
+              color: color,
+              narrow: narrow,
+              count: listed.where((e) => e.target == place.target).length,
+              child: place == viaPlace
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        section(viaPlace, subdivide ? 'Любой сервер' : null),
+                        for (final tag in tags)
+                          section((target: SplitTarget.via, server: tag), servers?.byTag(tag)?.name ?? tag),
+                      ],
+                    )
+                  : cards(place, color),
+            ),
+        ];
+        final board = narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final column in columns) Padding(padding: const EdgeInsets.only(bottom: 12), child: column),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < columns.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Expanded(child: columns[i]),
+                  ],
+                ],
+              );
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: pinned ? PinnedScroll(child: board) : board),
+            if (panel != null) ...[const SizedBox(width: 16), SizedBox(width: _panelWidth, child: panel)],
+          ],
+        );
+      },
     );
   }
 }
@@ -209,27 +257,128 @@ String _title(TunnelEntry e, Map<String, String> titles) => switch (e.kind) {
   SplitKind.ip => e.value.replaceFirst(RegExp(r'/(32|128)$'), ''),
   SplitKind.domain => e.value,
 };
-
 SplitRef _ref(TunnelEntry e) => (kind: e.kind, value: e.value);
 String _key(TunnelEntry e) => '${e.kind.name}|${e.value}';
+String _placeKey(SplitPlace place) => place.server ?? place.target?.name ?? 'auto';
 
-/// Карточка группы.
+class _Count extends StatelessWidget {
+  const _Count(this.count, {required this.color});
+  final int count;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(20)),
+    child: Text(
+      '$count',
+      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+    ),
+  );
+}
+
+class _PlaceDrop extends ConsumerWidget {
+  const _PlaceDrop({super.key, required this.place, required this.child});
+  final SplitPlace place;
+  final Widget child;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => DragTarget<_CardDrag>(
+    onWillAcceptWithDetails: (_) => true,
+    onAcceptWithDetails: (d) => ref.read(splitTunnelProvider.notifier).setPlace(d.data.items, place),
+    builder: (context, candidates, _) => AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      decoration: BoxDecoration(
+        color: candidates.isEmpty ? Colors.transparent : RescueColors.accentTint,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: candidates.isEmpty ? Colors.transparent : RescueColors.accent),
+      ),
+      child: child,
+    ),
+  );
+}
+
+class _BoardColumn extends StatelessWidget {
+  const _BoardColumn({
+    super.key,
+    required this.title,
+    required this.place,
+    required this.count,
+    required this.color,
+    required this.narrow,
+    required this.child,
+  });
+  final String title;
+  final SplitPlace place;
+  final int count;
+  final Color color;
+  final bool narrow;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    final heading = Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(color: RescueColors.text, fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ),
+        _Count(count, color: color),
+      ],
+    );
+    return _PlaceDrop(
+      place: place,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: RescueColors.panel,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: RescueColors.line),
+        ),
+        child: narrow
+            ? ExpansionTile(
+                key: PageStorageKey('expand-${_placeKey(place)}'),
+                initiallyExpanded: true,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: const Border(),
+                collapsedShape: const Border(),
+                title: heading,
+                children: [child],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+                    child: Semantics(header: true, child: heading),
+                  ),
+                  child,
+                ],
+              ),
+      ),
+    );
+  }
+}
+
 class _GroupCard extends ConsumerWidget {
   const _GroupCard({
     super.key,
     required this.name,
     required this.entries,
+    required this.total,
     required this.titles,
+    required this.color,
     required this.open,
     required this.onOpen,
+    required this.onDrag,
   });
-
   final String name;
   final List<TunnelEntry> entries;
+  final int total;
   final Map<String, String> titles;
+  final Color color;
   final bool open;
   final VoidCallback onOpen;
-
+  final ValueChanged<bool> onDrag;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final split = ref.watch(splitTunnelProvider);
@@ -237,224 +386,163 @@ class _GroupCard extends ConsumerWidget {
     final notifier = ref.read(splitTunnelProvider.notifier);
     final loose = name == looseGroup;
     final title = loose ? 'Без группы' : name;
+    final label = !loose && entries.length != total ? '$title · ${entries.length} из $total' : title;
     final items = [for (final e in entries) _ref(e)];
-    final place = split.commonPlace(items);
-    final choice = switch (place) {
-      null => null,
-      (target: null, server: _) => RouteChoice.auto,
-      (target: SplitTarget.bypass, server: _) => RouteChoice.bypass,
-      (target: SplitTarget.via, server: _) => RouteChoice.vpn,
-    };
-    final several = servers != null && servers.several;
-    final known = entries.where((e) => e.connections != null);
-    final conns = known.isEmpty ? null : known.fold(0, (s, e) => s + e.connections!);
     final errors = entries.fold(0, (s, e) => s + e.errors);
-    final count = '${entries.length} ${pluralRu(entries.length, 'запись', 'записи', 'записей')}';
-
-    final header = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: RescueColors.card, borderRadius: BorderRadius.circular(11)),
-          child: loose
-              ? const Icon(Icons.more_horiz_rounded, size: 18, color: RescueColors.accent)
-              : Text(
-                  title.characters.first.toUpperCase(),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: RescueColors.accent),
-                ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final online = entries.any((e) => e.online);
+    final card = Material(
+      color: RescueColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: open ? RescueColors.accent : RescueColors.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
-              ),
-              Text(count, style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep)),
-            ],
-          ),
-        ),
-        if (!loose)
-          MenuAnchor(
-            menuChildren: [
-              MenuItemButton(
-                onPressed: () async {
-                  final n = await showGroupNameDialog(context, title: 'Переименовать группу', initial: name);
-                  if (n != null) notifier.renameGroup(name, n);
-                },
-                child: const Text('Переименовать…'),
-              ),
-              MenuItemButton(
-                onPressed: () => notifier.deleteGroup(name),
-                child: const Text('Удалить группу (записи останутся)'),
-              ),
-            ],
-            builder: (context, controller, _) => IconButton(
-              tooltip: 'Группа $title: ещё',
-              onPressed: () => controller.isOpen ? controller.close() : controller.open(),
-              style: IconButton.styleFrom(minimumSize: const Size(36, 36), foregroundColor: RescueColors.subOnDeep),
-              icon: const Icon(Icons.more_horiz_rounded, size: 20),
-            ),
-          ),
-      ],
-    );
-    final preview = Text(
-      entries.take(4).map((e) => _title(e, titles)).join(', ') + (entries.length > 4 ? '…' : ''),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
-    );
-    final route = RouteSwitch(
-      width: null,
-      value: choice,
-      semanticLabel: 'Куда идёт группа $title',
-      onChanged: (c) => notifier.setPlace(items, switch (c) {
-        RouteChoice.auto => autoPlace,
-        RouteChoice.bypass => bypassPlace,
-        RouteChoice.vpn => viaPlace,
-      }),
-    );
-    // Все через VPN и серверов несколько — какой: «Любой» (выберет Шлюпка) или конкретный.
-    final pinnedTag = place?.server;
-    final server = choice == RouteChoice.vpn && several
-        ? Row(
-            children: [
-              const Text('Сервер:', style: TextStyle(fontSize: 12, color: RescueColors.subOnDeep)),
-              const SizedBox(width: 4),
-              MenuAnchor(
-                menuChildren: [
-                  for (final (p, label) in <(SplitPlace, String)>[
-                    (viaPlace, 'Любой — выберет Шлюпка'),
-                    for (final s in servers.servers) ((target: SplitTarget.via, server: s.tag), s.name),
-                  ])
-                    MenuItemButton(
-                      leadingIcon: place == p
-                          ? const Icon(Icons.check_rounded, size: 18, color: RescueColors.accent)
-                          : const SizedBox(width: 18),
-                      onPressed: () => notifier.setPlace(items, p),
-                      child: Text(label),
-                    ),
-                ],
-                builder: (context, controller, _) => TextButton(
-                  key: ValueKey('group-server-$name'),
-                  onPressed: () => controller.isOpen ? controller.close() : controller.open(),
-                  style: TextButton.styleFrom(
-                    foregroundColor: RescueColors.accent,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(44, 32),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+              Container(width: 3, color: color),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        pinnedTag == null ? 'Любой' : (servers.byTag(pinnedTag)?.name ?? 'Любой'),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      Row(
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: .12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              loose ? 'Б' : title.characters.first.toUpperCase(),
+                              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: RescueColors.text,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          MenuAnchor(
+                            menuChildren: [
+                              SubmenuButton(
+                                menuChildren: placeMenuItems(ref: ref, split: split, servers: servers, items: items),
+                                child: const Text('Переложить в'),
+                              ),
+                              if (!loose) ...[
+                                MenuItemButton(
+                                  onPressed: () async {
+                                    final n = await showGroupNameDialog(
+                                      context,
+                                      title: 'Переименовать группу',
+                                      initial: name,
+                                    );
+                                    if (n != null) notifier.renameGroup(name, n);
+                                  },
+                                  child: const Text('Переименовать…'),
+                                ),
+                                MenuItemButton(
+                                  onPressed: () => notifier.deleteGroup(name),
+                                  child: const Text('Удалить группу (записи останутся)'),
+                                ),
+                              ],
+                            ],
+                            builder: (context, controller, _) => IconButton(
+                              tooltip: 'Группа $title: ещё',
+                              onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+                              style: IconButton.styleFrom(
+                                minimumSize: const Size(40, 40),
+                                foregroundColor: RescueColors.muted,
+                              ),
+                              icon: const Icon(Icons.more_horiz_rounded, size: 20),
+                            ),
+                          ),
+                        ],
                       ),
-                      const Icon(Icons.expand_more_rounded, size: 16),
+                      const SizedBox(height: 8),
+                      Text(
+                        entries.take(4).map((e) => _title(e, titles)).join(', ') + (entries.length > 4 ? '…' : ''),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RescueText.smallSecondary,
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _Count(entries.length, color: color),
+                          if (online)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(color: Color(0xFF72CC98), shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 5),
+                                const Text('сейчас', style: TextStyle(fontSize: 12, color: RescueColors.muted)),
+                              ],
+                            ),
+                          FailBadge(errors),
+                        ],
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
-          )
-        : null;
-    final mixed = place == null
-        ? Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Разные пути: ${describePlaces(split, items, servers)}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: RescueColors.warn),
-                ),
-              ),
-              MenuAnchor(
-                menuChildren: placeMenuItems(ref: ref, split: split, servers: servers, items: items),
-                builder: (context, controller, _) => TextButton(
-                  onPressed: () => controller.isOpen ? controller.close() : controller.open(),
-                  style: TextButton.styleFrom(foregroundColor: RescueColors.accent),
-                  child: const Text('Выровнять'),
-                ),
-              ),
-            ],
-          )
-        : null;
-    final footer = Row(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              if (conns != null && conns > 0) ...[
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(color: RescueColors.accent, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Flexible(
-                child: Text(
-                  switch (conns) {
-                    null => '',
-                    0 => 'не в сети',
-                    final n => '$n ${pluralRu(n, 'соединение', 'соединения', 'соединений')}',
-                  },
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
-                ),
-              ),
-              Flexible(child: FailBadge(errors)),
-            ],
           ),
         ),
-        TextButton(
-          key: ValueKey('group-open-$name'),
-          onPressed: onOpen,
-          style: TextButton.styleFrom(foregroundColor: RescueColors.textOnDeep),
-          child: Text(open ? 'Закрыть' : 'Открыть'),
-        ),
-      ],
+      ),
     );
-
-    return DragTarget<List<SplitRef>>(
-      onWillAcceptWithDetails: (_) => true,
-      onAcceptWithDetails: (d) => loose ? notifier.removeFromGroup(d.data) : notifier.moveToGroup(name, d.data),
-      builder: (context, candidate, _) => Semantics(
-        container: true,
-        label: 'Группа $title, $count',
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.fromLTRB(14, 14, 8, 6),
-          decoration: BoxDecoration(
-            color: RescueColors.deep,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: candidate.isNotEmpty || open ? RescueColors.accent : RescueColors.line,
-              width: candidate.isNotEmpty ? 2 : 1,
+    return Semantics(
+      container: true,
+      label: '$label, ${entries.length} ${pluralRu(entries.length, 'запись', 'записи', 'записей')}',
+      child: Draggable<_CardDrag>(
+        data: _CardDrag(items),
+        onDragStarted: () => onDrag(true),
+        onDragEnd: (_) => onDrag(false),
+        feedback: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 220,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: RescueColors.card,
+              border: Border.all(color: RescueColors.accent),
+              borderRadius: BorderRadius.circular(14),
             ),
+            child: Text('$label · ${entries.length}', style: RescueText.body),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              header,
-              const SizedBox(height: 8),
-              Padding(padding: const EdgeInsets.only(right: 6), child: preview),
-              const SizedBox(height: 10),
-              Padding(padding: const EdgeInsets.only(right: 6), child: route),
-              ?server,
-              if (mixed != null) ...[const SizedBox(height: 4), mixed],
-              const SizedBox(height: 2),
-              footer,
-            ],
+        ),
+        childWhenDragging: Opacity(opacity: .35, child: card),
+        child: DragTarget<List<SplitRef>>(
+          onWillAcceptWithDetails: (_) => true,
+          onAcceptWithDetails: (d) => loose ? notifier.removeFromGroup(d.data) : notifier.moveToGroup(name, d.data),
+          builder: (context, candidates, _) => DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: candidates.isEmpty ? null : Border.all(color: RescueColors.accent, width: 2),
+            ),
+            child: card,
           ),
         ),
       ),
@@ -482,16 +570,12 @@ class _GroupPanel extends ConsumerWidget {
   final bool pinned;
   final VoidCallback onClose;
 
-  /// Узкое окно: панель вместо карточек, сверху «← Все группы».
+  /// Узкое окно: панель вместо доски, сверху «← Все правила».
   final String? backLabel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final split = ref.watch(splitTunnelProvider);
     final title = name == looseGroup ? 'Без группы' : 'Группа «$name»';
-    final items = [for (final e in entries) _ref(e)];
-    final mixed = name != looseGroup && split.commonPlace(items) == null;
-    final majority = mixed ? _majority(split, items) : null;
     final picked = [
       for (final e in entries)
         if (selected.value.contains(_key(e))) _ref(e),
@@ -506,7 +590,6 @@ class _GroupPanel extends ConsumerWidget {
           titles: titles,
           showGroup: true,
           shortGroup: name != looseGroup,
-          differs: majority != null && split.placeOf(e.kind, e.value) != majority,
           selected: selected.value.contains(_key(e)),
           onSelected: (v) => selected.value = v ? {...selected.value, _key(e)} : ({...selected.value}..remove(_key(e))),
           dragItems: () => selected.value.contains(_key(e)) && picked.length > 1 ? picked : [_ref(e)],
@@ -608,19 +691,6 @@ class _GroupPanel extends ConsumerWidget {
       ),
     );
   }
-
-  static SplitPlace? _majority(SplitTunnel split, List<SplitRef> items) {
-    final counts = <SplitPlace, int>{};
-    for (final i in items) {
-      final p = split.placeOf(i.kind, i.value);
-      counts[p] = (counts[p] ?? 0) + 1;
-    }
-    SplitPlace? best;
-    for (final e in counts.entries) {
-      if (best == null || e.value > counts[best]!) best = e.key;
-    }
-    return best;
-  }
 }
 
 /// Строка записи: отметка, название, группа, путь. [dragItems] — что перетаскивать (null — нельзя).
@@ -631,7 +701,6 @@ class _EntryRow extends ConsumerWidget {
     required this.titles,
     this.showGroup = false,
     this.shortGroup = false,
-    this.differs = false,
     this.selected,
     this.onSelected,
     this.dragItems,
@@ -644,8 +713,6 @@ class _EntryRow extends ConsumerWidget {
   /// В открытой группе — «Перенести» вместо её имени.
   final bool shortGroup;
 
-  /// Путь не как у большинства в группе.
-  final bool differs;
   final bool? selected;
   final ValueChanged<bool>? onSelected;
   final List<SplitRef> Function()? dragItems;
@@ -698,10 +765,10 @@ class _EntryRow extends ConsumerWidget {
                 ],
               ),
               Text(
-                differs ? '$detail · не как у группы' : detail,
+                detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: differs ? RescueColors.warn : RescueColors.muted),
+                style: const TextStyle(fontSize: 11, color: RescueColors.muted),
               ),
             ],
           ),
@@ -728,9 +795,9 @@ class _EntryRow extends ConsumerWidget {
       child: Container(
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: RescueColors.card,
-          border: const Border(left: BorderSide(color: RescueColors.info, width: 4)),
+          border: Border(left: BorderSide(color: RescueColors.info, width: 4)),
         ),
         // Узко (панель вместо карточек на маленьком окне) — кнопки второй строкой.
         child: LayoutBuilder(

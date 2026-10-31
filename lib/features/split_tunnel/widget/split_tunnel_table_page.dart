@@ -20,8 +20,7 @@ enum _View { live, groups }
 
 /// Шлюпка: «Туннелирование» (docs/redesign/tunnel-v3.md). Две вкладки:
 /// «Сейчас в сети» — что идёт прямо сейчас, через что и почему ([TunnelLiveView]);
-/// «Все правила» — по группам (карточки с путём для всех записей сразу) или одним списком
-/// по программам ([TunnelGroupsView]).
+/// «Все правила» — доска по местам, при поиске — список записей ([TunnelGroupsView]).
 /// Изменения действуют сразу, без переподключения.
 ///
 /// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка, вкладки и поиск
@@ -42,7 +41,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final query = useState('');
     final openGroup = useState<String?>(null);
 
-    final data = buildTunnelRows(split, connections, errors);
+    final data = buildTunnelRows(split, connections?.where((c) => !c.closed).toList(), errors);
     final listed = data.entries.where((e) => e.target != null || e.group != null).toList();
 
     void openGroupTab(String name) {
@@ -57,17 +56,26 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final header = RescuePageHeader(
       title: 'Туннелирование',
       actions: [
-        OutlinedButton(
-          onPressed: () => showNewGroupDialog(context, entries: listed, titles: titles),
-          child: const Text('Новая группа'),
-        ),
-        OutlinedButton(
-          onPressed: () => showAddDialog(context, tab: AddTab.running, group: addGroup()),
-          child: const Text('Из запущенных'),
-        ),
-        FilledButton(
-          onPressed: () => showAddDialog(context, group: addGroup()),
-          child: const Text('+ Добавить'),
+        MenuAnchor(
+          menuChildren: [
+            MenuItemButton(
+              onPressed: () => showAddDialog(context, group: addGroup()),
+              child: const Text('Программа или сайт…'),
+            ),
+            MenuItemButton(
+              onPressed: () => showAddDialog(context, tab: AddTab.running, group: addGroup()),
+              child: const Text('Из запущенных…'),
+            ),
+            MenuItemButton(
+              onPressed: () => showNewGroupDialog(context, entries: listed, titles: titles),
+              child: const Text('Новая группа…'),
+            ),
+          ],
+          builder: (context, controller, _) => FilledButton.icon(
+            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Добавить'),
+          ),
         ),
         PopupMenuButton<void>(
           tooltip: 'Ещё',
@@ -108,7 +116,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
         onChanged: (v) => query.value = v.trim(),
         hint: switch (view.value) {
           _View.live => 'Что идёт прямо сейчас: группа, реальный сервер и почему',
-          _View.groups => 'Путь у группы — всем её записям сразу; у записи — только ей',
+          _View.groups => 'Переложите карточку в нужную колонку или выберите путь в её меню',
         },
       ),
     );
