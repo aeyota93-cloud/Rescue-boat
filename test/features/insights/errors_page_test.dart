@@ -50,6 +50,44 @@ void main() {
   });
 
   group('переключение сервера (failover)', () {
+    for (final (message, kind, title) in [
+      ('выбран самый быстрый рабочий', FailoverKind.start, 'выбран самый быстрый сервер'),
+      ('сервер не отвечает 25 с', FailoverKind.broken, 'переход на рабочий сервер'),
+      ('основной снова отвечает', FailoverKind.back, 'возврат на основной'),
+      ('основной не отвечает 3 раза подряд', FailoverKind.legacyToBackup, 'переключение на запасной'),
+      ('неизвестный текст', FailoverKind.legacyToBackup, 'переключение на запасной'),
+      ('', FailoverKind.legacyToBackup, 'переключение на запасной'),
+      ('снова самый быстрый 25 с', FailoverKind.back, 'возврат на основной'),
+      ('самый быстрый 25 с', FailoverKind.start, 'выбран самый быстрый сервер'),
+    ]) {
+      test('распознаёт сообщение «$message»', () {
+        final e = ErrorEvent.tryParse({
+          't': DateTime(2026, 11, 8, 12).millisecondsSinceEpoch,
+          'kind': 'failover',
+          'host': 'NL',
+          'msg': message,
+        })!;
+        expect(e.kind, ErrorKind.failover);
+        expect(e.failoverKind, kind);
+        expect(e.failoverBack, kind == FailoverKind.back);
+        expect(failoverTitle(e), title);
+        expect(eventWhat(e), title);
+        expect(groupSubtitle(groupErrors([e]).single), '$title · сейчас NL');
+        expect(countErrors([e]), 0);
+      });
+    }
+
+    test('текст обычной ошибки не становится переключением', () {
+      final e = ErrorEvent.tryParse({
+        't': DateTime(2026, 11, 8, 12).millisecondsSinceEpoch,
+        'kind': 'timeout',
+        'msg': 'снова самый быстрый 25 с',
+      })!;
+      expect(e.failoverKind, isNull);
+      expect(e.failoverBack, isFalse);
+      expect(eventWhat(e), 'время ожидания истекло');
+    });
+
     final withFailover = [
       event(const Duration(minutes: 2), ErrorKind.failover, host: 'NL', message: 'основной снова отвечает'),
       event(
@@ -109,6 +147,7 @@ void main() {
         await tester.pump();
         expect(detailsTitle(tester).data, 'Переключение сервера');
         expect(find.textContaining('2 переключения за сутки'), findsOneWidget);
+        expect(find.text('Автоматический выбор сервера · 2 переключения за сутки'), findsOneWidget);
         expect(find.text('возврат на основной'), findsOneWidget);
         expect(find.text('переключение на запасной'), findsOneWidget);
         final bypass = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Пустить мимо VPN'));

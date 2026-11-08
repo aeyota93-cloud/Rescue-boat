@@ -625,7 +625,7 @@ Future<void> _autoServer(WidgetRef ref) async {
 }
 
 /// Карточка «Авто» — первая в сетке серверов (docs/redesign/servers-v2.md): сторож ядра включён,
-/// идём через основной, а если он не отвечает — через следующий живой запасной. Выбрана, пока
+/// при старте выбираем самый быстрый рабочий, затем меняем только при поломке. Выбрана, пока
 /// автопереключение включено; нажатие на карточку сервера — «всегда этот сервер».
 class _AutoCard extends ConsumerWidget {
   const _AutoCard({required this.servers, required this.selected});
@@ -638,7 +638,7 @@ class _AutoCard extends ConsumerWidget {
     final chain = [
       if (servers.main.protocol.isEmpty) 'основной' else servers.main.name,
       for (final s in servers.servers.skip(1)) s.lowerName,
-    ].join(' → ');
+    ].join(' · ');
     final current = servers.current;
     final now = selected && servers.live && current != null ? 'сейчас: ${current.lowerName}' : null;
     final responding = 'отвечают ${servers.responding} из ${servers.servers.length}';
@@ -703,7 +703,7 @@ class _AutoCard extends ConsumerWidget {
                     if (now != null) Text(now, style: TextStyle(fontSize: 12, color: subColor)),
                     const SizedBox(height: 10),
                     Text(
-                      'Основной не отвечает полторы минуты — переход на живой запасной и обратно.',
+                      'Сервер не отвечает 25 секунд — переход на самый быстрый рабочий.',
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12, color: subColor),
@@ -742,7 +742,8 @@ class _NoBackupCard extends ConsumerWidget {
             const Text('Пока запасного нет: в подписке один сервер.', style: RescueText.smallSecondary),
             const SizedBox(height: 6),
             const Text(
-              'Когда в подписке их два, Шлюпка сама перейдёт на запасной, если основной не отвечает. '
+              'Когда серверов несколько, Шлюпка выберет самый быстрый рабочий. '
+              'Если он не отвечает 25 секунд — перейдёт на другой рабочий. '
               'Ещё запасной можно добавить второй подпиской и выбрать вручную.',
               style: RescueText.caption,
             ),

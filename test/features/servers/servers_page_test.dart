@@ -224,11 +224,12 @@ void main() {
       expect(find.text('ЧЕРЕЗ КАКОЙ СЕРВЕР'), findsNothing);
       expect(find.text('Всегда основной'), findsNothing);
       expect(find.text('Авто'), findsOneWidget);
-      expect(find.text('основной → запасной 1'), findsOneWidget);
+      expect(find.text('основной · запасной 1'), findsOneWidget);
+      expect(find.text('Сервер не отвечает 25 секунд — переход на самый быстрый рабочий.'), findsOneWidget);
       expect(find.text('сейчас: основной'), findsOneWidget);
       expect(find.text('ОТВЕЧАЮТ 1 ИЗ 2'), findsOneWidget);
       expect(
-        find.bySemanticsLabel('Авто, основной → запасной 1, сейчас: основной, отвечают 1 из 2, выбрано'),
+        find.bySemanticsLabel('Авто, основной · запасной 1, сейчас: основной, отвечают 1 из 2, выбрано'),
         findsOneWidget,
       );
       expect(find.text('Добавить подписку'), findsNothing);

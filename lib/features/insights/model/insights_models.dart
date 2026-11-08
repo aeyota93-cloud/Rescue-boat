@@ -27,9 +27,9 @@ enum ErrorKind {
   other('другая ошибка'),
   suppressed('слишком много ошибок, часть пропущена'),
 
-  /// Не ошибка соединения: ядро переключилось основной ↔ запасной (docs/redesign/failover.md).
-  /// Направление — в [ErrorEvent.failoverBack], новый сервер — в [ErrorEvent.host].
-  failover('переключение на запасной');
+  /// Не ошибка соединения: ядро сменило сервер (docs/redesign/failover.md).
+  /// Причина — в [ErrorEvent.failoverKind], новый сервер — в [ErrorEvent.host].
+  failover('переключение сервера');
 
   const ErrorKind(this.title);
 
@@ -38,6 +38,9 @@ enum ErrorKind {
 
   static ErrorKind parse(String? s) => ErrorKind.values.firstWhere((k) => k.name == s, orElse: () => ErrorKind.other);
 }
+
+/// Причина автопереключения, включая события старых версий ядра.
+enum FailoverKind { start, broken, back, legacyToBackup }
 
 /// Куда шло соединение.
 enum ErrorRoute {
@@ -87,8 +90,16 @@ class ErrorEvent {
   final int count;
   final String message;
 
-  /// Событие автопереключения — возврат на основной (иначе — переход на запасной).
-  bool get failoverBack => kind == ErrorKind.failover && message.contains('снова');
+  /// Вид переключения по тексту ядра; для ошибок соединения — null.
+  FailoverKind? get failoverKind {
+    if (kind != ErrorKind.failover) return null;
+    if (message.contains('снова')) return FailoverKind.back;
+    if (message.contains('самый быстрый')) return FailoverKind.start;
+    if (message.contains('25 с')) return FailoverKind.broken;
+    return FailoverKind.legacyToBackup;
+  }
+
+  bool get failoverBack => failoverKind == FailoverKind.back;
 
   /// Сайт, если известен, иначе «ip:port».
   String get target => host.isNotEmpty ? host : (ip.isEmpty ? '' : '$ip:$port');

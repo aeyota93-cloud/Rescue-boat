@@ -418,8 +418,7 @@ class _Details extends HookWidget {
     final total = bars.counts.fold<int>(0, (s, v) => s + v);
     final summary = Text(
       isFailoverGroup(group)
-          ? 'Основной сервер не отвечал — ядро перешло на запасной · '
-                '${group.count} ${switchesWord(group.count)} ${periodPhrase(period)}'
+          ? 'Автоматический выбор сервера · ${group.count} ${switchesWord(group.count)} ${periodPhrase(period)}'
           : '$appText · $routeText · ${group.count} ${errorsWord(group.count)} ${periodPhrase(period)}',
       style: RescueText.smallSecondary,
     );

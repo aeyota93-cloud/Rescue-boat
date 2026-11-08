@@ -101,8 +101,13 @@ String kindShort(ErrorKind kind) => switch (kind) {
   ErrorKind.failover => 'переключение',
 };
 
-/// Переключение сервера для людей: «переключение на запасной» / «возврат на основной».
-String failoverTitle(ErrorEvent e) => e.failoverBack ? 'возврат на основной' : 'переключение на запасной';
+/// Причина переключения сервера для людей.
+String failoverTitle(ErrorEvent e) => switch (e.failoverKind) {
+  FailoverKind.start => 'выбран самый быстрый сервер',
+  FailoverKind.broken => 'переход на рабочий сервер',
+  FailoverKind.back => 'возврат на основной',
+  FailoverKind.legacyToBackup || null => 'переключение на запасной',
+};
 
 /// «2 переключения» — сколько раз ядро меняло сервер.
 String switchesWord(int n) => plural(n, 'переключение', 'переключения', 'переключений');
