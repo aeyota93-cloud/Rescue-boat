@@ -206,4 +206,9 @@ void main() {
     });
     expect(ProfileParser.protocol('awg://test@example.com'), 'AmneziaWG');
   });
+
+  test('saved profile: AmneziaWG from endpoints is named by protocol', () {
+    // Ядро переносит rescue-endpoints в endpoints; без этого серверы назывались «Запасной N».
+    expect(protocolsOfConfig({'outbounds': const [], 'endpoints': _fresh}), {'fresh': 'AmneziaWG'});
+  });
 }

@@ -89,6 +89,8 @@ String protocolOfOutbound(Map<String, dynamic> outbound) {
 Map<String, String> protocolsOfConfig(Map<String, dynamic> config) => {
   for (final o in [
     ...config['outbounds'] as List<dynamic>? ?? const [],
+    // Сохранённый профиль: ядро уже перенесло AmneziaWG из rescue-endpoints в endpoints.
+    ...config['endpoints'] as List<dynamic>? ?? const [],
     ...config['rescue-endpoints'] as List<dynamic>? ?? const [],
   ].whereType<Map<String, dynamic>>())
     if (o['tag'] is String && !const {'selector', 'urltest', 'direct', 'block', 'dns'}.contains(o['type']))
