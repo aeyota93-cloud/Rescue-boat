@@ -6,7 +6,9 @@ import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/db/db.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
+import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -14,6 +16,8 @@ import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 /// parse profile subscription url and headers for data
 ///
@@ -117,19 +121,25 @@ class ProfileParser {
     required RemoteProfileEntity rp,
     required String tempFilePath,
     CancelToken? cancelToken,
-  }) => _downloadProfile(rp.url, tempFilePath, cancelToken).flatMap(
-    (remoteHeaders) =>
-        TaskEither.fromEither(
-          populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
-        ).flatMap(
-          (populatedHeaders) => TaskEither.fromEither(
-            parse(
-              tempFilePath: tempFilePath,
-              profile: rp.copyWith(populatedHeaders: populatedHeaders),
-            ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
-          ),
-        ),
-  );
+  }) =>
+      _downloadProfile(
+        rp.url,
+        tempFilePath,
+        cancelToken,
+        savedFilePath: _ref.read(profilePathResolverProvider).file(rp.id).path,
+      ).flatMap(
+        (remoteHeaders) =>
+            TaskEither.fromEither(
+              populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
+            ).flatMap(
+              (populatedHeaders) => TaskEither.fromEither(
+                parse(
+                  tempFilePath: tempFilePath,
+                  profile: rp.copyWith(populatedHeaders: populatedHeaders),
+                ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
+              ),
+            ),
+      );
 
   Either<ProfileFailure, ProfileEntriesCompanion> offlineUpdate({
     required ProfileEntity profile,
@@ -144,40 +154,104 @@ class ProfileParser {
   TaskEither<ProfileFailure, Map<String, dynamic>> _downloadProfile(
     String url,
     String tempFilePath,
-    CancelToken? cancelToken,
-  ) => TaskEither.tryCatch(() async {
-    // if (url.startsWith("http://"))
-    //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
+    CancelToken? cancelToken, {
+    String? savedFilePath,
+  }) => TaskEither.tryCatch(
+    () async {
+      final preferences = pasarGuardSubUrl(url, 'awg') == null
+          ? null
+          : _ref.read(sharedPreferencesProvider).requireValue;
+      // if (url.startsWith("http://"))
+      //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
 
-    final rs = await _httpClient
-        .download(
-          url.trim(),
-          tempFilePath,
-          cancelToken: cancelToken,
-          userAgent: _ref.read(ConfigOptions.useXrayCoreWhenPossible)
-              ? _httpClient.userAgent.replaceAll("HiddifyNext", "HiddifyNextX")
-              : null,
-        )
-        .catchError((err) {
-          if (CancelToken.isCancel(err as DioException)) {
-            throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
+      final rs = await _httpClient
+          .download(
+            url.trim(),
+            tempFilePath,
+            cancelToken: cancelToken,
+            userAgent: _ref.read(ConfigOptions.useXrayCoreWhenPossible)
+                ? _httpClient.userAgent.replaceAll("HiddifyNext", "HiddifyNextX")
+                : null,
+          )
+          .catchError((err) {
+            if (CancelToken.isCancel(err as DioException)) {
+              throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
+            }
+            throw err;
+          });
+      await expandRemoteLinesInParallel(
+        tempFilePath: tempFilePath,
+        httpClient: _httpClient,
+        cancelToken: cancelToken ?? CancelToken(),
+        ref: _ref,
+      );
+      await _addRescueLinks(url, tempFilePath, cancelToken);
+      if (preferences != null) {
+        await _addRescueEndpoints(url, tempFilePath, cancelToken, preferences, savedFilePath);
+      }
+      await _dropHysteriaUtls(tempFilePath);
+      // fixing headers before return
+      return rs.headers.map.map((key, value) {
+        if (value.length == 1) return MapEntry(key, value.first);
+        return MapEntry(key, value);
+      });
+    },
+    (err, st) {
+      if (err is DioException && CancelToken.isCancel(err)) {
+        return const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
+      }
+      return err is ProfileFailure ? err : ProfileFailure.unexpected(err, st);
+    },
+  );
+
+  /// При временном сбое AWG берём только из сохранённого профиля этой подписки.
+  Future<void> _addRescueEndpoints(
+    String url,
+    String tempFilePath,
+    CancelToken? cancelToken,
+    SharedPreferences preferences,
+    String? savedFilePath,
+  ) async {
+    final file = File(tempFilePath);
+    final json = _singboxJson(await file.readAsString());
+    if (json == null) return;
+    json.remove('rescue-endpoints');
+    try {
+      const key = 'rescue-device-id';
+      var deviceId = preferences.getString(key);
+      if (deviceId == null) {
+        deviceId = const Uuid().v4();
+        if (!await preferences.setString(key, deviceId)) {
+          throw StateError('Could not save rescue device ID');
+        }
+      }
+      final response = await _httpClient.get<String>(
+        pasarGuardSubUrl(url, 'awg')!,
+        cancelToken: cancelToken,
+        headers: {'X-Rescue-Device': deviceId},
+      );
+      if (response.statusCode != 404) {
+        if (response.statusCode != 200) throw const FormatException('Unexpected AWG response status');
+        final endpoints = jsonDecode(response.data ?? '');
+        if (endpoints is! List) throw const FormatException('AWG response must be a JSON array');
+        json['rescue-endpoints'] = endpoints;
+      }
+    } catch (err) {
+      if (err is DioException && CancelToken.isCancel(err)) rethrow;
+      if (!(err is DioException && err.response?.statusCode == 404) && savedFilePath != null) {
+        try {
+          final saved = jsonDecode(await File(savedFilePath).readAsString());
+          if (saved is Map<String, dynamic> && saved['rescue-endpoints'] is List) {
+            json['rescue-endpoints'] = saved['rescue-endpoints'];
           }
-          throw err;
-        });
-    await expandRemoteLinesInParallel(
-      tempFilePath: tempFilePath,
-      httpClient: _httpClient,
-      cancelToken: cancelToken ?? CancelToken(),
-      ref: _ref,
-    );
-    await _addRescueLinks(url, tempFilePath, cancelToken);
-    await _dropHysteriaUtls(tempFilePath);
-    // fixing headers before return
-    return rs.headers.map.map((key, value) {
-      if (value.length == 1) return MapEntry(key, value.first);
-      return MapEntry(key, value);
-    });
-  }, (err, st) => err is ProfileFailure ? err : ProfileFailure.unexpected(err, st));
+        } catch (_) {}
+      }
+    }
+    if (cancelToken?.isCancelled ?? false) {
+      throw DioException(requestOptions: RequestOptions(), type: DioExceptionType.cancel);
+    }
+    await file.writeAsString(jsonEncode(json));
+  }
 
   /// Шлюпка: PasarGuard не кладёт серверы XHTTP в подписку sing-box (обычный sing-box их не
   /// знает), а ядро Шлюпки знает. Те же серверы есть в `<подписка>/links` — передаём их ядру

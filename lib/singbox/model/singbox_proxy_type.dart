@@ -9,7 +9,7 @@ enum ProxyType {
   trojan("Trojan"),
   naive("Naive"),
   wireguard("WireGuard"),
-  awg("AWG"),
+  awg("AmneziaWG"),
   hysteria("Hysteria"),
   tor("Tor"),
   ssh("SSH"),
