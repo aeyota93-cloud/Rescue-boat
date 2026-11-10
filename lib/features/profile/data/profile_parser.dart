@@ -6,9 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/db/db.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
-import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
-import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -16,8 +14,6 @@ import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 
 /// parse profile subscription url and headers for data
 ///
@@ -121,25 +117,19 @@ class ProfileParser {
     required RemoteProfileEntity rp,
     required String tempFilePath,
     CancelToken? cancelToken,
-  }) =>
-      _downloadProfile(
-        rp.url,
-        tempFilePath,
-        cancelToken,
-        savedFilePath: _ref.read(profilePathResolverProvider).file(rp.id).path,
-      ).flatMap(
-        (remoteHeaders) =>
-            TaskEither.fromEither(
-              populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
-            ).flatMap(
-              (populatedHeaders) => TaskEither.fromEither(
-                parse(
-                  tempFilePath: tempFilePath,
-                  profile: rp.copyWith(populatedHeaders: populatedHeaders),
-                ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
-              ),
-            ),
-      );
+  }) => _downloadProfile(rp.url, tempFilePath, cancelToken).flatMap(
+    (remoteHeaders) =>
+        TaskEither.fromEither(
+          populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
+        ).flatMap(
+          (populatedHeaders) => TaskEither.fromEither(
+            parse(
+              tempFilePath: tempFilePath,
+              profile: rp.copyWith(populatedHeaders: populatedHeaders),
+            ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
+          ),
+        ),
+  );
 
   Either<ProfileFailure, ProfileEntriesCompanion> offlineUpdate({
     required ProfileEntity profile,
@@ -154,13 +144,9 @@ class ProfileParser {
   TaskEither<ProfileFailure, Map<String, dynamic>> _downloadProfile(
     String url,
     String tempFilePath,
-    CancelToken? cancelToken, {
-    String? savedFilePath,
-  }) => TaskEither.tryCatch(
+    CancelToken? cancelToken,
+  ) => TaskEither.tryCatch(
     () async {
-      final preferences = pasarGuardSubUrl(url, 'awg') == null
-          ? null
-          : _ref.read(sharedPreferencesProvider).requireValue;
       // if (url.startsWith("http://"))
       //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
 
@@ -185,11 +171,6 @@ class ProfileParser {
         cancelToken: cancelToken ?? CancelToken(),
         ref: _ref,
       );
-      await _addRescueLinks(url, tempFilePath, cancelToken);
-      if (preferences != null) {
-        await _addRescueEndpoints(url, tempFilePath, cancelToken, preferences, savedFilePath);
-      }
-      await _dropHysteriaUtls(tempFilePath);
       // fixing headers before return
       return rs.headers.map.map((key, value) {
         if (value.length == 1) return MapEntry(key, value.first);
@@ -203,161 +184,6 @@ class ProfileParser {
       return err is ProfileFailure ? err : ProfileFailure.unexpected(err, st);
     },
   );
-
-  /// При временном сбое AWG берём только из сохранённого профиля этой подписки.
-  Future<void> _addRescueEndpoints(
-    String url,
-    String tempFilePath,
-    CancelToken? cancelToken,
-    SharedPreferences preferences,
-    String? savedFilePath,
-  ) async {
-    final file = File(tempFilePath);
-    final json = _singboxJson(await file.readAsString());
-    if (json == null) return;
-    json.remove('rescue-endpoints');
-    try {
-      const key = 'rescue-device-id';
-      var deviceId = preferences.getString(key);
-      if (deviceId == null) {
-        deviceId = const Uuid().v4();
-        if (!await preferences.setString(key, deviceId)) {
-          throw StateError('Could not save rescue device ID');
-        }
-      }
-      final response = await _httpClient.get<String>(
-        pasarGuardSubUrl(url, 'awg')!,
-        cancelToken: cancelToken,
-        headers: {'X-Rescue-Device': deviceId},
-      );
-      if (response.statusCode != 404) {
-        if (response.statusCode != 200) throw const FormatException('Unexpected AWG response status');
-        final endpoints = jsonDecode(response.data ?? '');
-        if (endpoints is! List) throw const FormatException('AWG response must be a JSON array');
-        json['rescue-endpoints'] = endpoints;
-      }
-    } catch (err) {
-      if (err is DioException && CancelToken.isCancel(err)) rethrow;
-      if (!(err is DioException && err.response?.statusCode == 404) && savedFilePath != null) {
-        try {
-          final saved = jsonDecode(await File(savedFilePath).readAsString());
-          if (saved is Map<String, dynamic> && saved['rescue-endpoints'] is List) {
-            json['rescue-endpoints'] = saved['rescue-endpoints'];
-          }
-        } catch (_) {}
-      }
-    }
-    if (cancelToken?.isCancelled ?? false) {
-      throw DioException(requestOptions: RequestOptions(), type: DioExceptionType.cancel);
-    }
-    await file.writeAsString(jsonEncode(json));
-  }
-
-  /// Шлюпка: PasarGuard не кладёт серверы XHTTP в подписку sing-box (обычный sing-box их не
-  /// знает), а ядро Шлюпки знает. Те же серверы есть в `<подписка>/links` — передаём их ядру
-  /// полем `rescue-links`, ядро добавит недостающие (rescue_links.go в ядре). Любой сбой —
-  /// подписка остаётся как скачана.
-  Future<void> _addRescueLinks(String url, String tempFilePath, CancelToken? cancelToken) =>
-      _amendWith(pasarGuardLinksUrl(url), tempFilePath, cancelToken, withRescueLinks);
-
-  /// Шлюпка: PasarGuard 5.5 кладёт выходам hysteria2 отпечаток uTLS (берёт его у входа, по
-  /// умолчанию chrome), а sing-box не умеет uTLS поверх QUIC: «unsupported usage for uTLS», и
-  /// Hysteria2 «не отвечает». Убираем `tls.utls` у hysteria2 (vpn-server: pasarguard-5.5-upgrade.md).
-  Future<void> _dropHysteriaUtls(String tempFilePath) async {
-    final file = File(tempFilePath);
-    try {
-      final fixed = withoutHysteriaUtls(await file.readAsString());
-      if (fixed != null) await file.writeAsString(fixed);
-    } catch (_) {}
-  }
-
-  /// Подписка sing-box без `tls.utls` у выходов hysteria2; null, если убирать нечего.
-  @visibleForTesting
-  static String? withoutHysteriaUtls(String content) {
-    final json = _singboxJson(content);
-    if (json == null) return null;
-    var changed = false;
-    final outbounds = [
-      for (final o in json['outbounds'] as List)
-        if (o is Map<String, dynamic> &&
-            o['type'] == 'hysteria2' &&
-            o['tls'] is Map<String, dynamic> &&
-            (o['tls'] as Map<String, dynamic>).containsKey('utls'))
-          () {
-            changed = true;
-            return {
-              ...o,
-              'tls': {...o['tls'] as Map<String, dynamic>}..remove('utls'),
-            };
-          }()
-        else
-          o,
-    ];
-    return changed ? jsonEncode({...json, 'outbounds': outbounds}) : null;
-  }
-
-  /// Скачивает [extraUrl] и правит подписку sing-box в [tempFilePath] через [amend]
-  /// (null из [amend] — оставить как есть). Любой сбой, кроме отмены, глотается.
-  Future<void> _amendWith(
-    String? extraUrl,
-    String tempFilePath,
-    CancelToken? cancelToken,
-    String? Function(String content, String extra) amend,
-  ) async {
-    if (extraUrl == null) return;
-    final file = File(tempFilePath);
-    final extraFile = File('$tempFilePath.extra');
-    try {
-      final content = await file.readAsString();
-      if (_singboxJson(content) == null) return;
-      await _httpClient.download(extraUrl, extraFile.path, cancelToken: cancelToken);
-      final merged = amend(content, await extraFile.readAsString());
-      if (merged != null) await file.writeAsString(merged);
-    } catch (err) {
-      if (err is DioException && CancelToken.isCancel(err)) rethrow;
-    } finally {
-      if (extraFile.existsSync()) extraFile.deleteSync();
-    }
-  }
-
-  /// `https://host/sub/<токен>` → `https://host/sub/<токен>/links`; для прочих адресов null.
-  @visibleForTesting
-  static String? pasarGuardLinksUrl(String url) => pasarGuardSubUrl(url, 'links');
-
-  /// `https://host/sub/<токен>` → `https://host/sub/<токен>/<suffix>`; для прочих адресов null.
-  @visibleForTesting
-  static String? pasarGuardSubUrl(String url, String suffix) {
-    final uri = Uri.tryParse(url.trim());
-    if (uri == null || !uri.isScheme('https')) return null;
-    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (segments.length != 2 || segments.first != 'sub') return null;
-    return Uri(
-      scheme: uri.scheme,
-      host: uri.host,
-      port: uri.hasPort ? uri.port : null,
-      pathSegments: [...segments, suffix],
-    ).toString();
-  }
-
-  /// Подписка sing-box (JSON с `outbounds`) с добавленным полем `rescue-links`; null, если
-  /// подписка не такая или в [links] нет ни одной ссылки.
-  @visibleForTesting
-  static String? withRescueLinks(String content, String links) {
-    final json = _singboxJson(content);
-    if (json == null) return null;
-    final lines = links.split('\n').map((l) => l.trim()).where((l) => l.contains('://')).toList();
-    if (lines.isEmpty) return null;
-    return jsonEncode({...json, 'rescue-links': lines.join('\n')});
-  }
-
-  static Map<String, dynamic>? _singboxJson(String content) {
-    try {
-      final json = jsonDecode(content);
-      return json is Map<String, dynamic> && json['outbounds'] is List ? json : null;
-    } catch (_) {
-      return null;
-    }
-  }
 
   Future<void> expandRemoteLinesInParallel({
     required String tempFilePath,
