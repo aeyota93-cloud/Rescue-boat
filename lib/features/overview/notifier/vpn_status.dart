@@ -60,7 +60,7 @@ class VpnStatus {
 int? validDelay(int? delay) => delay != null && delay > 0 && delay < 65000 ? delay : null;
 
 /// [withServer] — добавить имя сервера в подпись (на Главной); в трее только пинг.
-/// [serverName] — имя сервера в интерфейсе («XHTTP»); null — имя из подписки («NL»).
+/// [serverName] — имя сервера в интерфейсе («Сервер 2»); null — имя из подписки с флагом.
 VpnStatus vpnStatusOf(
   AsyncValue<ConnectionStatus> connection,
   OutboundInfo? proxy, {
@@ -112,13 +112,9 @@ VpnStatus vpnStatusOf(
 
 final vpnStatusProvider = Provider.autoDispose<VpnStatus>((ref) {
   final proxy = ref.watch(activeProxyNotifierProvider).valueOrNull;
-  // Сервер называем так же, как все экраны: протоколом («XHTTP»), если он известен.
+  // Сервер называем так же, как все экраны: именем из подписки без флага.
   final server = proxy == null ? null : ref.watch(rescueServersProvider)?.byTag(proxy.tag);
-  return vpnStatusOf(
-    ref.watch(connectionNotifierProvider),
-    proxy,
-    serverName: server != null && server.protocol.isNotEmpty ? server.name : null,
-  );
+  return vpnStatusOf(ref.watch(connectionNotifierProvider), proxy, serverName: server?.name);
 });
 
 /// Когда приложение увидело, что VPN подключился; null — сейчас не подключено.

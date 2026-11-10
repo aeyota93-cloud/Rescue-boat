@@ -222,7 +222,7 @@ void main() {
       expect([for (final a in apps) a.exe], ['chrome.exe', 'Discord.exe', '']);
       expect(apps[1].open, 2);
       expect(apps[1].group, 'Общение');
-      expect([for (final d in apps.first.dests) destLabel(d)], ['Основной', 'Мимо VPN']);
+      expect([for (final d in apps.first.dests) destLabel(d)], ['NL', 'Мимо VPN']);
       expect(apps.first.conns.first.auto, isTrue);
 
       expect([for (final a in buildLiveApps(split, all, three, filter: LiveFilter.direct)) a.exe], ['chrome.exe']);
@@ -234,10 +234,7 @@ void main() {
       expect(buildLiveApps(split, all, three, query: 'ytimg'), isEmpty);
 
       // Сводка — только открытые, по порядку серверов, «мимо» в конце.
-      expect(
-        [for (final (d, n) in liveSummary(all, three)) '${destLabel(d)} $n'],
-        ['Основной 2', 'Запасной 2 2', 'Мимо VPN 1'],
-      );
+      expect([for (final (d, n) in liveSummary(all, three)) '${destLabel(d)} $n'], ['NL 2', 'NL игры 2', 'Мимо VPN 1']);
     });
 
     test('размер трафика и названия программ', () {
@@ -369,7 +366,7 @@ void main() {
     await tapMenu(tester, 'Мимо VPN');
     expect(state().bypass.apps, ['chrome.exe']);
 
-    // «⋯» у соединения: сайт целиком — за «Запасной 1».
+    // «⋯» у соединения: сайт целиком — за «NL запасной».
     await tap(tester, find.byTooltip('Направить: youtube.com'));
     await tapText(tester, 'Сайт youtube.com и поддомены');
     await tap(tester, find.byKey(const ValueKey('place-server-NL запасной')));
@@ -407,8 +404,8 @@ void main() {
       final chrome = find.byKey(const ValueKey('live-app-chrome.exe'));
       final discord = find.byKey(const ValueKey('live-app-Discord.exe'));
       final chromeRoute = find.byKey(const ValueKey('place-chrome.exe'));
-      expect(find.text('VPN · Запасной 2'), findsOneWidget);
-      expect(find.text('Авто · Основной, Мимо VPN'), findsOneWidget);
+      expect(find.text('VPN · NL игры'), findsOneWidget);
+      expect(find.text('Авто · NL, Мимо VPN'), findsOneWidget);
       expect(find.text('+ В группу'), findsNothing);
       expect(find.byType(TextField), findsNothing);
       if (width < 720) {
@@ -553,10 +550,10 @@ void main() {
 
     await moveCard(tester, 'Работа и дом', 'bypass', 'Через VPN');
     expect(state().via.items, hasLength(2));
-    await moveCard(tester, 'Работа и дом', 'via', 'Запасной 2');
+    await moveCard(tester, 'Работа и дом', 'via', 'NL игры');
     expect(state().servers['NL игры']!.items, hasLength(3));
     expect(find.text('Любой сервер'), findsOneWidget);
-    expect(find.text('Запасной 2'), findsOneWidget);
+    expect(find.text('NL игры'), findsOneWidget);
 
     // Одна запись меняет путь — группа разделяется на две частичные карточки.
     await tap(tester, card('Работа и дом', 'NL игры'));
@@ -773,9 +770,9 @@ void main() {
     expect(rules('via-domains.json'), {site});
     expect(rules('bypass-vpn.json'), isEmpty);
 
-    // Сервер группы — «Запасной 2»: свой набор у сервера (и общий «через VPN» на случай, если
+    // Сервер группы — «NL игры»: свой набор у сервера (и общий «через VPN» на случай, если
     // сервер пропадёт из подписки).
-    await moveCard(tester, 'Работа и дом', 'via', 'Запасной 2');
+    await moveCard(tester, 'Работа и дом', 'via', 'NL игры');
     expect(rules(games), {app, site, ip});
     expect(rules('via-vpn.json'), {app, site, ip});
 
@@ -827,7 +824,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2 записи'), findsOneWidget);
     await tapText(tester, 'Общение');
-    expect(find.text('Как у группы: Запасной 2'), findsOneWidget);
+    expect(find.text('Как у группы: NL игры'), findsOneWidget);
     await tap(tester, find.byKey(const ValueKey('add-submit')));
     expect(state().servers['NL игры']!.domains, ['youtube.com']);
     expect(state().groupOf(SplitKind.app, 'Telegram.exe'), 'Общение');
@@ -949,7 +946,7 @@ void main() {
     await openTab(tester, 1);
     await tap(tester, find.byKey(const ValueKey('group-card--bypass')));
     await tap(tester, find.byTooltip('Куда направить: youtube.com'));
-    expect(find.text('Основной'), findsNothing);
+    expect(find.text('NL'), findsNothing);
     await tapMenu(tester, 'Через VPN');
     expect(container.read(splitTunnelProvider).via.domains, ['youtube.com']);
     await closePage(tester, container);

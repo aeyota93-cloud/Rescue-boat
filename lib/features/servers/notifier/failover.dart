@@ -110,12 +110,12 @@ final failoverOnBackupProvider = Provider.autoDispose<bool>(
   (ref) => ref.watch(FailoverPreferences.auto) && (ref.watch(failoverServersProvider)?.onBackup ?? false),
 );
 
-/// Пометка на Главной: «работаем через запасной 2»; null — пометки нет.
+/// Пометка на Главной: «работаем через Сервер 1»; null — пометки нет.
 final failoverNoteProvider = Provider.autoDispose<String?>((ref) {
   if (!ref.watch(FailoverPreferences.auto)) return null;
   final servers = ref.watch(rescueServersProvider);
   final current = servers == null || !servers.live ? null : servers.current;
-  return current == null || current.index == 0 ? null : 'работаем через ${current.nameWithRole}';
+  return current == null || current.index == 0 ? null : 'работаем через ${current.name}';
 });
 
 /// Где хранится последний известный список серверов (теги, типы, имена из подписки).

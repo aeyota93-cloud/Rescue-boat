@@ -78,7 +78,7 @@ void main() {
       expect(v.kind, RoadVerdictKind.change);
       expect(v.best, 'NL игры');
       expect(v.bestServer, 'NL игры');
-      expect(v.text, 'Лучше через запасной 2: на 55 мс быстрее, чем сейчас');
+      expect(v.text, 'Лучше через NL игры: на 55 мс быстрее, чем сейчас');
     });
 
     test('лучше напрямую; кнопка сервера — лучший из серверов', () {
@@ -101,7 +101,7 @@ void main() {
       final unknown = roadVerdict(r, serverName: name)!;
       expect(unknown.kind, RoadVerdictKind.change);
       expect(unknown.best, 'NL запасной');
-      expect(unknown.text, 'Лучше через запасной 1');
+      expect(unknown.text, 'Лучше через NL запасной');
 
       // Текущая — единственный лидер.
       final only = roadVerdict(
@@ -110,7 +110,7 @@ void main() {
         serverName: name,
       )!;
       expect(only.kind, RoadVerdictKind.keep);
-      expect(only.text, 'Лучше всего — как сейчас, через основной');
+      expect(only.text, 'Лучше всего — как сейчас, через NL');
     });
 
     test('решают неудачи: «сейчас чаще неудачи»', () {
@@ -118,7 +118,7 @@ void main() {
       final r = result(direct: around(140), nl: flaky, backup: around(45), games: around(140));
       final v = roadVerdict(r, current: 'NL', serverName: name)!;
       expect(v.best, 'NL запасной');
-      expect(v.text, 'Лучше через запасной 1: сейчас чаще неудачи (30 % против 0 %)');
+      expect(v.text, 'Лучше через NL запасной: сейчас чаще неудачи (30 % против 0 %)');
     });
 
     test('игры по UDP: серверы по качеству туннеля, вывод с оговоркой', () {
@@ -126,7 +126,7 @@ void main() {
       final v = roadVerdict(r, current: 'NL', serverName: name)!;
       expect(v.kind, RoadVerdictKind.estimate);
       expect(v.best, 'NL игры');
-      expect(v.text, 'Для игры точно покажет только сама игра; по качеству дороги лучше всего — запасной 2');
+      expect(v.text, 'Для игры точно покажет только сама игра; по качеству дороги лучше всего — NL игры');
     });
 
     test('пока замеры идут или ошибка — вывода нет', () {

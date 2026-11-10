@@ -573,14 +573,14 @@ class _RoadsContext {
   final String? current;
   final RoadVerdict? verdict;
 
-  /// «Напрямую», «Основной», «Запасной 2»; сервер, которого нет в списке, — по имени из подписки.
+  /// «Напрямую» или имя сервера из подписки без флага.
   String name(String id) => id == directRoad ? 'Напрямую' : (servers?.byTag(id)?.name ?? serverTitle(id));
 
-  /// Мелко под именем: имя из подписки и подсказка.
+  /// Мелко под именем: протокол.
   String? detail(String id) {
     final s = servers?.byTag(id);
     if (s == null) return null;
-    return [s.title, ?s.hint].join(' · ');
+    return s.protocol.isEmpty ? null : s.protocol;
   }
 }
 

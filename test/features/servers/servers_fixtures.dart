@@ -15,3 +15,23 @@ OutboundGroup threeServers({String selected = 'NL', int gamesDelay = 70000}) => 
 );
 
 const threeServersOrder = ['balance', 'NL', 'NL запасной', 'NL игры'];
+
+/// Шесть дорог одного протокола, имена из подписки (после пересборки серверов, 0.2.5).
+const sixNames = [
+  'Сервер 2',
+  'Сервер 1',
+  'Сервер 2 через РФ',
+  'Сервер 1 через РФ',
+  'Сервер 2 через РФ и VPN',
+  'Сервер 1 через РФ и VPN',
+];
+
+OutboundGroup sixServers({String selected = 'Сервер 2'}) => OutboundGroup(
+  tag: 'select',
+  type: 'selector',
+  selected: selected,
+  items: [
+    for (final (i, n) in sixNames.indexed)
+      OutboundInfo(tag: n, type: 'vless', urlTestDelay: 80 + i * 20, tagDisplay: n),
+  ],
+);

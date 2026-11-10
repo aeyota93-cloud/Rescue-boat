@@ -207,8 +207,8 @@ void main() {
       final semantics = tester.ensureSemantics();
 
       expect(find.text('Подписки и серверы'), findsOneWidget);
-      // «Основной» — и подписка, и первый сервер (имя по порядку подписки).
-      expect(find.text('Основной'), findsNWidgets(2));
+      // «Основной» — подписка; серверы названы по именам из подписки.
+      expect(find.text('Основной'), findsOneWidget);
       expect(find.text('АКТИВНА'), findsOneWidget);
       // Кольца: расход, срок, автообновление — числа внутри и подписи для чтеца.
       expect(find.text('ГБ\nИЗ 200'), findsOneWidget);
@@ -224,21 +224,23 @@ void main() {
       expect(find.text('ЧЕРЕЗ КАКОЙ СЕРВЕР'), findsNothing);
       expect(find.text('Всегда основной'), findsNothing);
       expect(find.text('Авто'), findsOneWidget);
-      expect(find.text('основной · запасной 1'), findsOneWidget);
+      expect(find.text('Нидерланды · Германия'), findsOneWidget);
       expect(find.text('Сервер не отвечает 25 секунд — переход на самый быстрый рабочий.'), findsOneWidget);
-      expect(find.text('сейчас: основной'), findsOneWidget);
+      expect(find.text('сейчас: Нидерланды'), findsOneWidget);
       expect(find.text('ОТВЕЧАЮТ 1 ИЗ 2'), findsOneWidget);
       expect(
-        find.bySemanticsLabel('Авто, основной · запасной 1, сейчас: основной, отвечают 1 из 2, выбрано'),
+        find.bySemanticsLabel('Авто, Нидерланды · Германия, сейчас: Нидерланды, отвечают 1 из 2, выбрано'),
         findsOneWidget,
       );
       expect(find.text('Добавить подписку'), findsNothing);
       expect(find.text('ДРУГИЕ ПОДПИСКИ'), findsOneWidget);
       expect(find.text('Домашний'), findsOneWidget);
 
-      // Карточки серверов: имя по порядку, имя из подписки мелко; протокол — только в «подробнее».
-      expect(find.text('Запасной 1'), findsOneWidget);
-      expect(find.text('Германия · если основной заблокируют'), findsWidgets);
+      // Карточки серверов: имя из подписки, мелко — роль (протокол в конфиге неизвестен); протокол — в «подробнее».
+      expect(find.text('Германия'), findsOneWidget);
+      expect(find.text('запасной 1'), findsOneWidget);
+      expect(find.text('основной'), findsOneWidget);
+      expect(find.text('для игр и звонков'), findsNothing);
       expect(find.text('VLESS'), findsNothing);
       expect(find.text('ПОДРОБНЕЕ'), findsNWidgets(2));
       expect(find.byTooltip('VLESS · first.example'), findsOneWidget);
@@ -249,7 +251,7 @@ void main() {
       expect(find.text('92'), findsOneWidget);
       expect(find.text('СЕЙЧАС'), findsOneWidget);
       expect(
-        find.bySemanticsLabel(RegExp(r'^Основной, Нидерланды, пинг 120 мс, здоровье за сутки 92, сейчас через него$')),
+        find.bySemanticsLabel(RegExp(r'^Нидерланды, основной, пинг 120 мс, здоровье за сутки 92, сейчас через него$')),
         findsOneWidget,
       );
       semantics.dispose();
@@ -309,8 +311,8 @@ void main() {
       await tester.drag(scrollable, const Offset(0, -20000));
       await tester.pump();
       expect(tester.state<ScrollableState>(scrollable).position.pixels, greaterThan(0));
-      expect(find.text('Запасной 39'), findsOneWidget, reason: 'конец списка достижим');
-      expect(rect(tester, find.text('Запасной 39')).bottom, lessThanOrEqualTo(window.height));
+      expect(find.text('Сервер 39'), findsOneWidget, reason: 'конец списка достижим');
+      expect(rect(tester, find.text('Сервер 39')).bottom, lessThanOrEqualTo(window.height));
 
       for (final e in fixed.entries) {
         expect(rect(tester, e.value), before[e.key], reason: '${e.key} не сдвинулся(ась) от прокрутки');
@@ -337,15 +339,15 @@ void main() {
       final more = find.byKey(const ValueKey('servers-more'));
       await tester.scrollUntilVisible(more, 300, scrollable: page);
       expect(find.text('Показать ещё · 30 из 40'), findsOneWidget);
-      expect(find.text('Запасной 29'), findsOneWidget);
-      expect(find.text('Запасной 30'), findsNothing);
+      expect(find.text('Сервер 29'), findsOneWidget);
+      expect(find.text('Сервер 30'), findsNothing);
       await tester.tap(more);
       await tester.pump();
-      expect(find.text('Запасной 39'), findsOneWidget);
+      expect(find.text('Сервер 39'), findsOneWidget);
       expect(more, findsNothing);
       await tester.drag(page, const Offset(0, -20000));
       await tester.pump();
-      expect(find.text('Запасной 39'), findsOneWidget);
+      expect(find.text('Сервер 39'), findsOneWidget);
       expectNoLayoutErrors(tester);
       await closePage(tester, container);
     });
@@ -439,10 +441,10 @@ void main() {
         expectNoLayoutErrors(tester);
         final card = find.byKey(const ValueKey('server-card-nl-b'));
         await tester.scrollUntilVisible(card, 300, scrollable: find.byType(Scrollable).last);
-        expect(find.text('сейчас: запасной 1'), findsOneWidget);
+        expect(find.text('сейчас: NL запасной'), findsOneWidget);
         expect(find.text('ОТВЕЧАЮТ 1 ИЗ 2'), findsOneWidget);
         expect(find.descendant(of: card, matching: find.text('СЕЙЧАС')), findsOneWidget);
-        expect(find.text('NL запасной · если основной заблокируют'), findsOneWidget);
+        expect(find.text('запасной 1'), findsOneWidget);
         expect(find.text('64 МС'), findsOneWidget);
         expectNoLayoutErrors(tester);
         await closePage(tester, container);
@@ -465,7 +467,7 @@ void main() {
       expect(container.read(ConfigOptions.singboxConfigOptions).toJson().containsKey('rescue-failover'), isFalse);
 
       // Выбран «nl» (фальшивое ядро выбор не меняет): выбрана его карточка, «Авто» — нет.
-      expect(find.bySemanticsLabel(RegExp(r'^Основной, Нидерланды, пинг 120 мс, .*выбран$')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Нидерланды, основной, пинг 120 мс, .*выбран$')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Авто, .*выбрано$')), findsNothing);
       expect(find.text('СЕЙЧАС'), findsNothing);
 
@@ -528,7 +530,7 @@ void main() {
       await tester.scrollUntilVisible(auto, 300, scrollable: find.byType(Scrollable).last);
       expect(find.text('ВИДНО, КОГДА VPN ВКЛЮЧЁН'), findsOneWidget);
       // Карточки серверов из прошлого раза на месте, но выбрать их без ядра нельзя.
-      expect(find.text('Запасной 1'), findsOneWidget);
+      expect(find.text('NL запасной'), findsOneWidget);
       expect(find.text('Пока запасного нет: в подписке один сервер.'), findsNothing);
       await tapText(tester, find.byKey(const ValueKey('server-card-nl-b')));
       expect(proxies.changed, isEmpty);

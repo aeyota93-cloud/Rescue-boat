@@ -296,25 +296,24 @@ void main() {
         await tester.pump(const Duration(milliseconds: 600));
         expectNoLayoutErrors(tester);
         expect(find.text('Напрямую'), findsOneWidget);
-        expect(find.text('Основной'), findsOneWidget);
-        expect(find.text('Запасной 1'), findsOneWidget);
-        expect(find.text('Запасной 2'), findsOneWidget);
-        expect(find.text('NL игры · для игр и звонков'), findsOneWidget);
+        expect(find.text('NL'), findsOneWidget);
+        expect(find.text('NL запасной'), findsOneWidget);
+        expect(find.text('NL игры'), findsOneWidget);
         expect(find.text('СЕЙЧАС'), findsOneWidget);
         expect(find.text('ЛУЧШЕ'), findsOneWidget);
-        expect(find.bySemanticsLabel(RegExp('^Основной, сейчас, задержка 95 мс')), findsOneWidget);
-        expect(find.bySemanticsLabel(RegExp('^Запасной 2, лучше, задержка 40 мс')), findsOneWidget);
-        expect(find.text('Лучше через запасной 2: на 55 мс быстрее, чем сейчас'), findsOneWidget);
-        expect(find.widgetWithText(FilledButton, 'Пустить через «Запасной 2»'), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^NL, сейчас, задержка 95 мс')), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^NL игры, лучше, задержка 40 мс')), findsOneWidget);
+        expect(find.text('Лучше через NL игры: на 55 мс быстрее, чем сейчас'), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Пустить через «NL игры»'), findsOneWidget);
         expect(find.widgetWithText(OutlinedButton, 'Пустить напрямую'), findsOneWidget);
         expect(find.widgetWithText(OutlinedButton, 'Оставить как есть'), findsOneWidget);
 
-        await tester.ensureVisible(find.text('Пустить через «Запасной 2»'));
-        await tester.tap(find.text('Пустить через «Запасной 2»'));
+        await tester.ensureVisible(find.text('Пустить через «NL игры»'));
+        await tester.tap(find.text('Пустить через «NL игры»'));
         await tester.pump();
         expect(split.state.serverOf(SplitKind.domain, 'example.com'), 'NL игры');
         expect(split.state.via.domains, isEmpty);
-        expect(find.text('Уже через «Запасной 2»'), findsOneWidget);
+        expect(find.text('Уже через «NL игры»'), findsOneWidget);
         expectNoLayoutErrors(tester);
         await closePage(tester, container);
       });
@@ -338,11 +337,11 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 600));
         expect(
-          find.text('Для игры точно покажет только сама игра; по качеству дороги лучше всего — запасной 2'),
+          find.text('Для игры точно покажет только сама игра; по качеству дороги лучше всего — NL игры'),
           findsOneWidget,
         );
         expect(find.text('ОЦЕНКА'), findsNWidgets(3));
-        expect(find.widgetWithText(FilledButton, 'Пустить через «Запасной 2»'), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Пустить через «NL игры»'), findsOneWidget);
         expectNoLayoutErrors(tester);
         await closePage(tester, container);
       });

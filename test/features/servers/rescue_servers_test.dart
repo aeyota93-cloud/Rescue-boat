@@ -73,41 +73,52 @@ void main() {
         'старый': 'VMess WebSocket',
       });
       final s = rescueServersOf(threeServers(), order)!.withProtocols(protocols);
-      // Имя — протокол, роль — отдельно; в середине фразы регистр протокола не меняется.
-      expect([for (final x in s.servers) x.name], ['VLESS Reality', 'XHTTP', 'Hysteria2']);
+      // Имя — из подписки без флага; протокол и роль — мелкой строкой.
+      expect([for (final x in s.servers) x.name], ['NL', 'NL запасной', 'NL игры']);
       expect([for (final x in s.servers) x.role], ['Основной', 'Запасной 1', 'Запасной 2']);
-      expect(serverPlaceLabel('NL игры', s), 'через Hysteria2');
-      expect(s.servers[1].nameWithRole, 'XHTTP (запасной 1)');
+      expect(
+        [for (final x in s.servers) x.detail],
+        ['VLESS Reality · основной', 'XHTTP · запасной 1', 'Hysteria2 · запасной 2'],
+      );
+      expect(serverPlaceLabel('NL игры', s), 'через NL игры');
       // Протокол переживает перезапуск.
-      expect(RescueServers.decode(s.encode())!.servers.last.name, 'Hysteria2');
-
-      // Два сервера с одним протоколом — к имени добавляется роль; без протокола — роль.
-      final same = rescueServersOf(threeServers(), order)!.withProtocols({'NL': 'XHTTP', 'NL запасной': 'XHTTP'});
-      expect([for (final x in same.servers) x.name], ['XHTTP · основной', 'XHTTP · запасной 1', 'Запасной 2']);
-      expect(same.servers.last.lowerName, 'запасной 2');
+      expect(RescueServers.decode(s.encode())!.servers.last.detail, 'Hysteria2 · запасной 2');
     });
 
-    test('по порядку подписки, а не по пингу; группы не считаются; подсказки по типу', () {
+    test('шесть дорог одного протокола различаются именами из подписки', () {
+      final protocols = {for (final n in sixNames) n: 'VLESS gRPC Reality'};
+      final s = rescueServersOf(sixServers())!.withProtocols(protocols);
+      expect([for (final x in s.servers) x.name], sixNames);
+      expect(s.servers.map((x) => x.name).toSet(), hasLength(6));
+      expect(s.servers[4].detail, 'VLESS gRPC Reality · запасной 4');
+      expect(s.servers[0].detail, 'VLESS gRPC Reality · основной');
+      expect(serverPlaceLabel('Сервер 1 через РФ', s), 'через Сервер 1 через РФ');
+      // Протокол неизвестен — мелкая строка только с ролью, имя то же.
+      final bare = rescueServersOf(sixServers())!;
+      expect(bare.servers[2].name, 'Сервер 2 через РФ');
+      expect(bare.servers[2].detail, 'запасной 2');
+      // Имя без флага и без remark — по тегу.
+      expect(const RescueServer(tag: '🇳🇱 Сервер 9', index: 0).name, 'Сервер 9');
+    });
+
+    test('по порядку подписки, а не по пингу; группы не считаются', () {
       final s = rescueServersOf(threeServers(), order)!;
       expect([for (final x in s.servers) x.tag], ['NL', 'NL запасной', 'NL игры']);
-      expect([for (final x in s.servers) x.name], ['Основной', 'Запасной 1', 'Запасной 2']);
-      expect([for (final x in s.servers) x.hint], [null, 'если основной заблокируют', 'для игр и звонков']);
-      expect(s.servers[1].lowerName, 'запасной 1');
+      expect([for (final x in s.servers) x.name], ['NL', 'NL запасной', 'NL игры']);
       expect(s.servers[1].title, 'NL запасной');
       expect(s.group, 'select');
       expect(s.several, isTrue);
       expect(s.responding, 2);
       expect(s.onBackup, isFalse);
-      expect(rescueServersOf(threeServers(selected: 'NL игры'), order)!.current!.name, 'Запасной 2');
+      expect(rescueServersOf(threeServers(selected: 'NL игры'), order)!.current!.name, 'NL игры');
       expect(rescueServersOf(threeServers(selected: 'balance'), order)!.current, isNull);
       expect(rescueServersOf(null), isNull);
-      expect(serverHint('tuic', 0), 'для игр и звонков');
     });
 
     test('сервер соединения по цепочке clash API (первый элемент — настоящий выход)', () {
       final s = rescueServersOf(threeServers(), order)!;
-      expect(s.serverOfChain(['NL запасной', 'select'])!.name, 'Запасной 1');
-      expect(s.serverOfChain(['NL игры'])!.name, 'Запасной 2');
+      expect(s.serverOfChain(['NL запасной', 'select'])!.name, 'NL запасной');
+      expect(s.serverOfChain(['NL игры'])!.name, 'NL игры');
       expect(s.serverOfChain(['select', 'NL']), isNotNull, reason: 'порядок цепочки не важен');
       expect(s.serverOfChain(['direct']), isNull);
     });
@@ -116,8 +127,8 @@ void main() {
       final s = rescueServersOf(threeServers(), order)!;
       final back = RescueServers.decode(s.encode())!;
       expect(back.live, isFalse);
-      expect([for (final x in back.servers) x.name], ['Основной', 'Запасной 1', 'Запасной 2']);
-      expect(back.servers[2].hint, 'для игр и звонков');
+      expect([for (final x in back.servers) x.name], ['NL', 'NL запасной', 'NL игры']);
+      expect(back.servers[2].role, 'Запасной 2');
       expect(RescueServers.decode('битое'), isNull);
       expect(RescueServers.decode(null), isNull);
     });

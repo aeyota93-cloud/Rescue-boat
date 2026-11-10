@@ -1,9 +1,8 @@
 /// Шлюпка: серверы активной подписки и их имена в интерфейсе (docs/redesign/servers-v2.md).
 ///
-/// Имя сервера на всех экранах — его протокол из конфига подписки: «VLESS Reality», «XHTTP»,
-/// «Hysteria2» (пользователь 14.10: «запасной 1», «запасной 2» непонятно). Роль по порядку подписки
-/// — «Основной», «Запасной 1», … — остаётся мелкой подписью: от неё зависит автопереключение.
-/// Протокол неизвестен — имя по роли; у двух серверов один протокол — «XHTTP · запасной 2».
+/// Имя сервера на всех экранах — его имя из подписки без флага («Сервер 2 через РФ»): у всех дорог
+/// один протокол, по нему их не различить. Протокол («VLESS gRPC Reality») и роль по порядку
+/// подписки — «основной», «запасной 1», … — идут мелкой строкой: от роли зависит автопереключение.
 /// Без виджетов, чтобы проверять тестами.
 library;
 
@@ -20,13 +19,6 @@ String serverKey(String tag) => sha256.convert(utf8.encode(tag)).toString().subs
 /// «Основной», «Запасной 1», «Запасной 2»…
 String serverName(int index) => index == 0 ? 'Основной' : 'Запасной $index';
 
-/// Подсказка под именем по типу выхода; null — без подсказки (основной на TCP).
-String? serverHint(String type, int index) {
-  final t = type.toLowerCase();
-  if (t == 'hysteria2' || t == 'hy2' || t == 'tuic') return 'для игр и звонков';
-  return index == 0 ? null : 'если основной заблокируют';
-}
-
 /// Один сервер из выхода `select` (без групп).
 class RescueServer {
   const RescueServer({
@@ -36,7 +28,6 @@ class RescueServer {
     this.remark = '',
     this.delay = 0,
     this.protocol = '',
-    this.sharedProtocol = false,
   });
 
   /// Тег выхода в ядре — по нему правила и выбор в `select`.
@@ -45,20 +36,17 @@ class RescueServer {
   /// Место в подписке: 0 — основной.
   final int index;
 
-  /// Тип выхода ядра (vless, hysteria2…) — только для подсказки, людям не показываем.
+  /// Тип выхода ядра (vless…) — людям не показываем.
   final String type;
 
-  /// Имя из подписки («🇳🇱 NL запасной»), показываем мелко рядом.
+  /// Имя из подписки («🇳🇱 Сервер 2 через РФ»).
   final String remark;
 
   /// Пинг последней проверки: 0 — не проверяли, больше 65000 — нет ответа.
   final int delay;
 
-  /// Протокол из конфига подписки: «VLESS Reality», «XHTTP», «Hysteria2»; пусто — неизвестен.
+  /// Протокол из конфига подписки: «VLESS gRPC Reality»; пусто — неизвестен.
   final String protocol;
-
-  /// Такой же протокол есть у другого сервера подписки — к имени добавляется роль.
-  final bool sharedProtocol;
 
   /// Роль по порядку подписки: «Основной», «Запасной 1».
   String get role => serverName(index);
@@ -66,30 +54,17 @@ class RescueServer {
   /// «основной», «запасной 1» — для подписей.
   String get roleLower => role.toLowerCase();
 
-  /// Имя на экранах: протокол («XHTTP»), при совпадении протоколов — с ролью, без протокола — роль.
-  String get name => switch ((protocol.isEmpty, sharedProtocol)) {
-    (true, _) => role,
-    (false, false) => protocol,
-    (false, true) => '$protocol · $roleLower',
-  };
+  /// Имя на экранах: имя из подписки без флага («Сервер 2 через РФ»).
+  String get name => title;
 
-  /// Для середины фразы: «через XHTTP», «через запасной 2» (если протокол неизвестен).
-  String get lowerName => protocol.isEmpty ? name.toLowerCase() : name;
+  /// Для середины фразы: «через Сервер 2». Имя из подписки не меняем: оно собственное.
+  String get lowerName => name;
 
-  /// Имя и роль в скобках, когда роль из имени не видна: «XHTTP (запасной 1)».
-  String get nameWithRole => protocol.isEmpty || sharedProtocol ? lowerName : '$name ($roleLower)';
+  /// Мелкая строка под именем: протокол и роль («VLESS gRPC Reality · запасной 1»).
+  String get detail => [if (protocol.isNotEmpty) protocol, roleLower].join(' · ');
 
-  RescueServer withProtocol(String value, {required bool shared}) => RescueServer(
-    tag: tag,
-    index: index,
-    type: type,
-    remark: remark,
-    delay: delay,
-    protocol: value,
-    sharedProtocol: shared,
-  );
-
-  String? get hint => serverHint(type, index);
+  RescueServer withProtocol(String value) =>
+      RescueServer(tag: tag, index: index, type: type, remark: remark, delay: delay, protocol: value);
 
   String get key => serverKey(tag);
 
@@ -122,15 +97,10 @@ class RescueServers {
   /// Те же серверы с протоколами из конфига ([protocolsOfConfig]); неизвестные — как были.
   RescueServers withProtocols(Map<String, String> protocols) {
     if (protocols.isEmpty) return this;
-    final counts = <String, int>{};
-    for (final s in servers) {
-      final p = protocols[s.tag];
-      if (p != null) counts[p] = (counts[p] ?? 0) + 1;
-    }
     return RescueServers(
       servers: [
         for (final s in servers)
-          if (protocols[s.tag] case final p?) s.withProtocol(p, shared: counts[p]! > 1) else s,
+          if (protocols[s.tag] case final p?) s.withProtocol(p) else s,
       ],
       selected: selected,
       group: group,
@@ -198,7 +168,7 @@ class RescueServers {
   }
 }
 
-/// Подпись пункта туннеля, закреплённого за сервером [tag]: «через запасной 2». Сервера больше нет
+/// Подпись пункта туннеля, закреплённого за сервером [tag]: «через Сервер 2». Сервера больше нет
 /// в подписке — ядро не знает его набора, пункт идёт через «Авто». [servers] null — список ещё
 /// не видели (VPN не подключали): называем сервер по тегу.
 String serverPlaceLabel(String tag, RescueServers? servers) {

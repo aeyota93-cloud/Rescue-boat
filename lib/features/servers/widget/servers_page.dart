@@ -635,10 +635,7 @@ class _AutoCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final chain = [
-      if (servers.main.protocol.isEmpty) 'основной' else servers.main.name,
-      for (final s in servers.servers.skip(1)) s.lowerName,
-    ].join(' · ');
+    final chain = [for (final s in servers.servers) s.name].join(' · ');
     final current = servers.current;
     final now = selected && servers.live && current != null ? 'сейчас: ${current.lowerName}' : null;
     final responding = 'отвечают ${servers.responding} из ${servers.servers.length}';
@@ -979,9 +976,7 @@ class _ServerCard extends StatelessWidget {
       _ => protocolName(item.type),
     };
     final delay = item.urlTestDelay;
-    final sub = server == null
-        ? _subtitle(item)
-        : [if (server.protocol.isNotEmpty) server.roleLower, server.title, ?server.hint].join(' · ');
+    final sub = server == null ? _subtitle(item) : server.detail;
     final timedOut = pingTimedOut(delay);
     final health = this.health;
     final shape = RoundedRectangleBorder(

@@ -178,7 +178,7 @@ void main() {
           size: size,
         );
         expect(tester.takeException(), isNull);
-        expect(find.text('работаем через запасной 1'), findsOneWidget);
+        expect(find.text('работаем через Нидерланды запасной'), findsOneWidget);
         final server = tester.getRect(find.text('СЕРВЕР'));
         expect(tester.getRect(note).top, greaterThan(server.bottom));
         expect(tester.getRect(note).top, lessThan(tester.getRect(find.text('РЕЖИМ')).top));
