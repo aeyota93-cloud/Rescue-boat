@@ -52,7 +52,17 @@ jobs:
         run: flutter pub add --dev custom_lint:0.7.3 riverpod_lint:2.6.4
 
       - name: Generate code
-        run: dart run build_runner build -d
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & { dart run build_runner build -d } *>&1 | Tee-Object -FilePath audit-out/build-runner.txt
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            # Журналы без входа не читаются, а пометки (annotations) — читаются: выносим хвост ошибки.
+            $tail = (Get-Content audit-out/build-runner.txt | Select-Object -Last 25) -join '%0A'
+            Write-Output "::error title=build_runner::$tail"
+          }
+          exit $code
 
       - name: Riverpod lints
         id: lints
@@ -107,6 +117,11 @@ jobs:
           }
           $summary | Set-Content audit-out/summary.md
           $summary >> $env:GITHUB_STEP_SUMMARY
+          foreach ($line in $summary) { Write-Output "::notice title=audit summary::$line" }
+          foreach ($name in @('custom-lint', 'analyzer')) {
+            $tail = (Get-Content "audit-out/$name.txt" | Select-Object -Last 20) -join '%0A'
+            Write-Output "::notice title=$name tail::$tail"
+          }
 
       - name: Upload audit reports
         uses: actions/upload-artifact@v6
