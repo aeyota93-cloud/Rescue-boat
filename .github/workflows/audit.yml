@@ -47,10 +47,6 @@ jobs:
       - name: Resolve app dependencies
         run: flutter pub get
 
-      - name: Add audit tools only in CI
-        # 0.7.4+ требует Freezed 3; 2.6.5 требует другой riverpod_analyzer_utils.
-        run: flutter pub add --dev custom_lint:0.7.3 riverpod_lint:2.6.4
-
       - name: Generate code
         run: |
           $ErrorActionPreference = 'Continue'
@@ -64,19 +60,6 @@ jobs:
           }
           exit $code
 
-      - name: Riverpod lints
-        id: lints
-        if: always()
-        timeout-minutes: 10
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          $global:LASTEXITCODE = 127
-          & { dart run custom_lint } *>&1 | Tee-Object -FilePath audit-out/custom-lint.txt
-          $code = $LASTEXITCODE
-          "exit_code=$code" >> $env:GITHUB_OUTPUT
-          exit $code
-
       - name: Full analyzer report
         id: analyzer
         if: always()
@@ -86,6 +69,27 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           $global:LASTEXITCODE = 127
           & { dart analyze lib test } *>&1 | Tee-Object -FilePath audit-out/analyzer.txt
+          $code = $LASTEXITCODE
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          exit $code
+
+      - name: Add audit tools only in CI
+        id: addlint
+        if: always()
+        # Приложение на freezed 2: подходят только custom_lint 0.7.3 + riverpod_lint 2.6.4 (analyzer_plugin 0.12).
+        # analyzer_plugin 0.12 не собирается с analyzer 7.6 — закрепляем analyzer 7.3 только здесь,
+        # после генерации кода и отчёта анализатора, чтобы они шли на родных версиях.
+        run: flutter pub add --dev custom_lint:0.7.3 riverpod_lint:2.6.4 "override:analyzer:7.3.0"
+
+      - name: Riverpod lints
+        id: lints
+        if: always()
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $global:LASTEXITCODE = 127
+          & { dart run custom_lint } *>&1 | Tee-Object -FilePath audit-out/custom-lint.txt
           $code = $LASTEXITCODE
           "exit_code=$code" >> $env:GITHUB_OUTPUT
           exit $code
