@@ -82,7 +82,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
-          & { flutter pub add --dev custom_lint:0.7.3 riverpod_lint:2.6.4 "override:analyzer:7.3.0" } *>&1 | Tee-Object -FilePath audit-out/pub-add.txt
+          & { flutter pub add "dev:custom_lint:0.7.3" "dev:riverpod_lint:2.6.4" "override:analyzer:7.3.0" } *>&1 | Tee-Object -FilePath audit-out/pub-add.txt
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             $tail = (Get-Content audit-out/pub-add.txt | Select-Object -Last 30) -join '%0A'
