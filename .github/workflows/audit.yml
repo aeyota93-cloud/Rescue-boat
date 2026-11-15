@@ -73,6 +73,28 @@ jobs:
           "exit_code=$code" >> $env:GITHUB_OUTPUT
           exit $code
 
+      # Этап 3: тесты аудита обязаны ПАДАТЬ сейчас (каждый доказывает находку).
+      # До pub add линтеров: он меняет версии анализатора.
+      - name: Audit tests (expected to fail)
+        if: always()
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & { flutter test --no-pub test/audit/ --reporter expanded --file-reporter json:audit-out/audit-tests.json } *>&1 | Tee-Object -FilePath audit-out/audit-tests.txt
+          $names = @{}
+          $lines = foreach ($raw in Get-Content audit-out/audit-tests.json) {
+            $e = $raw | ConvertFrom-Json
+            if ($e.type -eq 'testStart') { $names[$e.test.id] = $e.test.name }
+            elseif ($e.type -eq 'testDone' -and -not $e.hidden) {
+              $r = if ($e.skipped) { 'SKIP' } elseif ($e.result -eq 'success') { 'PASS' } else { 'FAIL' }
+              "$r $($names[$e.testID])"
+            }
+          }
+          $lines | Set-Content audit-out/audit-tests-summary.txt
+          Write-Output "::notice title=audit tests::$(($lines | ForEach-Object { $_.Substring(0, [Math]::Min(200, $_.Length)) }) -join '%0A')"
+          exit 0
+
       - name: Add audit tools only in CI
         id: addlint
         if: always()
