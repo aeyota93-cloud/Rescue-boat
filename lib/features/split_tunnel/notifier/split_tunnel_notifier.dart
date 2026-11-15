@@ -16,8 +16,8 @@ String splitTunnelDir(Directory baseDir) => '${baseDir.path}${Platform.pathSepar
 /// Имя файла пунктов сервера с ключом [key] (см. serverKey).
 String viaServerFile(String key) => 'via-server-$key.json';
 
-/// Имя файла полосы группы номер [n] (см. SplitTunnel.lanes).
-String viaLaneFile(int n) => 'via-lane-$n.json';
+/// Имя файла записей группы, которой досталась полоса [n] (см. SplitTunnel.lanes).
+String laneGroupFile(int n) => 'group-$n.json';
 
 final splitTunnelProvider = NotifierProvider<SplitTunnelNotifier, SplitTunnel>(SplitTunnelNotifier.new);
 final splitTunnelIssueProvider = StateProvider<String?>((ref) => null);
@@ -240,15 +240,16 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     dir.createSync(recursive: true);
     // «Через VPN» — это «Авто» вместе со всеми серверными пунктами: пропал сервер из подписки —
     // его пункты идут через «Авто», а не мимо VPN.
-    // Записи групп — в свои полосы (via-lane-<n>.json, ядро rb.27+), остальное — общим путём.
+    final via = s.viaAll;
+    _writeAtomic(dir, 'via-vpn.json', via.toRuleSet());
+    // Ядро rb.12+: DNS сайтов «через VPN» идёт через VPN и не режется блокировкой рекламы.
+    _writeAtomic(dir, 'via-domains.json', via.toDomainsRuleSet());
+    // Записи групп (group-<n>.json, ядро rb.28+): то, что из них идёт в VPN, — своим соединением.
     // Файлы всех полос пишутся всегда: у пропавшей группы файл становится пустым.
     final lanes = s.lanes;
     for (var n = 0; n < laneCount; n++) {
-      _writeAtomic(dir, viaLaneFile(n), (n < lanes.length ? lanes[n] : const SplitList()).toRuleSet());
+      _writeAtomic(dir, laneGroupFile(n), (n < lanes.length ? lanes[n] : const SplitList()).toRuleSet());
     }
-    _writeAtomic(dir, 'via-vpn.json', s.viaShared.toRuleSet());
-    // Ядро rb.12+: DNS сайтов «через VPN» (и полос) идёт через VPN и не режется блокировкой рекламы.
-    _writeAtomic(dir, 'via-domains.json', s.viaAll.toDomainsRuleSet());
     _writeAtomic(dir, 'bypass-vpn.json', s.bypass.toRuleSet());
     _writeAtomic(dir, 'bypass-domains.json', s.bypass.toDomainsRuleSet());
     _writeServerRuleSets(dir, s);
