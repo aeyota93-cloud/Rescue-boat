@@ -1,0 +1,118 @@
+name: App audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['audit/**']
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.38.5'
+  CHANNEL: prod
+  IS_GITHUB_ACTIONS: 1
+  NO_COLOR: 1
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare reports and audit options
+        run: |
+          New-Item -ItemType Directory -Path audit-out -Force | Out-Null
+          foreach ($name in @('custom-lint', 'analyzer')) {
+            "Check did not complete. See the workflow log." | Set-Content "audit-out/$name.txt"
+          }
+          # Эти настройки действуют только в audit job.
+          $options = Get-Content analysis_options.yaml -Raw
+          $options = $options.Replace('  exclude:', "  exclude:`n    - '**/*.g.dart'`n    - '**/*.freezed.dart'")
+          $options = $options.Replace('custom_lint:', "custom_lint:`n  enable_all_lint_rules: true")
+          Set-Content analysis_options.yaml $options
+
+      - uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve app dependencies
+        run: flutter pub get
+
+      - name: Add audit tools only in CI
+        # 0.7.4+ требует Freezed 3; 2.6.5 требует другой riverpod_analyzer_utils.
+        run: flutter pub add --dev custom_lint:0.7.3 riverpod_lint:2.6.4
+
+      - name: Generate code
+        run: dart run build_runner build -d
+
+      - name: Riverpod lints
+        id: lints
+        if: always()
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $global:LASTEXITCODE = 127
+          & { dart run custom_lint } *>&1 | Tee-Object -FilePath audit-out/custom-lint.txt
+          $code = $LASTEXITCODE
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          exit $code
+
+      - name: Full analyzer report
+        id: analyzer
+        if: always()
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $global:LASTEXITCODE = 127
+          & { dart analyze lib test } *>&1 | Tee-Object -FilePath audit-out/analyzer.txt
+          $code = $LASTEXITCODE
+          "exit_code=$code" >> $env:GITHUB_OUTPUT
+          exit $code
+
+      - name: Summarize reports
+        if: always()
+        env:
+          LINT_EXIT: ${{ steps.lints.outputs.exit_code }}
+          ANALYZER_EXIT: ${{ steps.analyzer.outputs.exit_code }}
+        run: |
+          New-Item -ItemType Directory -Path audit-out -Force | Out-Null
+          $summary = foreach ($check in @(
+            @{ Name = 'custom-lint'; Code = $env:LINT_EXIT },
+            @{ Name = 'analyzer'; Code = $env:ANALYZER_EXIT }
+          )) {
+            $path = "audit-out/$($check.Name).txt"
+            if (!(Test-Path $path)) { 'Check did not complete. See the workflow log.' | Set-Content $path }
+            $counts = @{ error = 0; warning = 0; info = 0 }
+            foreach ($line in Get-Content $path) {
+              $line = $line -replace '\x1b\[[0-9;]*m', ''
+              # dart analyze: severity - ...; custom_lint: ... • severity
+              if ($line -match '(?i)(?:^\s*(error|warning|info)\s+-|•\s*(error|warning|info)\s*(?:•|$))') {
+                $severity = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+                $counts[$severity.ToLowerInvariant()]++
+              }
+            }
+            $code = if ($check.Code) { $check.Code } else { 'unavailable (interrupted or not run)' }
+            "- $($check.Name): exit=$code; errors=$($counts.error); warnings=$($counts.warning); infos=$($counts.info)"
+          }
+          $summary | Set-Content audit-out/summary.md
+          $summary >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload audit reports
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: audit-app
+          path: audit-out/
+          if-no-files-found: error
+          retention-days: 14
