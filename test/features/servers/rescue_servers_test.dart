@@ -121,6 +121,11 @@ void main() {
       expect(s.serverOfChain(['NL игры'])!.name, 'NL игры');
       expect(s.serverOfChain(['select', 'NL']), isNotNull, reason: 'порядок цепочки не важен');
       expect(s.serverOfChain(['direct']), isNull);
+      expect(
+        s.serverOfChain(['NL игры §lane3§ §hide§', 'rescue-lane-3 §hide§'])!.name,
+        'NL игры',
+        reason: 'копия сервера в полосе группы',
+      );
     });
 
     test('список на потом: только имена, без пинга и выбора', () {

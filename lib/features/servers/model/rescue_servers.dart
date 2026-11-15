@@ -134,7 +134,8 @@ class RescueServers {
   /// группы), поэтому ищем по тегам, а не по месту в списке. null — напрямую или не сервер.
   RescueServer? serverOfChain(List<String> chains) {
     for (final tag in chains) {
-      final s = byTag(tag);
+      // Копия сервера в полосе группы (ядро, config/lanes.go): «<тег> §laneN§ §hide§».
+      final s = byTag(tag.replaceFirst(RegExp(r' §lane\d+§ §hide§$'), ''));
       if (s != null) return s;
     }
     return null;

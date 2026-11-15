@@ -126,6 +126,38 @@ void main() {
       expect(old.groups.single.items.apps, ['STEAM.exe']);
     });
 
+    test('полосы: у каждой группы с записями «через VPN» своя, по порядку групп', () {
+      const discord = (kind: SplitKind.app, value: 'Discord.exe');
+      const hs = (kind: SplitKind.app, value: 'Hearthstone.exe');
+      const site = (kind: SplitKind.domain, value: 'discord.gg');
+      var s = const SplitTunnel(
+        via: SplitList(apps: ['discord.exe', 'Hearthstone.exe', 'curl.exe'], domains: ['discord.gg']),
+        bypass: SplitList(apps: ['ssh.exe']),
+      );
+      s = s.inGroup('Работа', [ssh]).inGroup('Discord', [discord, site]).inGroup('Игры', [hs]);
+      // «Работа» — только мимо VPN: полосы нет. Имя программы — как записано в списке.
+      expect(s.lanes.map((l) => l.items), [
+        [(kind: SplitKind.app, value: 'discord.exe'), site],
+        [hs],
+      ]);
+      // Общий путь — без записей полос; DNS сайтов полос по-прежнему через VPN.
+      expect(s.viaShared.items, [(kind: SplitKind.app, value: 'curl.exe')]);
+      expect(s.viaAll.domains, ['discord.gg']);
+      // Закреплённая за сервером запись из полосы уходит.
+      final pinned = s.placed(SplitKind.app, 'Hearthstone.exe', SplitTarget.via, server: 'NL');
+      expect(pinned.lanes, hasLength(1));
+      expect(pinned.viaShared.apps, containsAll(['curl.exe', 'Hearthstone.exe']));
+    });
+
+    test('полос не больше, чем у ядра', () {
+      var s = SplitTunnel(via: SplitList(apps: [for (var i = 0; i < laneCount + 2; i++) 'a$i.exe']));
+      for (var i = 0; i < laneCount + 2; i++) {
+        s = s.inGroup('Группа $i', [(kind: SplitKind.app, value: 'a$i.exe')]);
+      }
+      expect(s.lanes, hasLength(laneCount));
+      expect(s.viaShared.apps, ['a$laneCount.exe', 'a${laneCount + 1}.exe']);
+    });
+
     test('стандартные группы покрывают все игры по умолчанию', () {
       final grouped = SplitTunnel.defaults.groups.expand((g) => g.items.apps).toSet();
       expect(grouped, containsAll(defaultBypassApps));

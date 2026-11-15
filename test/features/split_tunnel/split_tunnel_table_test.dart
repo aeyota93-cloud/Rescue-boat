@@ -766,7 +766,9 @@ void main() {
     // «VPN» у группы — все три записи «через VPN».
     await openTab(tester, 1);
     await moveCard(tester, 'Работа и дом', 'bypass', 'Через VPN');
-    expect(rules('via-vpn.json'), {app, site, ip});
+    // Записи группы — своя полоса (своё соединение с сервером), не общий «через VPN».
+    expect(rules(viaLaneFile(0)), {app, site, ip});
+    expect(rules('via-vpn.json'), isEmpty);
     expect(rules('via-domains.json'), {site});
     expect(rules('bypass-vpn.json'), isEmpty);
 
@@ -775,6 +777,7 @@ void main() {
     await moveCard(tester, 'Работа и дом', 'via', 'NL игры');
     expect(rules(games), {app, site, ip});
     expect(rules('via-vpn.json'), {app, site, ip});
+    expect(rules(viaLaneFile(0)), isEmpty, reason: 'закреплённые за сервером — не в полосе');
 
     // По одной: программа — мимо, сайт — «Авто» (ни в одном наборе), IP остаётся за сервером.
     await tap(tester, card('Работа и дом', 'NL игры'));

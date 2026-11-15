@@ -185,6 +185,34 @@ class SplitTunnel {
   /// пропал из подписки, ядро не знает его набора, и его пункты честно идут через «Авто».
   SplitList get viaAll => via.union(servers.values);
 
+  /// Полосы групп: у каждой группы с записями «через VPN (Авто)» — своё соединение с выбранным
+  /// сервером, чтобы загрузка в одной группе не поднимала пинг в другой (ядро: config/lanes.go).
+  /// По порядку групп, не больше [laneCount]; записи остальных групп идут общим путём.
+  List<SplitList> get lanes {
+    final out = <SplitList>[];
+    for (final g in groups) {
+      if (out.length == laneCount) break;
+      var lane = const SplitList();
+      for (final i in g.items.items) {
+        if (placeOf(i.kind, i.value) != viaPlace) continue;
+        lane = lane.withItem(i.kind, via.of(i.kind).firstWhere((v) => sameItem(i.kind, v, i.value)));
+      }
+      if (!lane.isEmpty) out.add(lane);
+    }
+    return out;
+  }
+
+  /// Общий путь «через VPN» (via-vpn.json): [viaAll] без записей полос.
+  SplitList get viaShared {
+    var out = viaAll;
+    for (final lane in lanes) {
+      for (final i in lane.items) {
+        out = out.without(i.kind, i.value);
+      }
+    }
+    return out;
+  }
+
   SplitTunnel withList(SplitTarget target, SplitList list) => target == SplitTarget.bypass
       ? SplitTunnel(bypass: list, via: via, servers: servers, groups: groups)
       : SplitTunnel(bypass: bypass, via: list, servers: servers, groups: groups);
@@ -334,6 +362,9 @@ class SplitTunnel {
   static SplitTunnel get defaults =>
       const SplitTunnel(bypass: SplitList(apps: defaultBypassApps)).withSuggestedGroups();
 }
+
+/// Сколько полос групп у ядра (Rescue-boat-core, config/lanes.go: LaneCount).
+const laneCount = 8;
 
 /// Имена групп сравниваем без учёта регистра и пробелов по краям.
 bool sameGroupName(String a, String b) => a.trim().toLowerCase() == b.trim().toLowerCase();
