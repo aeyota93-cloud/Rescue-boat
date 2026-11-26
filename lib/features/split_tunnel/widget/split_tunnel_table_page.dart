@@ -8,19 +8,22 @@ import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/insights/notifier/insights_notifiers.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
+import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/features/split_tunnel/widget/tunnel_dialogs.dart';
+import 'package:hiddify/features/split_tunnel/widget/tunnel_direct_view.dart';
 import 'package:hiddify/features/split_tunnel/widget/tunnel_groups_view.dart';
 import 'package:hiddify/features/split_tunnel/widget/tunnel_live_view.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Вкладки экрана.
-enum _View { live, groups }
+enum _View { live, groups, direct }
 
 /// Шлюпка: «Туннелирование» (docs/redesign/tunnel-v3.md). Две вкладки:
 /// «Сейчас в сети» — что идёт прямо сейчас, через что и почему ([TunnelLiveView]);
-/// «Все правила» — доска по местам, при поиске — список записей ([TunnelGroupsView]).
+/// «Все правила» — доска по местам, при поиске — список записей ([TunnelGroupsView]);
+/// «Мимо Шлюпки» — адреса, к которым Windows шлёт пакеты сама ([TunnelDirectView]).
 /// Изменения действуют сразу, без переподключения.
 ///
 /// Если области раздела хватает ([pinnedMinWidth] × [pinnedMinHeight]), шапка, вкладки и поиск
@@ -40,6 +43,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final search = useTextEditingController();
     final query = useState('');
     final openGroup = useState<String?>(null);
+    final directCount = ref.watch(directRoutesProvider.select((r) => r.entries.length));
 
     final data = buildTunnelRows(split, connections?.where((c) => !c.closed).toList(), errors);
     final listed = data.entries.where((e) => e.target != null || e.group != null).toList();
@@ -107,18 +111,24 @@ class SplitTunnelTablePage extends HookConsumerWidget {
           semanticLabel: 'Все правила',
           badge: '${listed.length}',
         ),
+        FolderTab(
+          value: _View.direct,
+          title: narrow ? 'Мимо' : 'Мимо Шлюпки',
+          semanticLabel: 'Мимо Шлюпки',
+          badge: '$directCount',
+        ),
       ],
       value: view.value,
       onChanged: (v) => view.value = v,
-      padding: view.value == _View.live ? EdgeInsets.zero : const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      child: view.value == _View.live
+      padding: view.value != _View.groups ? EdgeInsets.zero : const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      child: view.value != _View.groups
           ? const SizedBox.shrink()
           : _SearchRow(
               controller: search,
               onChanged: (v) => query.value = v.trim(),
               hint: switch (view.value) {
-                _View.live => 'Что идёт прямо сейчас: группа, реальный сервер и почему',
                 _View.groups => 'Переложите карточку в нужную колонку или выберите путь в её меню',
+                _ => '',
               },
             ),
     );
@@ -146,6 +156,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               pinned: pinned,
               openGroup: openGroup,
             ),
+            _View.direct => pinned ? const SingleChildScrollView(child: TunnelDirectView()) : const TunnelDirectView(),
           };
           final children = [
             header,

@@ -16,7 +16,7 @@ import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/advanced_settings_page.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
-import 'package:hiddify/features/split_tunnel/notifier/game_routes_notifier.dart';
+import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -199,8 +199,8 @@ class _TrafficSection extends ConsumerWidget {
     final bypassApps = ref.watch(splitTunnelProvider.select((s) => s.bypass.apps));
     final games = defaultGamesInBypass(bypassApps);
     final total = defaultBypassApps.length;
-    final gameRoutes = ref.watch(GameRoutesPreferences.enabled);
-    final learned = ref.watch(gameRoutesProvider.select((r) => r.routes.length));
+    final direct = ref.watch(DirectRoutesPreferences.enabled);
+    final listed = ref.watch(directRoutesProvider.select((r) => r.entries.length));
     return _Section(
       title: 'Куда идёт трафик',
       children: [
@@ -225,10 +225,10 @@ class _TrafficSection extends ConsumerWidget {
           onChanged: (v) => setDefaultGamesBypass(ref.read(splitTunnelProvider.notifier), v),
         ),
         SettingsSwitchTile(
-          title: 'Игровые серверы напрямую через Windows',
-          subtitle: gameRoutesSubtitle(learned),
-          value: gameRoutes,
-          onChanged: ref.read(GameRoutesPreferences.enabled.notifier).update,
+          title: 'Игровые серверы мимо Шлюпки',
+          subtitle: directRoutesSubtitle(listed),
+          value: direct,
+          onChanged: ref.read(DirectRoutesPreferences.enabled.notifier).update,
         ),
         SettingsSwitchTile(
           title: 'Блокировать рекламу и трекеры',
@@ -242,11 +242,11 @@ class _TrafficSection extends ConsumerWidget {
   }
 }
 
-/// Подпись «Игровые серверы напрямую через Windows»: что это даёт и сколько адресов запомнено.
-String gameRoutesSubtitle(int learned) =>
+/// Подпись «Игровые серверы мимо Шлюпки»: что это даёт и где список.
+String directRoutesSubtitle(int listed) =>
     'Меньше задержки в матчах. '
-    '${learned == 0 ? 'Адреса запоминаются во время игры' : 'Запомнено $learned ${pluralRu(learned, 'адрес', 'адреса', 'адресов')}'}'
-    ', новые — после переподключения';
+    '${listed == 0 ? 'Адреса запоминаются во время игры' : 'В списке $listed ${pluralRu(listed, 'адрес', 'адреса', 'адресов')}'}'
+    ' — «Туннелирование», вкладка «Мимо Шлюпки»';
 
 /// Сколько игр и лаунчеров по умолчанию сейчас в списке «мимо VPN».
 int defaultGamesInBypass(List<String> bypassApps) {
