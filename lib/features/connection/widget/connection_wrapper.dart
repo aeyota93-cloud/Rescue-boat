@@ -5,6 +5,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
+import 'package:hiddify/features/split_tunnel/notifier/game_routes_notifier.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:hiddify/utils/platform_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -22,6 +23,8 @@ class _ConnectionWrapperState extends ConsumerState<ConnectionWrapper> with AppL
   @override
   Widget build(BuildContext context) {
     ref.listen(connectionNotifierProvider, (_, _) {});
+    // Шлюпка: адреса игр мимо туннеля — файл для ядра и запоминание, пока VPN включён.
+    ref.listen(gameRoutesProvider, (_, _) {});
 
     ref.listen(configOptionNotifierProvider, (previous, next) async {
       if (next case AsyncData(value: true)) {
