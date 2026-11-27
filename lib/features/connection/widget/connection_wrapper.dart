@@ -4,6 +4,7 @@ import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/servers/notifier/server_renames.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
@@ -25,6 +26,8 @@ class _ConnectionWrapperState extends ConsumerState<ConnectionWrapper> with AppL
     ref.listen(connectionNotifierProvider, (_, _) {});
     // Шлюпка: «Мимо Шлюпки» — файл для ядра и запоминание адресов игр, пока VPN включён.
     ref.listen(directRoutesProvider, (_, _) {});
+    // Шлюпка: имена серверов поменяли в подписке — правила и выбранный сервер переезжают.
+    ref.listen(serverRenamesProvider, (_, _) {});
 
     ref.listen(configOptionNotifierProvider, (previous, next) async {
       if (next case AsyncData(value: true)) {

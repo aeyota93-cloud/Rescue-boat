@@ -201,6 +201,22 @@ class SplitTunnel {
   SplitTunnel withServer(String tag, SplitList list) =>
       SplitTunnel(bypass: bypass, via: via, servers: _clean({...servers, tag: list}), groups: groups);
 
+  /// Серверы переименовали в подписке (старое имя → новое): их записи переезжают к новому имени.
+  SplitTunnel withServersRenamed(Map<String, String> renames) {
+    var out = this;
+    for (final MapEntry(key: from, value: to) in renames.entries) {
+      final moved = out.servers[from];
+      if (moved == null || from == to) continue;
+      out = SplitTunnel(bypass: out.bypass, via: out.via, servers: {...out.servers}..remove(from), groups: out.groups);
+      for (final kind in SplitKind.values) {
+        for (final v in moved.of(kind)) {
+          out = out.placed(kind, v, SplitTarget.via, server: to);
+        }
+      }
+    }
+    return out;
+  }
+
   SplitTunnel withGroups(List<SplitGroup> list) => SplitTunnel(
     bypass: bypass,
     via: via,

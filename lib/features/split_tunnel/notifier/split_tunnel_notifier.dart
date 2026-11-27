@@ -96,6 +96,9 @@ class SplitTunnelNotifier extends Notifier<SplitTunnel> with AppLogger {
     commit(updated);
   }
 
+  /// Серверы переименовали в подписке: закреплённое за ними переезжает (server_renames.dart).
+  void renameServers(Map<String, String> renames) => commit(state.withServersRenamed(renames));
+
   void remove(SplitTarget target, SplitKind kind, String value) =>
       commit(state.withList(target, state.list(target).without(kind, value)));
 

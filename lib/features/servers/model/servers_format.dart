@@ -175,3 +175,32 @@ String serverTitle(String name) {
   }
   return name.trim();
 }
+
+/// Где сервер на самом деле: тег выхода → «vless|1.2.3.4:2083». По этому узнаём сервер, когда в
+/// подписке поменяли его имя ([serverRenames]). Без адреса (AmneziaWG с пирами, группы) — не берём.
+Map<String, String> endpointsOfConfig(Map<String, dynamic> config) => {
+  for (final o in [
+    ...config['outbounds'] as List<dynamic>? ?? const [],
+    ...config['endpoints'] as List<dynamic>? ?? const [],
+  ].whereType<Map<String, dynamic>>())
+    if (o['tag'] is String && o['server'] is String && o['server_port'] is int)
+      o['tag'] as String: '${o['type']}|${o['server']}:${o['server_port']}',
+};
+
+/// Какие серверы переименовали: старое имя → новое. Старого имени больше нет, и ровно один новый
+/// сервер стоит на том же адресе и порту. Сомнительное (ни одного или несколько) не трогаем.
+Map<String, String> serverRenames(Map<String, String> before, Map<String, String> after) {
+  final out = <String, String>{};
+  for (final MapEntry(key: tag, value: where) in before.entries) {
+    if (after.containsKey(tag)) continue;
+    final found = [
+      for (final e in after.entries)
+        if (e.value == where && !before.containsKey(e.key)) e.key,
+    ];
+    if (found.length == 1) out[tag] = found.single;
+  }
+  // Два старых в один новый — не угадываем.
+  final targets = out.values.toList();
+  out.removeWhere((_, v) => targets.where((t) => t == v).length > 1);
+  return out;
+}
