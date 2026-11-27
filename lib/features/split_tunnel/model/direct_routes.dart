@@ -7,11 +7,14 @@
 ///
 /// Таблица маршрутов Windows знает только адрес, не программу: адрес из списка идёт мимо Шлюпки
 /// у всех программ. Поэтому список узкий и под рукой у пользователя:
-/// - сети Blizzard (кроме Blizzard, там никого нет), если в «мимо VPN» есть её программы;
+/// - сети игровых компаний ([knownNets]: Blizzard, Valve), если в «мимо VPN» есть их программы;
 /// - адреса, куда игры из «мимо VPN» слали заметный UDP-трафик (запоминаются на лету и один раз
 ///   берутся из журнала ошибок). Сайты, CDN, DNS и QUIC (TCP, UDP 443, служебные порты) не берутся;
-/// - адреса и сети, которые пользователь добавил сам;
-/// - минус «никогда мимо Шлюпки» — этот запрет сильнее всего остального, даже сетей Blizzard.
+/// - адреса и сети, которые пользователь добавил сам — вручную или из меню («Мимо Шлюпки»
+///   у программы, соединения, ошибки; [directCandidates]);
+/// - адреса сайтов, за которыми пользователь попросил следить («Сайт и поддомены» → «Мимо
+///   Шлюпки»): запоминаются на лету, как адреса игр, и так же забываются;
+/// - минус «только через Шлюпку» ([DirectRoutes.never]) — этот запрет сильнее всего остального.
 /// Ядро читает список при подключении; «Применить сейчас» перестраивает маршруты туннеля так же,
 /// как ядро ([tunRouteRanges]), не дожидаясь переподключения.
 library;
@@ -105,6 +108,73 @@ const blizzardNets = [
   '198.74.36.0/23',
   '202.9.66.0/23',
 ];
+
+/// Программы Valve и Steam: если хоть одна в «мимо VPN», сети Valve идут мимо Шлюпки.
+const steamApps = {'steam.exe', 'cs2.exe', 'dota2.exe', 'project8.exe', 'tf_win64.exe'};
+
+/// Сети Valve (AS32590, IPv4, RIPEstat announced-prefixes 2026-11-27, объединены). Через них идут
+/// матчи игр Valve (Steam Datagram Relay). Магазин и загрузки Steam — на чужих CDN, их здесь нет.
+const steamNets = [
+  '45.121.184.0/24',
+  '103.10.124.0/23',
+  '103.28.54.0/24',
+  '146.66.152.0/24',
+  '146.66.155.0/24',
+  '155.133.224.0/21',
+  '155.133.236.0/22',
+  '155.133.240.0/23',
+  '155.133.244.0/24',
+  '155.133.246.0/24',
+  '155.133.248.0/22',
+  '155.133.252.0/24',
+  '155.133.254.0/23',
+  '162.254.192.0/21',
+  '185.25.180.0/24',
+  '185.25.182.0/23',
+  '192.69.96.0/22',
+  '205.196.6.0/24',
+  '208.64.200.0/22',
+  '208.78.164.0/22',
+];
+
+/// Набор сетей игровой компании: действует, если в «мимо VPN» есть её программа.
+class KnownNets {
+  const KnownNets({
+    required this.id,
+    required this.title,
+    required this.appsTitle,
+    required this.apps,
+    required this.nets,
+  });
+
+  /// Ключ в файле списка.
+  final String id;
+
+  /// «Сети Blizzard».
+  final String title;
+
+  /// Для подсказки «не действует: Overwatch и Battle.net не в «мимо VPN»».
+  final String appsTitle;
+
+  /// Имена exe в нижнем регистре.
+  final Set<String> apps;
+  final List<String> nets;
+}
+
+const knownNets = [
+  KnownNets(
+    id: 'blizzard',
+    title: 'Сети Blizzard',
+    appsTitle: 'Overwatch и Battle.net',
+    apps: blizzardApps,
+    nets: blizzardNets,
+  ),
+  KnownNets(id: 'steam', title: 'Сети Steam', appsTitle: 'Steam и игры Valve', apps: steamApps, nets: steamNets),
+];
+
+/// Сколько адресов можно добавить за одно действие из меню: каждый дробит маршрут туннеля
+/// примерно на 30 маршрутов Windows.
+const directAddMax = 64;
 
 // ---------- Сети IPv4 ----------
 
@@ -251,27 +321,33 @@ List<V4Net> tunRouteRanges(Iterable<V4Net> direct) => subtractNets([V4Net(0, 0)]
 
 enum DirectSource { learned, user }
 
-/// Запись списка: откуда взялась, какая игра туда ходила, когда в последний раз.
+/// Запись списка: откуда взялась, какая программа или какой сайт туда ходили, когда в последний раз.
 class DirectEntry {
-  const DirectEntry({required this.source, this.app = '', required this.lastSeen, this.pinned = false});
+  const DirectEntry({required this.source, this.app = '', this.site = '', required this.lastSeen, this.pinned = false});
 
   final DirectSource source;
   final String app;
+
+  /// Сайт, за которым следим («discord.gg»); пусто — адрес не от сайта.
+  final String site;
   final DateTime lastSeen;
 
   /// Не забывать и держать, даже если игру убрали из «мимо VPN».
   final bool pinned;
 
-  DirectEntry copyWith({DirectSource? source, String? app, DateTime? lastSeen, bool? pinned}) => DirectEntry(
-    source: source ?? this.source,
-    app: app ?? this.app,
-    lastSeen: lastSeen ?? this.lastSeen,
-    pinned: pinned ?? this.pinned,
-  );
+  DirectEntry copyWith({DirectSource? source, String? app, String? site, DateTime? lastSeen, bool? pinned}) =>
+      DirectEntry(
+        source: source ?? this.source,
+        app: app ?? this.app,
+        site: site ?? this.site,
+        lastSeen: lastSeen ?? this.lastSeen,
+        pinned: pinned ?? this.pinned,
+      );
 
   Map<String, dynamic> toJson() => {
     'source': source.name,
     'app': app,
+    if (site.isNotEmpty) 'site': site,
     'last': lastSeen.millisecondsSinceEpoch,
     if (pinned) 'pinned': true,
   };
@@ -283,51 +359,81 @@ class DirectEntry {
     return DirectEntry(
       source: DirectSource.values.asNameMap()[json['source']] ?? fallback,
       app: json['app'] as String? ?? '',
+      site: json['site'] as String? ?? '',
       lastSeen: DateTime.fromMillisecondsSinceEpoch(last),
       pinned: json['pinned'] == true,
     );
   }
 }
 
+/// Что запомнить: адрес, программа, сайт (пусто — не от сайта), когда видели.
+typedef DirectHit = ({String ip, String app, String site, DateTime seen});
+
 class DirectRoutes {
-  const DirectRoutes({this.entries = const {}, this.never = const {}, this.blizzard = true, this.seeded = false});
+  const DirectRoutes({
+    this.entries = const {},
+    this.never = const {},
+    this.netsOff = const {},
+    this.sites = const {},
+    this.seeded = false,
+  });
 
   /// Сеть → запись.
   final Map<V4Net, DirectEntry> entries;
 
-  /// «Никогда мимо Шлюпки».
+  /// «Только через Шлюпку» (в файле и коде — never: «никогда мимо»).
   final Set<V4Net> never;
 
-  /// Сети Blizzard (действуют, только если её программа в «мимо VPN»).
-  final bool blizzard;
+  /// Выключенные наборы сетей ([KnownNets.id]); остальные включены.
+  final Set<String> netsOff;
+
+  /// Сайты, за чьими адресами следим (в нижнем регистре).
+  final Set<String> sites;
 
   /// Журнал ошибок уже прочитан (это делается один раз).
   final bool seeded;
 
-  DirectRoutes copyWith({Map<V4Net, DirectEntry>? entries, Set<V4Net>? never, bool? blizzard, bool? seeded}) =>
-      DirectRoutes(
-        entries: entries ?? this.entries,
-        never: never ?? this.never,
-        blizzard: blizzard ?? this.blizzard,
-        seeded: seeded ?? this.seeded,
-      );
+  DirectRoutes copyWith({
+    Map<V4Net, DirectEntry>? entries,
+    Set<V4Net>? never,
+    Set<String>? netsOff,
+    Set<String>? sites,
+    bool? seeded,
+  }) => DirectRoutes(
+    entries: entries ?? this.entries,
+    never: never ?? this.never,
+    netsOff: netsOff ?? this.netsOff,
+    sites: sites ?? this.sites,
+    seeded: seeded ?? this.seeded,
+  );
 
   bool isNever(V4Net n) => never.any((x) => x.contains(n) || n.contains(x));
 
-  /// Добавить или освежить запомненные адреса, забыть старые и лишние. Возвращает тот же объект,
+  /// Адрес уже действует или лежит в списке (своей записью или внутри сети из списка).
+  bool covers(V4Net n) => entries.keys.any((x) => x.contains(n));
+
+  /// Добавить или освежить запомненные адреса игр, забыть старые и лишние. Возвращает тот же объект,
   /// если ничего не поменялось по существу (время освежается не чаще раза в час).
-  DirectRoutes learn(Iterable<(String ip, String app, DateTime seen)> found, DateTime now) {
+  DirectRoutes learn(Iterable<(String ip, String app, DateTime seen)> found, DateTime now) =>
+      learnHits([for (final (ip, app, seen) in found) (ip: ip, app: app, site: '', seen: seen)], now);
+
+  /// То же для адресов сайтов, за которыми следим, и для игр: общий разбор.
+  DirectRoutes learnHits(Iterable<DirectHit> found, DateTime now) {
     final next = Map.of(entries);
     var changed = false;
-    for (final (ip, app, seen) in found) {
-      final n = V4Net.tryParse(ip);
+    for (final h in found) {
+      final n = V4Net.tryParse(h.ip);
       if (n == null || n.bits != 32 || isNever(n)) continue;
       final old = next[n];
       if (old == null) {
-        next[n] = DirectEntry(source: DirectSource.learned, app: app, lastSeen: seen);
+        next[n] = DirectEntry(source: DirectSource.learned, app: h.app, site: h.site, lastSeen: h.seen);
         changed = true;
-      } else if (seen.difference(old.lastSeen) > const Duration(hours: 1)) {
-        next[n] = old.copyWith(lastSeen: seen, app: old.app.isEmpty ? app : null);
+      } else if (h.seen.difference(old.lastSeen) > const Duration(hours: 1)) {
+        next[n] = old.copyWith(
+          lastSeen: h.seen,
+          app: old.app.isEmpty ? h.app : null,
+          site: old.site.isEmpty ? h.site : null,
+        );
         changed = true;
       }
     }
@@ -346,14 +452,47 @@ class DirectRoutes {
     return copyWith(entries: next);
   }
 
-  /// Пользователь добавил адрес или сеть: снимает с неё «никогда мимо».
-  DirectRoutes withUser(V4Net n, DateTime now) => copyWith(
-    entries: {
-      ...entries,
-      n: DirectEntry(source: DirectSource.user, lastSeen: now, pinned: true),
-    },
-    never: never.where((x) => x != n).toSet(),
-  );
+  /// Пользователь добавил адрес или сеть: снимает с неё «только через Шлюпку».
+  DirectRoutes withUser(V4Net n, DateTime now, {String app = ''}) => withPicks([(net: n, app: app, site: '')], now);
+
+  /// Добавить выбранное в меню ([directCandidates]). Адреса программ и отдельные IP — свои
+  /// (держатся, пока их не уберут). Адреса сайтов — запомненные с сайтом: сайт попадает в [sites],
+  /// его новые адреса запоминаются на лету, старые забываются, как у игр.
+  DirectRoutes withPicks(Iterable<DirectPick> picks, DateTime now) {
+    final next = Map.of(entries);
+    final cut = <V4Net>{};
+    final watch = <String>{};
+    for (final p in picks) {
+      cut.add(p.net);
+      if (p.site.isNotEmpty) {
+        watch.add(p.site);
+        final old = next[p.net];
+        // Свою запись не понижаем до запомненной.
+        if (old == null || old.source == DirectSource.learned) {
+          next[p.net] = DirectEntry(source: DirectSource.learned, app: p.app, site: p.site, lastSeen: now);
+        }
+      } else {
+        next[p.net] = DirectEntry(source: DirectSource.user, app: p.app, lastSeen: now, pinned: true);
+      }
+    }
+    return copyWith(
+      entries: next,
+      never: never.where((x) => !cut.contains(x)).toSet(),
+      sites: watch.isEmpty ? null : {...sites, ...watch},
+    );
+  }
+
+  /// Следить за сайтом (без адресов: они появятся при первом соединении).
+  DirectRoutes withSite(String site) => copyWith(sites: {...sites, site.toLowerCase()});
+
+  /// Перестать следить за сайтом и убрать его запомненные адреса.
+  DirectRoutes withoutSite(String site) {
+    final s = site.toLowerCase();
+    return copyWith(
+      sites: sites.where((x) => x != s).toSet(),
+      entries: Map.of(entries)..removeWhere((_, e) => e.site == s && e.source == DirectSource.learned),
+    );
+  }
 
   DirectRoutes without(V4Net n) => copyWith(entries: Map.of(entries)..remove(n));
 
@@ -368,22 +507,37 @@ class DirectRoutes {
     );
   }
 
-  /// «Никогда мимо Шлюпки»: запись уходит из списка, запомнить её снова нельзя.
+  /// «Убрать и больше не добавлять»: запись уходит в «только через Шлюпку».
   DirectRoutes withNever(V4Net n) => copyWith(entries: Map.of(entries)..remove(n), never: {...never, n});
 
   DirectRoutes withoutNever(V4Net n) => copyWith(never: never.where((x) => x != n).toSet());
 
-  /// Запись действует: своя или закреплённая — всегда, запомненная — пока игра в «мимо VPN».
-  bool isActive(DirectEntry e, SplitTunnel s) => e.source == DirectSource.user || e.pinned || isBypassApp(s, e.app);
+  /// Из «только через Шлюпку» обратно в список: своей записью.
+  DirectRoutes withNeverBack(V4Net n, DateTime now) => withoutNever(n).withUser(n, now);
 
-  /// Сети Blizzard действуют.
-  bool blizzardActive(SplitTunnel s) => blizzard && s.bypass.apps.any((a) => blizzardApps.contains(a.toLowerCase()));
+  /// Запись действует: своя или закреплённая — всегда, адрес сайта — пока следим за сайтом,
+  /// запомненная игра — пока игра в «мимо VPN».
+  bool isActive(DirectEntry e, SplitTunnel s) =>
+      e.source == DirectSource.user ||
+      e.pinned ||
+      (e.site.isNotEmpty && sites.contains(e.site)) ||
+      isBypassApp(s, e.app);
+
+  bool netsOn(KnownNets k) => !netsOff.contains(k.id);
+
+  /// Набор сетей включён и его программа в «мимо VPN».
+  bool netsActive(KnownNets k, SplitTunnel s) =>
+      netsOn(k) && s.bypass.apps.any((a) => k.apps.contains(a.toLowerCase()));
+
+  DirectRoutes withNets(String id, bool on) =>
+      copyWith(netsOff: on ? (netsOff.where((x) => x != id).toSet()) : {...netsOff, id});
 
   /// Итоговый список «мимо Шлюпки» (то, что получит ядро). [enabled] false — пусто.
   List<V4Net> effective(SplitTunnel s, {required bool enabled}) {
     if (!enabled) return const [];
     final nets = <V4Net>[
-      if (blizzardActive(s)) ...blizzardNets.map((n) => V4Net.tryParse(n)!),
+      for (final k in knownNets)
+        if (netsActive(k, s)) ...k.nets.map((n) => V4Net.tryParse(n)!),
       for (final e in entries.entries)
         if (isActive(e.value, s)) e.key,
     ];
@@ -391,14 +545,15 @@ class DirectRoutes {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 2,
+    'version': 3,
     'seeded': seeded,
-    'blizzard': blizzard,
+    'netsOff': (netsOff.toList()..sort()),
+    'sites': (sites.toList()..sort()),
     'entries': {for (final e in entries.entries) e.key.toString(): e.value.toJson()},
     'never': [for (final n in never) n.toString()],
   };
 
-  /// Читает и вторую версию, и первую (game-routes.json: только `routes`, запомненные адреса).
+  /// Читает третью версию, вторую (`blizzard: bool`) и первую (game-routes.json: только `routes`).
   factory DirectRoutes.fromJson(Map<String, dynamic> json) {
     final entries = <V4Net, DirectEntry>{};
     for (final key in ['entries', 'routes']) {
@@ -414,13 +569,163 @@ class DirectRoutes {
       for (final s in (json['never'] as List<dynamic>? ?? const []).whereType<String>())
         if (V4Net.tryParse(s) case final n?) n,
     };
+    final netsOff = <String>{
+      ...(json['netsOff'] as List<dynamic>? ?? const []).whereType<String>(),
+      if (json['blizzard'] == false) 'blizzard',
+    };
     return DirectRoutes(
       entries: entries,
       never: never,
-      blizzard: json['blizzard'] as bool? ?? true,
+      netsOff: netsOff,
+      sites: {...(json['sites'] as List<dynamic>? ?? const []).whereType<String>().map((s) => s.toLowerCase())},
       seeded: json['seeded'] == true,
     );
   }
+}
+
+/// Группа записи на вкладке: сайт, программа или «добавлено вами».
+String directGroupOf(DirectEntry e) => e.site.isNotEmpty
+    ? e.site
+    : e.app.isNotEmpty
+    ? e.app
+    : '';
+
+// ---------- Отбор адресов из меню ----------
+
+/// Что видели: соединение или ошибка. [direct] — шло напрямую (не через VPN и не заблокировано).
+typedef DirectSeen = ({String ip, String app, String host, bool direct});
+
+/// Выбранный адрес: [site] не пусто — адрес сайта, за которым будем следить.
+typedef DirectPick = ({V4Net net, String app, String site});
+
+/// Что можно добавить и почему остальное нельзя — для пункта меню и диалога.
+class DirectCandidates {
+  const DirectCandidates({
+    this.picks = const [],
+    this.viaVpn = 0,
+    this.shared = 0,
+    this.already = 0,
+    this.never = 0,
+    this.over = 0,
+  });
+
+  final List<DirectPick> picks;
+
+  /// Адреса, к которым ходят через VPN: мимо Шлюпки они ушли бы мимо VPN у всех программ.
+  final int viaVpn;
+
+  /// Адреса, на которые ходят и другие сайты (общие сети доставки) или кто-то через VPN.
+  final int shared;
+
+  /// Уже в списке.
+  final int already;
+
+  /// В «только через Шлюпку».
+  final int never;
+
+  /// Не влезли в [directAddMax].
+  final int over;
+
+  bool get isEmpty => picks.isEmpty;
+}
+
+/// Отбор адресов для «Мимо Шлюпки» из того, что видели у выбранного ([matched]), на фоне всего, что
+/// видели сейчас ([all]). Берутся только публичные IPv4, к которым шли напрямую: адрес в списке идёт
+/// мимо VPN у всех программ, поэтому то, что идёт через VPN, брать нельзя. Адрес отбрасывается и
+/// тогда, когда к нему же сейчас ходят через VPN или (если [sites] не пусто) ходят другие сайты:
+/// это общая сеть доставки, на ней бывают и заблокированные сайты. [sites] — сайты, за чьими
+/// адресами будем следить; адрес достаётся сайту, к которому шло соединение.
+DirectCandidates directCandidates(
+  Iterable<DirectSeen> matched,
+  Iterable<DirectSeen> all,
+  DirectRoutes routes, {
+  Set<String> sites = const {},
+}) {
+  String siteOf(String host) {
+    if (host.isEmpty) return '';
+    for (final s in sites) {
+      if (_hostUnder(host, s)) return s;
+    }
+    return '';
+  }
+
+  final vpnIps = {
+    for (final s in all)
+      if (!s.direct) s.ip,
+  };
+  final hostsByIp = <String, Set<String>>{};
+  for (final s in all) {
+    if (s.host.isNotEmpty) (hostsByIp[s.ip] ??= {}).add(s.host.toLowerCase());
+  }
+
+  final picked = <V4Net, DirectPick>{};
+  final viaVpn = <String>{};
+  final shared = <String>{};
+  final already = <String>{};
+  final never = <String>{};
+  for (final s in matched) {
+    if (!isPublicIPv4(s.ip)) continue;
+    final n = V4Net.tryParse(s.ip)!;
+    if (picked.containsKey(n)) continue;
+    if (!s.direct) {
+      viaVpn.add(s.ip);
+      continue;
+    }
+    if (routes.isNever(n)) {
+      never.add(s.ip);
+      continue;
+    }
+    if (routes.covers(n)) {
+      already.add(s.ip);
+      continue;
+    }
+    final site = siteOf(s.host);
+    final foreign = sites.isNotEmpty && (hostsByIp[s.ip] ?? const {}).any((h) => siteOf(h).isEmpty);
+    if (vpnIps.contains(s.ip) || foreign) {
+      shared.add(s.ip);
+      continue;
+    }
+    picked[n] = (net: n, app: s.app, site: site);
+  }
+  // Адрес, который не вышел подходящим в одном соединении, но подошёл в другом, — не берём.
+  final bad = {...viaVpn, ...shared};
+  final list = [
+    for (final p in picked.values)
+      if (!bad.contains(p.net.ip)) p,
+  ]..sort((a, b) => a.net.compareTo(b.net));
+  return DirectCandidates(
+    picks: list.take(directAddMax).toList(),
+    viaVpn: viaVpn.length,
+    shared: shared.difference(viaVpn).length,
+    already: already.length,
+    never: never.length,
+    over: list.length > directAddMax ? list.length - directAddMax : 0,
+  );
+}
+
+bool _hostUnder(String host, String site) {
+  final h = host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  return h == site || h.endsWith('.$site');
+}
+
+DirectSeen seenOfConnection(NetConnection c) =>
+    (ip: c.ip, app: c.exe, host: c.host, direct: c.chains.isNotEmpty && c.chains.first.startsWith('direct'));
+
+DirectSeen seenOfError(ErrorEvent e) => (ip: e.ip, app: e.app, host: e.host, direct: e.route == ErrorRoute.direct);
+
+/// Адреса сайтов, за которыми следим, из текущих соединений — для запоминания на лету.
+/// Те же проверки, что в меню: только напрямую, без общих адресов.
+List<DirectHit> siteHits(List<NetConnection> list, DirectRoutes routes, DateTime now) {
+  if (routes.sites.isEmpty) return const [];
+  final all = list.map(seenOfConnection).toList();
+  final mine = [
+    for (final s in all)
+      if (s.host.isNotEmpty && routes.sites.any((site) => _hostUnder(s.host, site))) s,
+  ];
+  if (mine.isEmpty) return const [];
+  // Без проверки «уже в списке»: там освежается время.
+  final c = directCandidates(mine, all, routes.copyWith(entries: const {}), sites: routes.sites);
+  return [for (final p in c.picks) (ip: p.net.ip, app: p.app, site: p.site, seen: now)];
 }
 
 /// Программа в «мимо VPN» (сама или в составе группы — группы пишут в тот же список).

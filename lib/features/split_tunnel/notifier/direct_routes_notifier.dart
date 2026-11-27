@@ -129,7 +129,16 @@ class DirectRoutesNotifier extends Notifier<DirectRoutes> with AppLogger {
 
   void removeNever(V4Net n) => _update(state.withoutNever(n));
 
-  void setBlizzard(bool on) => _update(state.copyWith(blizzard: on));
+  /// Из «только через Шлюпку» обратно в «Мимо Шлюпки».
+  void neverBack(V4Net n) => _update(state.withNeverBack(n, DateTime.now()));
+
+  void setNets(String id, bool on) => _update(state.withNets(id, on));
+
+  /// Добавить отобранное в меню ([directCandidates]).
+  void addPicks(List<DirectPick> picks) => _update(state.withPicks(picks, DateTime.now()));
+
+  /// Перестать следить за сайтом и убрать его запомненные адреса.
+  void removeSite(String site) => _update(state.withoutSite(site));
 
   // ---------- Применить сейчас ----------
 
@@ -166,9 +175,10 @@ class DirectRoutesNotifier extends Notifier<DirectRoutes> with AppLogger {
     final now = DateTime.now();
     final split = _split;
     _update(
-      state.learn([
+      state.learnHits([
         for (final c in list)
-          if (isGameFlow(c, split)) (c.ip, c.exe, now),
+          if (isGameFlow(c, split)) (ip: c.ip, app: c.exe, site: '', seen: now),
+        ...siteHits(list, state, now),
       ], now),
     );
   }

@@ -130,23 +130,24 @@ class TunnelDirectView extends HookConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const _Label('МИМО ШЛЮПКИ'),
-              _Row(
-                icon: Icons.sports_esports_rounded,
-                title: 'Сети Blizzard',
-                detail: [
-                  '${blizzardNets.length} сетей',
-                  if (!routes.blizzard)
-                    'выключено'
-                  else if (!routes.blizzardActive(split))
-                    'не действует: Overwatch и Battle.net не в «мимо VPN»',
-                ].join(' · '),
-                muted: !routes.blizzardActive(split),
-                trailing: RescueToggle(
-                  value: routes.blizzard,
-                  onChanged: notifier.setBlizzard,
-                  semanticLabel: 'Сети Blizzard мимо Шлюпки',
+              for (final k in knownNets)
+                _Row(
+                  icon: Icons.sports_esports_rounded,
+                  title: k.title,
+                  detail: [
+                    '${k.nets.length} сетей',
+                    if (!routes.netsOn(k))
+                      'выключено'
+                    else if (!routes.netsActive(k, split))
+                      'не действует: ${k.appsTitle} не в «мимо VPN»',
+                  ].join(' · '),
+                  muted: !routes.netsActive(k, split),
+                  trailing: RescueToggle(
+                    value: routes.netsOn(k),
+                    onChanged: (on) => notifier.setNets(k.id, on),
+                    semanticLabel: '${k.title} мимо Шлюпки',
+                  ),
                 ),
-              ),
               for (final e in rows)
                 _Row(
                   key: ValueKey('direct-${e.key}'),

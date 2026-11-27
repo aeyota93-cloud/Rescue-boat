@@ -195,7 +195,7 @@ void main() {
       expect(eff, isNot(contains(n('35.234.90.158'))), reason: 'game left bypass');
       expect(eff.any((x) => x.contains(n('137.221.64.1'))), isTrue);
       expect(
-        r.copyWith(blizzard: false).effective(_split, enabled: true).any((x) => x.contains(n('137.221.64.1'))),
+        r.withNets('blizzard', false).effective(_split, enabled: true).any((x) => x.contains(n('137.221.64.1'))),
         isFalse,
       );
       const noBlizzard = SplitTunnel(bypass: SplitList(apps: ['Marvel-Win64-Shipping.exe']));
@@ -208,13 +208,13 @@ void main() {
           .withUser(n('8.8.4.4'), _now)
           .learn([('34.88.131.44', 'Overwatch.exe', _now)], _now)
           .withNever(n('1.2.3.4'))
-          .copyWith(seeded: true, blizzard: false);
+          .copyWith(seeded: true, netsOff: {'blizzard'});
       final back = DirectRoutes.fromJson(r.toJson());
       expect(back.entries.keys.toSet(), {n('8.8.4.4'), n('34.88.131.44')});
       expect(back.entries[n('8.8.4.4')]!.source, DirectSource.user);
       expect(back.never, {n('1.2.3.4')});
       expect(back.seeded, isTrue);
-      expect(back.blizzard, isFalse);
+      expect(back.netsOff, {'blizzard'});
 
       final v1 = DirectRoutes.fromJson({
         'version': 1,
@@ -227,7 +227,135 @@ void main() {
       });
       expect(v1.entries.keys, [n('35.228.147.76')]);
       expect(v1.entries.values.single.source, DirectSource.learned);
-      expect(v1.blizzard, isTrue);
+      expect(v1.netsOff, isEmpty);
+      // Вторая версия: выключатель Blizzard был отдельным полем.
+      expect(DirectRoutes.fromJson({'version': 2, 'blizzard': false}).netsOff, {'blizzard'});
+    });
+
+    test('Steam nets work while a Valve game is in bypass', () {
+      const valve = SplitTunnel(bypass: SplitList(apps: ['cs2.exe']));
+      const r = DirectRoutes();
+      expect(r.effective(valve, enabled: true).any((x) => x.contains(n('155.133.226.1'))), isTrue);
+      expect(r.effective(valve, enabled: true).any((x) => x.contains(n('137.221.64.1'))), isFalse);
+      expect(
+        r.withNets('steam', false).effective(valve, enabled: true).any((x) => x.contains(n('155.133.226.1'))),
+        isFalse,
+      );
+      for (final k in knownNets) {
+        for (final s in k.nets) {
+          expect(V4Net.tryParse(s), isNotNull, reason: s);
+          expect(V4Net.tryParse(s).toString(), s, reason: 'net must be aligned: $s');
+        }
+      }
+    });
+
+    test('picks: program addresses are own, site addresses are watched and expire', () {
+      final r = const DirectRoutes().withNever(n('9.9.9.9')).withPicks([
+        (net: n('35.228.147.76'), app: 'Overwatch.exe', site: ''),
+        (net: n('162.159.135.232'), app: 'Discord.exe', site: 'discord.gg'),
+        (net: n('9.9.9.9'), app: '', site: ''),
+      ], _now);
+      expect(r.entries[n('35.228.147.76')]!.source, DirectSource.user);
+      expect(r.entries[n('35.228.147.76')]!.app, 'Overwatch.exe');
+      expect(r.entries[n('162.159.135.232')]!.source, DirectSource.learned);
+      expect(r.entries[n('162.159.135.232')]!.site, 'discord.gg');
+      expect(r.sites, {'discord.gg'});
+      expect(r.never, isEmpty, reason: 'explicit add lifts the ban');
+      // Адрес сайта действует, пока за сайтом следим, хотя Discord не в «мимо VPN».
+      expect(r.effective(_split, enabled: true), contains(n('162.159.135.232')));
+      final off = r.withoutSite('discord.gg');
+      expect(off.sites, isEmpty);
+      expect(off.entries.containsKey(n('162.159.135.232')), isFalse);
+      // Через 30 дней адрес сайта забывается, свой — нет.
+      final later = r.learn(const [], _now.add(const Duration(days: 31)));
+      expect(later.entries.keys.toSet(), {n('35.228.147.76'), n('9.9.9.9')});
+      // Свою запись адрес сайта не понижает.
+      final mine = const DirectRoutes().withUser(n('1.1.1.1'), _now).withPicks([
+        (net: n('1.1.1.1'), app: '', site: 'one.one'),
+      ], _now);
+      expect(mine.entries[n('1.1.1.1')]!.source, DirectSource.user);
+    });
+
+    test('candidates: only direct public IPv4, no shared or VPN addresses, capped', () {
+      DirectSeen seen(String ip, {String host = '', bool direct = true, String app = 'game.exe'}) =>
+          (ip: ip, app: app, host: host, direct: direct);
+      final routes = const DirectRoutes().withUser(n('5.5.5.0/24'), _now).withNever(n('6.6.6.6'));
+      final matched = [
+        seen('35.228.147.76'),
+        seen('35.228.147.76'),
+        seen('192.168.1.10'),
+        seen('2a00::1'),
+        seen('8.8.8.8', direct: false),
+        seen('5.5.5.5'),
+        seen('6.6.6.6'),
+        seen('7.7.7.7'),
+      ];
+      // 7.7.7.7 сейчас кто-то открывает через VPN — общий адрес.
+      final all = [...matched, seen('7.7.7.7', direct: false, app: 'chrome.exe')];
+      final c = directCandidates(matched, all, routes);
+      expect(c.picks.map((p) => p.net), [n('35.228.147.76')]);
+      expect(c.viaVpn, 1, reason: '8.8.8.8 itself goes through the VPN');
+      expect(c.shared, 1, reason: '7.7.7.7 is also opened through the VPN by another program');
+      expect(c.already, 1);
+      expect(c.never, 1);
+
+      final many = [for (var i = 1; i <= 70; i++) seen('35.1.0.$i')];
+      final capped = directCandidates(many, many, const DirectRoutes());
+      expect(capped.picks, hasLength(directAddMax));
+      expect(capped.over, 70 - directAddMax);
+    });
+
+    test('candidates for a site: address shared with another site is skipped', () {
+      DirectSeen seen(String ip, String host) => (ip: ip, app: 'Discord.exe', host: host, direct: true);
+      final matched = [seen('162.159.135.232', 'gateway.discord.gg'), seen('104.16.1.1', 'cdn.discord.gg')];
+      final all = [...matched, seen('104.16.1.1', 'blocked.example')];
+      final c = directCandidates(matched, all, const DirectRoutes(), sites: {'discord.gg'});
+      expect(c.picks, [(net: n('162.159.135.232'), app: 'Discord.exe', site: 'discord.gg')]);
+      expect(c.shared, 1);
+    });
+
+    test('site addresses are learned from live connections', () {
+      NetConnection c(String ip, String host, {String chain = 'direct'}) => NetConnection(
+        id: ip,
+        exe: 'Discord.exe',
+        host: host,
+        ip: ip,
+        port: '443',
+        network: 'tcp',
+        viaVpn: chain != 'direct',
+        upload: 0,
+        download: 0,
+        chains: [chain],
+      );
+      final routes = const DirectRoutes().withSite('discord.gg');
+      final hits = siteHits(
+        [
+          c('162.159.135.232', 'gateway.discord.gg'),
+          c('162.159.136.1', 'media.discord.gg', chain: 'Сервер 2'),
+          c('1.2.3.4', 'example.com'),
+        ],
+        routes,
+        _now,
+      );
+      expect(hits.map((h) => h.ip), ['162.159.135.232']);
+      final learned = routes.learnHits(hits, _now);
+      expect(learned.entries[n('162.159.135.232')]!.site, 'discord.gg');
+      expect(siteHits([c('1.2.3.4', 'example.com')], const DirectRoutes(), _now), isEmpty);
+    });
+
+    test('never back returns the address as own', () {
+      final r = const DirectRoutes().withNever(n('1.2.3.4')).withNeverBack(n('1.2.3.4'), _now);
+      expect(r.never, isEmpty);
+      expect(r.entries[n('1.2.3.4')]!.source, DirectSource.user);
+    });
+
+    test('JSON keeps sites and site of entries', () {
+      final r = const DirectRoutes().withPicks([
+        (net: n('162.159.135.232'), app: 'Discord.exe', site: 'discord.gg'),
+      ], _now);
+      final back = DirectRoutes.fromJson(r.toJson());
+      expect(back.sites, {'discord.gg'});
+      expect(back.entries.values.single.site, 'discord.gg');
     });
 
     test('tun-exclude.txt lists the effective nets', () {
