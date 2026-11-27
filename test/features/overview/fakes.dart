@@ -18,7 +18,9 @@ import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/rescue_ui/rescue_theme.dart';
+import 'package:hiddify/features/split_tunnel/model/direct_routes.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
+import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -127,6 +129,12 @@ class FakeDialogs extends DialogNotifier {
 }
 
 /// Списки туннеля только в памяти (настоящий пишет файлы наборов правил).
+/// Список «Мимо Шлюпки» без файлов: на экранах вне туннеля папки приложения нет.
+class FakeDirectRoutes extends DirectRoutesNotifier {
+  @override
+  DirectRoutes build() => const DirectRoutes();
+}
+
 class FakeSplitTunnel extends SplitTunnelNotifier {
   FakeSplitTunnel([this.initial = const SplitTunnel()]);
 
@@ -295,6 +303,7 @@ List<Override> pageOverrides({
   activeProfileProvider.overrideWith(() => FakeActiveProfile(empty ? null : profile ?? sampleProfile)),
   dialogNotifierProvider.overrideWith(() => dialogs ?? FakeDialogs()),
   splitTunnelProvider.overrideWith(() => split ?? FakeSplitTunnel(SplitTunnel.defaults)),
+  directRoutesProvider.overrideWith(FakeDirectRoutes.new),
   errorEventsProvider.overrideWith((ref, period) => AsyncData(empty ? const [] : eventsFor(period, events))),
   errorCountProvider.overrideWith(
     (ref, window) => empty

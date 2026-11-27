@@ -12,6 +12,7 @@ import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
+import 'package:hiddify/features/split_tunnel/widget/direct_add.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Шлюпка: «Ошибки соединений» в стиле «Д» (макет docs/redesign/mockup/style-d-dark.html, экран
@@ -526,9 +527,10 @@ class _Details extends HookWidget {
   }
 
   /// Колонка ниже этой (с закладкой): закрепить график и кнопки нечем, прокручивается вся карточка.
-  /// В узкой колонке кнопки переносятся на больше строк, поэтому нужно больше места.
-  static const tightBelow = 400.0;
-  static const tightBelowNarrow = 480.0;
+  /// В узкой колонке кнопки переносятся на больше строк, поэтому нужно больше места. Кнопок шесть
+  /// (с «IP мимо Шлюпки»): даже на широкой колонке это две строки.
+  static const tightBelow = 456.0;
+  static const tightBelowNarrow = 536.0;
 }
 
 /// Закладка с названием над карточкой, которая занимает всю высоту колонки (как [FolderTabs] с одной
@@ -641,34 +643,39 @@ class _EventRow extends StatelessWidget {
           Expanded(
             child: ip == null
                 ? Text(address, style: RescueText.smallSecondary, maxLines: 1, overflow: TextOverflow.ellipsis)
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: Tooltip(
-                      message: 'Скопировать IP',
-                      child: InkWell(
-                        key: ValueKey('copy-ip-$ip'),
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => copyIps(context, [ip]),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  address,
-                                  style: RescueText.smallSecondary,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                : Row(
+                    children: [
+                      Flexible(
+                        child: Tooltip(
+                          message: 'Скопировать IP',
+                          child: InkWell(
+                            key: ValueKey('copy-ip-$ip'),
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () => copyIps(context, [ip]),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      address,
+                                      style: RescueText.smallSecondary,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.copy_rounded, size: 14, color: RescueColors.muted),
+                                ],
                               ),
-                              const SizedBox(width: 6),
-                              const Icon(Icons.copy_rounded, size: 14, color: RescueColors.muted),
-                            ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 4),
+                      DirectEventIcon(event: e),
+                    ],
                   ),
           ),
         ],
@@ -865,6 +872,7 @@ class _Actions extends ConsumerWidget {
             onPressed: () => copyIps(context, ips),
             child: Text(ips.length == 1 ? 'Скопировать IP' : 'Скопировать IP (${ips.length})'),
           ),
+        if (ips.isNotEmpty) DirectErrorsButton(events: group.events),
         TextButton(
           style: TextButton.styleFrom(foregroundColor: RescueColors.text),
           onPressed: () async {

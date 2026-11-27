@@ -405,12 +405,25 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('1200×600 — невысокая область: сводка без пояснения, кнопки и списки на месте', (tester) async {
+    testWidgets('1200×600 — невысокая область: сводка без пояснения, кнопки достижимы', (tester) async {
       const window = Size(1200, 600);
       await pumpPage(tester, const ErrorsPage(), overrides: longOverrides(), size: window);
-      expect(find.byKey(const ValueKey('errors-events-list')), findsOneWidget);
       expect(find.textContaining('Хранится только на этом компьютере'), findsNothing);
-      for (final t in ['Пустить мимо VPN', 'Скопировать для владельца сервера', 'ПО САЙТАМ И ПРОГРАММАМ', 'Час']) {
+      expect(tester.takeException(), isNull);
+      for (final t in ['ПО САЙТАМ И ПРОГРАММАМ', 'Час']) {
+        expectOnScreen(tester, find.text(t), window, what: t);
+      }
+      // Шесть кнопок — две-три строки: колонке подробностей не хватает высоты закрепить всё,
+      // и тогда крутится её карточка (как на 860×600).
+      final scroll = find.byKey(const ValueKey('errors-details-scroll'));
+      if (scroll.evaluate().isNotEmpty) {
+        await tester.scrollUntilVisible(
+          find.text('Скопировать для владельца сервера'),
+          200,
+          scrollable: find.descendant(of: scroll, matching: find.byType(Scrollable)).first,
+        );
+      }
+      for (final t in ['Пустить мимо VPN', 'Скопировать для владельца сервера']) {
         expectOnScreen(tester, find.text(t), window, what: t);
       }
       expect(tester.takeException(), isNull);

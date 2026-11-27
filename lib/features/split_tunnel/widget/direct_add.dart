@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/insights/model/insights_models.dart';
 import 'package:hiddify/features/rescue_ui/rescue_ui.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/model/direct_routes.dart';
@@ -208,3 +209,62 @@ String directWhatOf(SplitRef i, String title) => switch (i.kind) {
   SplitKind.domain => 'сайта ${i.value}',
   SplitKind.ip => 'IP ${i.value.replaceFirst(RegExp(r'/(32|128)$'), '')}',
 };
+
+// ---------- «Ошибки» ----------
+
+/// Отбор адресов из ошибок: сами ошибки — и выборка, и фон (общие адреса видны внутри них).
+DirectCandidates candidatesForErrors(List<ErrorEvent> events, DirectRoutes routes) {
+  final seen = events.map(seenOfError).toList();
+  return directCandidates(seen, seen, routes);
+}
+
+/// Кнопка «IP (n) мимо Шлюпки» у группы ошибок; n — адреса, которые можно добавить.
+class DirectErrorsButton extends ConsumerWidget {
+  const DirectErrorsButton({super.key, required this.events});
+
+  final List<ErrorEvent> events;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!PlatformUtils.isWindows) return const SizedBox.shrink();
+    final c = candidatesForErrors(events, ref.watch(directRoutesProvider));
+    final s = directMenuState(c, online: true);
+    final n = c.picks.length;
+    return Tooltip(
+      message: s.enabled ? 'Пакеты к этим адресам Windows отправит сама, без Шлюпки' : s.hint,
+      child: OutlinedButton.icon(
+        key: const ValueKey('direct-group-ips'),
+        onPressed: s.enabled ? () => showDirectAddDialog(context, candidates: c, what: 'из этих ошибок') : null,
+        icon: const Icon(Icons.call_split_rounded, size: 16),
+        label: Text(n > 1 ? 'IP ($n) мимо Шлюпки' : 'IP мимо Шлюпки'),
+      ),
+    );
+  }
+}
+
+/// Значок «мимо Шлюпки» у IP в строке ошибки.
+class DirectEventIcon extends ConsumerWidget {
+  const DirectEventIcon({super.key, required this.event});
+
+  final ErrorEvent event;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!PlatformUtils.isWindows || !isPublicIPv4(event.ip)) return const SizedBox.shrink();
+    final c = candidatesForErrors([event], ref.watch(directRoutesProvider));
+    final s = directMenuState(c, online: true);
+    return IconButton(
+      key: ValueKey('direct-ip-${event.ip}'),
+      tooltip: s.enabled ? 'Мимо Шлюпки' : 'Мимо Шлюпки: ${s.hint}',
+      // Без запаса до 48×48: иначе каждая строка ошибок становится выше.
+      style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      padding: EdgeInsets.zero,
+      iconSize: 16,
+      color: s.title.endsWith('✓') ? RescueColors.accent : RescueColors.muted,
+      onPressed: s.enabled ? () => showDirectAddDialog(context, candidates: c, what: 'IP ${event.ip}') : null,
+      icon: Icon(s.title.endsWith('✓') ? Icons.check_rounded : Icons.call_split_rounded),
+    );
+  }
+}
