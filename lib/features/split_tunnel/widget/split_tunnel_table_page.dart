@@ -43,6 +43,7 @@ class SplitTunnelTablePage extends HookConsumerWidget {
     final search = useTextEditingController();
     final query = useState('');
     final openGroup = useState<String?>(null);
+    final directFocus = useState<String?>(null);
     final directCount = ref.watch(directRoutesProvider.select((r) => r.entries.length));
 
     final data = buildTunnelRows(split, connections?.where((c) => !c.closed).toList(), errors);
@@ -148,6 +149,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               pinned: pinned,
               onOpenGroup: openGroupTab,
               onShowGroups: () => view.value = _View.groups,
+              onOpenDirect: (exe) {
+                directFocus.value = exe;
+                view.value = _View.direct;
+              },
             ),
             _View.groups => TunnelGroupsView(
               entries: data.entries,
@@ -156,7 +161,10 @@ class SplitTunnelTablePage extends HookConsumerWidget {
               pinned: pinned,
               openGroup: openGroup,
             ),
-            _View.direct => pinned ? const SingleChildScrollView(child: TunnelDirectView()) : const TunnelDirectView(),
+            _View.direct =>
+              pinned
+                  ? SingleChildScrollView(child: TunnelDirectView(focus: directFocus.value))
+                  : TunnelDirectView(focus: directFocus.value),
           };
           final children = [
             header,

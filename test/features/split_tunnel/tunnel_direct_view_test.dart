@@ -90,16 +90,35 @@ void main() {
     expect(fake.routes, tunRouteRanges(effective).toSet());
     expect(find.text('Всё применено.'), findsOneWidget);
 
-    // «Вернуть в Шлюпку навсегда» — запись уходит в «Никогда мимо Шлюпки».
+    // Своя запись — в группе «Добавлено вами».
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('direct-group-')), matching: find.text('Добавлено вами')),
+      findsOneWidget,
+    );
+    expect(find.text('ТОЛЬКО ЧЕРЕЗ ШЛЮПКУ'), findsOneWidget, reason: 'second column is always there');
+    expect(find.text('Никогда мимо…'), findsNothing);
+
+    // «Убрать и больше не добавлять» — запись уходит в «Только через Шлюпку».
     await tester.tap(
       find.descendant(of: find.byKey(const ValueKey('direct-35.228.147.76/32')), matching: find.byTooltip('Действия')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Вернуть в Шлюпку навсегда'));
+    await tester.tap(find.text('Убрать и больше не добавлять'));
     await tester.pumpAndSettle();
-    expect(find.text('НИКОГДА МИМО ШЛЮПКИ'), findsOneWidget);
     expect(find.byKey(const ValueKey('never-35.228.147.76/32')), findsOneWidget);
+    expect(find.byKey(const ValueKey('direct-35.228.147.76/32')), findsNothing);
     expect(find.textContaining('Есть изменения'), findsOneWidget);
+
+    // Обратно: «Вернуть в «Мимо Шлюпки»» — снова своя запись, запрета нет.
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey('never-35.228.147.76/32')), matching: find.byTooltip('Действия')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Вернуть в «Мимо Шлюпки»'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('never-35.228.147.76/32')), findsNothing);
+    expect(find.byKey(const ValueKey('direct-35.228.147.76/32')), findsOneWidget);
+    expect(container.read(directRoutesProvider).never, isEmpty);
 
     // Таймер запоминания живёт, пока VPN включён: закрываем, как при выходе из программы.
     await tester.pumpWidget(const SizedBox());

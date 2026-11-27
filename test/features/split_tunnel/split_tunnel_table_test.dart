@@ -1057,6 +1057,9 @@ void main() {
     expect(routes.entries.values.single.app, 'game.exe');
     expect(routes.entries.values.single.source, DirectSource.user);
 
+    // Метка у программы: её адреса мимо Шлюпки здесь не видны; по нажатию — её группа на вкладке.
+    expect(find.text('+ 1 адрес мимо Шлюпки — здесь не видны'), findsOneWidget);
+
     // Снова то же меню: добавлять больше нечего.
     await tap(tester, find.byKey(const ValueKey('place-game.exe')));
     expect(find.text('Мимо Шлюпки: 1 адрес'), findsNothing);
@@ -1073,6 +1076,11 @@ void main() {
     routes = container.read(directRoutesProvider);
     expect(routes.sites, {'discord.gg'});
     expect(routes.entries[V4Net.tryParse('162.159.135.232')]!.site, 'discord.gg');
+
+    await tap(tester, find.byKey(const ValueKey('live-direct-game.exe')));
+    expect(find.text('ТОЛЬКО ЧЕРЕЗ ШЛЮПКУ'), findsOneWidget, reason: 'the tab is open');
+    expect(find.byKey(const ValueKey('direct-group-game.exe')), findsOneWidget);
+    expect(find.byKey(const ValueKey('direct-group-discord.gg')), findsOneWidget);
     await closePage(tester, container);
   });
 }

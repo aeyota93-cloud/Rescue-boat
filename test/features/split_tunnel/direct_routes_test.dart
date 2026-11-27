@@ -343,6 +343,29 @@ void main() {
       expect(siteHits([c('1.2.3.4', 'example.com')], const DirectRoutes(), _now), isEmpty);
     });
 
+    test('groups: yours first, then sites (even without addresses), then programs by last game', () {
+      final r = const DirectRoutes()
+          .withUser(n('1.1.1.1'), _now)
+          .learn([('35.228.147.76', 'Overwatch.exe', _now.subtract(const Duration(days: 2)))], _now)
+          .learn([('34.40.6.59', 'Marvel-Win64-Shipping.exe', _now)], _now)
+          .withPicks([(net: n('162.159.135.232'), app: 'Discord.exe', site: 'discord.gg')], _now)
+          .withSite('example.org');
+      final g = directGroups(r);
+      expect(
+        [for (final x in g) x.key],
+        ['', 'discord.gg', 'example.org', 'Marvel-Win64-Shipping.exe', 'Overwatch.exe'],
+      );
+      expect(
+        [for (final x in g) x.kind],
+        [DirectGroupKind.user, DirectGroupKind.site, DirectGroupKind.site, DirectGroupKind.app, DirectGroupKind.app],
+      );
+      expect(g[2].entries, isEmpty);
+      // Метка в «Сейчас в сети»: адреса программы, которые действуют (Discord — через сайт).
+      expect(directHiddenCount(r, _split, 'overwatch.exe'), 1);
+      expect(directHiddenCount(r, _split, 'Discord.exe'), 1);
+      expect(directHiddenCount(r, _split, 'chrome.exe'), 0);
+    });
+
     test('never back returns the address as own', () {
       final r = const DirectRoutes().withNever(n('1.2.3.4')).withNeverBack(n('1.2.3.4'), _now);
       expect(r.never, isEmpty);

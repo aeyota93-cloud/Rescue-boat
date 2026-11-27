@@ -590,6 +590,56 @@ String directGroupOf(DirectEntry e) => e.site.isNotEmpty
     ? e.app
     : '';
 
+enum DirectGroupKind { user, site, app }
+
+/// Группа вкладки «Мимо Шлюпки»: свои адреса без программы, сайт или программа.
+class DirectGroup {
+  const DirectGroup({required this.key, required this.kind, required this.entries});
+
+  /// Сайт («discord.gg»), exe программы или пусто — «добавлено вами».
+  final String key;
+  final DirectGroupKind kind;
+
+  /// Свои и закреплённые — первыми, дальше по свежести.
+  final List<MapEntry<V4Net, DirectEntry>> entries;
+}
+
+/// Группы для вкладки: «добавлено вами», потом сайты (и те, за которыми следим, но адресов ещё нет),
+/// потом программы — по последней игре.
+List<DirectGroup> directGroups(DirectRoutes r) {
+  final by = <String, List<MapEntry<V4Net, DirectEntry>>>{};
+  for (final e in r.entries.entries) {
+    (by[directGroupOf(e.value)] ??= []).add(e);
+  }
+  for (final s in r.sites) {
+    by.putIfAbsent(s, () => []);
+  }
+  int rank(DirectEntry e) => e.source == DirectSource.user ? 0 : (e.pinned ? 1 : 2);
+  DateTime last(List<MapEntry<V4Net, DirectEntry>> l) =>
+      l.fold(DateTime(0), (m, e) => e.value.lastSeen.isAfter(m) ? e.value.lastSeen : m);
+  final groups = [
+    for (final MapEntry(:key, :value) in by.entries)
+      DirectGroup(
+        key: key,
+        kind: key.isEmpty
+            ? DirectGroupKind.user
+            : (r.sites.contains(key) || value.any((e) => e.value.site == key)
+                  ? DirectGroupKind.site
+                  : DirectGroupKind.app),
+        entries: value
+          ..sort((a, b) {
+            final x = rank(a.value).compareTo(rank(b.value));
+            return x != 0 ? x : b.value.lastSeen.compareTo(a.value.lastSeen);
+          }),
+      ),
+  ];
+  return groups..sort((a, b) {
+    final k = a.kind.index.compareTo(b.kind.index);
+    if (k != 0) return k;
+    return a.kind == DirectGroupKind.app ? last(b.entries).compareTo(last(a.entries)) : a.key.compareTo(b.key);
+  });
+}
+
 // ---------- Отбор адресов из меню ----------
 
 /// Что видели: соединение или ошибка. [direct] — шло напрямую (не через VPN и не заблокировано).
@@ -755,4 +805,10 @@ String tunExcludeText(List<V4Net> nets) {
     out.writeln(n);
   }
   return out.toString();
+}
+
+/// Сколько действующих адресов программы [exe] в списке: её трафик к ним Шлюпка не видит.
+int directHiddenCount(DirectRoutes r, SplitTunnel s, String exe) {
+  final x = exe.toLowerCase();
+  return r.entries.values.where((e) => e.app.toLowerCase() == x && r.isActive(e, s)).length;
 }

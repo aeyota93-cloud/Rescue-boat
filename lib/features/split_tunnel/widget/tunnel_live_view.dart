@@ -8,10 +8,13 @@ import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/model/app_names.dart';
+import 'package:hiddify/features/split_tunnel/model/direct_routes.dart';
 import 'package:hiddify/features/split_tunnel/model/live_view.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
+import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
+import 'package:hiddify/features/split_tunnel/widget/direct_add.dart';
 import 'package:hiddify/features/split_tunnel/widget/place_menu.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -30,6 +33,7 @@ class TunnelLiveView extends HookConsumerWidget {
     required this.pinned,
     required this.onOpenGroup,
     required this.onShowGroups,
+    this.onOpenDirect,
   });
 
   final List<NetConnection>? connections;
@@ -40,6 +44,9 @@ class TunnelLiveView extends HookConsumerWidget {
   final bool pinned;
   final ValueChanged<String> onOpenGroup;
   final VoidCallback onShowGroups;
+
+  /// Переход к группе программы на вкладке «Мимо Шлюпки» (exe).
+  final ValueChanged<String>? onOpenDirect;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -75,6 +82,7 @@ class TunnelLiveView extends HookConsumerWidget {
               all: all,
               onToggle: () => open.value = isOpen ? ({...open.value}..remove(key)) : {...open.value, key},
               onOpenGroup: onOpenGroup,
+              onOpenDirect: onOpenDirect,
             ),
           );
           if (isOpen) {
@@ -289,6 +297,7 @@ class _AppRow extends ConsumerWidget {
     required this.all,
     required this.onToggle,
     required this.onOpenGroup,
+    this.onOpenDirect,
   });
   final LiveApp app;
   final String title;
@@ -297,9 +306,14 @@ class _AppRow extends ConsumerWidget {
   final List<NetConnection> all;
   final VoidCallback onToggle;
   final ValueChanged<String> onOpenGroup;
+  final ValueChanged<String>? onOpenDirect;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final known = app.exe.isNotEmpty;
+    // Адреса программы из «Мимо Шлюпки»: её трафик к ним Шлюпка не видит, поэтому здесь его нет.
+    final hidden = known
+        ? directHiddenCount(ref.watch(directRoutesProvider), ref.watch(splitTunnelProvider), app.exe)
+        : 0;
     final hosts = <String>{for (final c in app.conns) c.address}.toList();
     final sub = [
       if (known) app.exe else 'ядро не узнало программу',
@@ -363,6 +377,22 @@ class _AppRow extends ConsumerWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, color: RescueColors.subOnDeep),
         ),
+        if (hidden > 0) ...[
+          const SizedBox(height: 3),
+          Tooltip(
+            message: 'Пакеты к этим адресам Windows отправляет сама — Шлюпка их не видит',
+            child: InkWell(
+              key: ValueKey('live-direct-${app.exe}'),
+              onTap: onOpenDirect == null ? null : () => onOpenDirect!(app.exe),
+              child: Text(
+                '+ ${addressesRu(hidden)} мимо Шлюпки — здесь не видны',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: RescueColors.accent),
+              ),
+            ),
+          ),
+        ],
       ],
     );
     return Semantics(
