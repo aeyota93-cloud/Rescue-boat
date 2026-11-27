@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/compare/notifier/compare_notifier.dart';
 import 'package:hiddify/features/insights/model/insights_models.dart';
@@ -11,10 +12,12 @@ import 'package:hiddify/features/servers/model/rescue_servers.dart';
 import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/data/connections.dart';
 import 'package:hiddify/features/split_tunnel/data/running_apps.dart';
+import 'package:hiddify/features/split_tunnel/model/direct_routes.dart';
 import 'package:hiddify/features/split_tunnel/model/app_names.dart';
 import 'package:hiddify/features/split_tunnel/model/live_view.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
+import 'package:hiddify/features/split_tunnel/notifier/direct_routes_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/live_connections_notifier.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
 import 'package:hiddify/features/split_tunnel/widget/split_tunnel_table_page.dart';
@@ -119,8 +122,29 @@ void main() {
 
   Future<void> tapText(WidgetTester tester, String text) => tap(tester, find.text(text).last);
 
-  /// Пункт открытого меню (тот же текст бывает и на кнопках страницы).
-  Future<void> tapMenu(WidgetTester tester, String text) => tap(tester, find.widgetWithText(MenuItemButton, text).last);
+  /// Открыть вложенное меню «Через VPN ▸». Наведение мыши его уже открывает, и тогда нажатие
+  /// закрывает обратно — поэтому проверяем, открылось ли.
+  Future<void> openVia(WidgetTester tester) async {
+    final any = find.widgetWithText(MenuItemButton, 'Любой — выберет Шлюпка');
+    if (any.evaluate().isNotEmpty) return;
+    await tap(tester, find.byKey(const ValueKey('place-via-menu')).last);
+    if (any.evaluate().isEmpty) await tap(tester, find.byKey(const ValueKey('place-via-menu')).last);
+  }
+
+  /// Пункт открытого меню (тот же текст бывает и на кнопках страницы). «Через VPN» при нескольких
+  /// серверах — вложенное меню: в нём «Любой — выберет Шлюпка».
+  Future<void> tapMenu(WidgetTester tester, String text) async {
+    final via = find.byKey(const ValueKey('place-via-menu')).evaluate().isNotEmpty;
+    final item = find.widgetWithText(MenuItemButton, via && text == 'Через VPN' ? 'Любой — выберет Шлюпка' : text);
+    if (via && (text == 'Через VPN' || item.evaluate().isEmpty)) await openVia(tester);
+    return tap(tester, item.last);
+  }
+
+  /// Сервер во вложенном меню «Через VPN ▸».
+  Future<void> tapServer(WidgetTester tester, String tag) async {
+    await openVia(tester);
+    await tap(tester, find.byKey(ValueKey('place-server-$tag')));
+  }
 
   Future<void> openTab(WidgetTester tester, int i) => tap(tester, find.byKey(ValueKey('folder-tab-$i')));
 
@@ -369,7 +393,7 @@ void main() {
     // «⋯» у соединения: сайт целиком — за «NL запасной».
     await tap(tester, find.byTooltip('Направить: youtube.com'));
     await tapText(tester, 'Сайт youtube.com и поддомены');
-    await tap(tester, find.byKey(const ValueKey('place-server-NL запасной')));
+    await tapServer(tester, 'NL запасной');
     expect(state().serverOf(SplitKind.domain, 'youtube.com'), 'NL запасной');
     expect(find.textContaining('сайт youtube.com', findRichText: true), findsOneWidget);
 
@@ -795,7 +819,7 @@ void main() {
     await tap(tester, find.text('Google Chrome'));
     await tap(tester, find.byTooltip('Направить: youtube.com'));
     await tapText(tester, 'Сайт youtube.com и поддомены');
-    await tap(tester, find.byKey(const ValueKey('place-server-NL запасной')));
+    await tapServer(tester, 'NL запасной');
     expect(rules(viaServerFile(serverKey('NL запасной'))), {'domain_suffix:youtube.com'});
     expect(rules('via-domains.json'), {'domain_suffix:youtube.com'});
     await closePage(tester, container);
@@ -1004,6 +1028,51 @@ void main() {
     expect([for (final g in groups) g.name], ['Игры', 'Marvel Rivals', 'Лаунчеры и магазины']);
     expect(groups[1].items.items, hasLength(2));
     expect(container.read(splitTunnelProvider).groupOf(SplitKind.app, 'ssh.exe'), isNull);
+    await closePage(tester, container);
+  });
+
+  testWidgets('«Мимо Шлюпки» из меню программы и соединения: только прямые адреса, без общих', (tester) async {
+    final container = await start(
+      tester,
+      connections: [
+        conn('game.exe', ip: '35.228.147.76', chains: direct),
+        conn('game.exe', ip: '35.228.147.77', chains: direct),
+        conn('game.exe', ip: '8.8.8.8'),
+        conn('chrome.exe', host: 'youtube.com', ip: '35.228.147.77'),
+        conn('Discord.exe', host: 'gateway.discord.gg', ip: '162.159.135.232', chains: direct),
+      ],
+    );
+    container.listen(directRoutesProvider, (_, _) {});
+    await pumpPage(tester, container, const SplitTunnelTablePage(), size: const Size(1440, 900));
+
+    // Программа: 35.228.147.77 открывает и Chrome через VPN — общий адрес, 8.8.8.8 идёт через VPN.
+    await tap(tester, find.byKey(const ValueKey('place-game.exe')));
+    expect(find.text('Мимо Шлюпки: 1 адрес'), findsOneWidget);
+    await tap(tester, find.text('Мимо Шлюпки: 1 адрес'));
+    expect(find.byKey(const ValueKey('direct-add-list')), findsOneWidget);
+    expect(find.textContaining('через VPN'), findsWidgets);
+    await tap(tester, find.widgetWithText(FilledButton, 'Добавить'));
+    var routes = container.read(directRoutesProvider);
+    expect(routes.entries.keys, [V4Net.tryParse('35.228.147.76')]);
+    expect(routes.entries.values.single.app, 'game.exe');
+    expect(routes.entries.values.single.source, DirectSource.user);
+
+    // Снова то же меню: добавлять больше нечего.
+    await tap(tester, find.byKey(const ValueKey('place-game.exe')));
+    expect(find.text('Мимо Шлюпки: 1 адрес'), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // Соединение: «Сайт discord.gg и поддомены» → «Мимо Шлюпки» — за сайтом следим.
+    await tap(tester, find.text('Discord'));
+    await tap(tester, find.byTooltip('Направить: discord.gg'));
+    await tapText(tester, 'Сайт discord.gg и поддомены');
+    await tap(tester, find.text('Мимо Шлюпки: 1 адрес'));
+    expect(find.textContaining('Шлюпка будет добавлять сама'), findsOneWidget);
+    await tap(tester, find.widgetWithText(FilledButton, 'Добавить'));
+    routes = container.read(directRoutesProvider);
+    expect(routes.sites, {'discord.gg'});
+    expect(routes.entries[V4Net.tryParse('162.159.135.232')]!.site, 'discord.gg');
     await closePage(tester, container);
   });
 }

@@ -8,6 +8,7 @@ import 'package:hiddify/features/split_tunnel/model/app_names.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/model/tunnel_rows.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
+import 'package:hiddify/features/split_tunnel/widget/direct_add.dart';
 import 'package:hiddify/features/split_tunnel/widget/place_menu.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -426,7 +427,13 @@ class _GroupCard extends ConsumerWidget {
                           MenuAnchor(
                             menuChildren: [
                               SubmenuButton(
-                                menuChildren: placeMenuItems(ref: ref, split: split, servers: servers, items: items),
+                                menuChildren: placeMenuItems(
+                                  ref: ref,
+                                  split: split,
+                                  servers: servers,
+                                  items: items,
+                                  directWhat: loose ? 'записей без группы' : 'группы «$name»',
+                                ),
                                 child: const Text('Переложить в'),
                               ),
                               if (!loose) ...[
@@ -636,7 +643,13 @@ class _GroupPanel extends ConsumerWidget {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: RescueColors.textOnDeep),
                 ),
                 GroupButton(key: const ValueKey('selection-group'), items: picked, label: 'выбранные'),
-                PlaceButton(key: const ValueKey('selection-place'), items: picked, label: 'выбранные', compact: true),
+                PlaceButton(
+                  key: const ValueKey('selection-place'),
+                  items: picked,
+                  label: 'выбранные',
+                  compact: true,
+                  directWhat: 'выбранного',
+                ),
                 TextButton(
                   onPressed: () => selected.value = const {},
                   style: TextButton.styleFrom(foregroundColor: RescueColors.subOnDeep),
@@ -777,7 +790,13 @@ class _EntryRow extends ConsumerWidget {
             short: shortGroup,
           )
         : null;
-    final place = PlaceButton(key: ValueKey('place-${e.value}'), items: item, label: title, compact: true);
+    final place = PlaceButton(
+      key: ValueKey('place-${e.value}'),
+      items: item,
+      label: title,
+      compact: true,
+      directWhat: directWhatOf(item.single, title),
+    );
     final row = ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: Container(

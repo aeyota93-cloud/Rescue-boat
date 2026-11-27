@@ -330,6 +330,7 @@ class _AppRow extends ConsumerWidget {
             label: title,
             inlineText: routeText,
             routeColors: [for (final d in app.dests) destColor(d)],
+            directWhat: 'программы $title',
             onCompare: () => showComparePathsDialog(
               context,
               CompareSubject(endpoints: endpointsForApp(app.exe, all), appExe: app.exe),
@@ -468,6 +469,7 @@ class _ConnRow extends ConsumerWidget {
               split: split,
               servers: servers,
               items: [(kind: SplitKind.domain, value: site)],
+              directWhat: 'сайта $site',
             ),
             child: Text('Сайт $site и поддомены'),
           ),
@@ -478,6 +480,7 @@ class _ConnRow extends ConsumerWidget {
               split: split,
               servers: servers,
               items: [(kind: SplitKind.ip, value: cidrOf(c.ip))],
+              directWhat: 'IP ${c.ip}',
             ),
             child: Text('Только IP ${c.ip}'),
           ),

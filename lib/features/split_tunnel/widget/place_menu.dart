@@ -6,6 +6,7 @@ import 'package:hiddify/features/servers/notifier/failover.dart';
 import 'package:hiddify/features/split_tunnel/model/live_view.dart';
 import 'package:hiddify/features/split_tunnel/model/split_tunnel.dart';
 import 'package:hiddify/features/split_tunnel/notifier/split_tunnel_notifier.dart';
+import 'package:hiddify/features/split_tunnel/widget/direct_add.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Шлюпка: общие кнопки туннеля (docs/redesign/tunnel-v3.md) — плашка пути «Запасной 2 ▾» с меню
@@ -37,13 +38,16 @@ String describePlaces(SplitTunnel split, List<SplitRef> items, RescueServers? se
   return [for (final e in counts.entries) '${e.value} ${e.key}'].join(', ');
 }
 
-/// Пункты меню «куда направить» [items]: галочка у места, общего для всех.
+/// Пункты меню «куда направить» [items]: галочка у места, общего для всех. Серверов несколько —
+/// они во вложенном меню «Через VPN ▸». [directWhat] не null — внизу действие «Мимо Шлюпки»
+/// (адреса [items] сейчас; «программы Overwatch» — для диалога).
 List<Widget> placeMenuItems({
   required WidgetRef ref,
   required SplitTunnel split,
   required RescueServers? servers,
   required List<SplitRef> items,
   VoidCallback? onCompare,
+  String? directWhat,
 }) {
   final notifier = ref.read(splitTunnelProvider.notifier);
   final current = split.commonPlace(items);
@@ -56,35 +60,57 @@ List<Widget> placeMenuItems({
     MenuItemButton(
       leadingIcon: _Check(current == autoPlace),
       onPressed: () => set(autoPlace),
-      child: const _TwoLines('Авто', 'общие правила: российское мимо, остальное через VPN'),
+      child: const MenuTwoLines('Авто', 'общие правила: российское мимо, остальное через VPN'),
     ),
     MenuItemButton(
       leadingIcon: _Check(current == bypassPlace),
       onPressed: () => set(bypassPlace),
-      child: const _TwoLines('Мимо VPN', 'напрямую, с домашнего IP'),
+      child: const MenuTwoLines('Мимо VPN', 'напрямую, с домашнего IP'),
     ),
     const Divider(height: 8),
-    MenuItemButton(
-      leadingIcon: _Check(current == viaPlace),
-      onPressed: () => set(viaPlace),
-      child: _TwoLines(
-        'Через VPN',
-        several ? 'сервер выберет Шлюпка: основной, при сбое запасные' : 'всегда через сервер',
-      ),
-    ),
     if (several)
-      for (final s in servers.servers)
-        MenuItemButton(
-          key: ValueKey('place-server-${s.tag}'),
-          leadingIcon: _Check(current?.server == s.tag),
-          onPressed: () => set((target: SplitTarget.via, server: s.tag)),
-          child: _TwoLines(s.name, s.detail),
-        ),
-    if (lost)
+      SubmenuButton(
+        key: const ValueKey('place-via-menu'),
+        leadingIcon: _Check(current?.target == SplitTarget.via),
+        menuChildren: [
+          MenuItemButton(
+            leadingIcon: _Check(current == viaPlace),
+            onPressed: () => set(viaPlace),
+            child: const MenuTwoLines('Любой — выберет Шлюпка', 'основной, при сбое запасные'),
+          ),
+          const Divider(height: 8),
+          for (final s in servers.servers)
+            MenuItemButton(
+              key: ValueKey('place-server-${s.tag}'),
+              leadingIcon: _Check(current?.server == s.tag),
+              onPressed: () => set((target: SplitTarget.via, server: s.tag)),
+              child: MenuTwoLines(s.name, s.detail),
+            ),
+          if (lost)
+            MenuItemButton(
+              leadingIcon: const _Check(true),
+              child: Text('«${serverTitle(pinned)}» — сервера нет, идёт через Авто'),
+            ),
+        ],
+        child: MenuTwoLines('Через VPN', switch (current) {
+          (target: SplitTarget.via, server: final String tag) =>
+            'сервер ${servers.byTag(tag)?.name ?? serverTitle(tag)}',
+          (target: SplitTarget.via, server: null) => 'сервер выберет Шлюпка',
+          _ => 'выбрать сервер',
+        }),
+      )
+    else
+      MenuItemButton(
+        leadingIcon: _Check(current == viaPlace),
+        onPressed: () => set(viaPlace),
+        child: const MenuTwoLines('Через VPN', 'всегда через сервер'),
+      ),
+    if (!several && lost)
       MenuItemButton(
         leadingIcon: const _Check(true),
         child: Text('«${serverTitle(pinned)}» — сервера нет, идёт через Авто'),
       ),
+    if (directWhat != null) ...[const Divider(height: 8), DirectMenuItem(items: items, what: directWhat)],
     if (onCompare != null) ...[
       const Divider(height: 8),
       MenuItemButton(leadingIcon: const _Check(false), onPressed: onCompare, child: const Text('Сравнить пути…')),
@@ -102,6 +128,7 @@ class PlaceButton extends ConsumerWidget {
     this.compact = false,
     this.inlineText,
     this.routeColors = const [],
+    this.directWhat,
   });
 
   final List<SplitRef> items;
@@ -116,6 +143,9 @@ class PlaceButton extends ConsumerWidget {
   /// Текстовый путь в спокойном списке соединений.
   final String? inlineText;
   final List<Color> routeColors;
+
+  /// Не null — в меню есть «Мимо Шлюпки» ([placeMenuItems]).
+  final String? directWhat;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -141,7 +171,14 @@ class PlaceButton extends ConsumerWidget {
           : MenuStyle(
               maximumSize: WidgetStatePropertyAll(Size(MediaQuery.sizeOf(context).width - 16, double.infinity)),
             ),
-      menuChildren: placeMenuItems(ref: ref, split: split, servers: servers, items: items, onCompare: onCompare),
+      menuChildren: placeMenuItems(
+        ref: ref,
+        split: split,
+        servers: servers,
+        items: items,
+        onCompare: onCompare,
+        directWhat: directWhat,
+      ),
       builder: (context, controller, _) => Tooltip(
         message: 'Куда направить: $label',
         child: Semantics(
@@ -304,7 +341,7 @@ class GroupButton extends ConsumerWidget {
           MenuItemButton(
             leadingIcon: const _Check(false),
             onPressed: () => notifier.removeFromGroup(items),
-            child: const _TwoLines('Убрать из группы', 'путь записи не изменится'),
+            child: const MenuTwoLines('Убрать из группы', 'путь записи не изменится'),
           ),
           if (only != null && onOpenGroup != null)
             MenuItemButton(
@@ -497,8 +534,8 @@ class _Check extends StatelessWidget {
 }
 
 /// Пункт меню: название и мелкая подсказка под ним.
-class _TwoLines extends StatelessWidget {
-  const _TwoLines(this.title, this.hint);
+class MenuTwoLines extends StatelessWidget {
+  const MenuTwoLines(this.title, this.hint);
 
   final String title;
   final String hint;
